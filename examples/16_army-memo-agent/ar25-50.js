@@ -1035,6 +1035,64 @@ export const PERSONAL_ADDRESS_TYPES = ["exclusiveFor", "appreciation", "commenda
 export const PERSONAL_ADDRESS_CITE = "AR 25-50, paras 2-2 and 2-4a(5)";
 
 /**
+ * Two figure notes suppress the geographic address entirely, and both turn on
+ * a fact about the sender that no addressee string reveals:
+ *
+ *   fig 2-5 note 4  "When preparing a memorandum from one Army staff agency to
+ *                    another Army staff agency, omit the full geographic
+ *                    location."
+ *   fig 2-7 note 4  "Omit the geographical address when preparing internal
+ *                    ACOM headquarters memorandums."
+ *
+ * Set `internalTo` on the memorandum to say which case applies. The default is
+ * neither, because the opposite rule - fig 2-6 note 3 - requires "the complete
+ * geographical location (including complete standard street address, city,
+ * state, and ZIP+4 code)" for the office-symbol method.
+ */
+export const INTERNAL_CORRESPONDENCE = {
+    armyStaff: {
+        description: "one Army staff agency to another Army staff agency",
+        cite: "AR 25-50, fig 2-5 note 4",
+    },
+    acomHeadquarters: {
+        description: "internal ACOM headquarters memorandums",
+        cite: "AR 25-50, fig 2-7 note 4",
+    },
+};
+
+/** Whether an addressee string carries a geographic address. */
+export function hasGeographicAddress(addressee) {
+    const text = String(typeof addressee === "string" ? addressee : (addressee?.text ?? ""));
+    // A street line or a state-and-ZIP pair. Either is the geographic location
+    // the two figure notes suppress.
+    return ZIP.pattern.test(text)
+        || /\b\d{2,5}\s+[A-Za-z].*\b(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Boulevard|Blvd|Pentagon|Loop|Circle|Way)\b/i.test(text);
+}
+
+/**
+ * Figure 2-8's distribution listing opens with a single line -
+ * "Principal Officials of Headquarters, Department of the Army" - rather than
+ * naming them one by one, and para B-2 makes that a term of art: it "includes
+ * all the positions listed in figure B-2", all 36 of them.
+ *
+ * This matters beyond tidiness. Listing them individually blows through the
+ * five-address limit of para 2-4a(5)(c) and forces a SEE DISTRIBUTION format
+ * that figure 2-8 shows is unnecessary.
+ */
+export const HQDA_PRINCIPALS_COLLECTIVE = {
+    text: "Principal Officials of Headquarters, Department of the Army",
+    cite: "AR 25-50, fig 2-8 and para B-2",
+};
+
+/** How many of the given addressees are HQDA principal officials. */
+export function countHqdaPrincipals(addressees = []) {
+    return addressees.filter((a) => {
+        const text = String(typeof a === "string" ? a : (a?.text ?? "")).toUpperCase();
+        return PROTOCOL_HQDA.some((p) => text.includes(p.toUpperCase()));
+    }).length;
+}
+
+/**
  * Appendix F - the digital signature.
  *
  * Everything appendix F describes is an Acrobat form field, created in the PDF

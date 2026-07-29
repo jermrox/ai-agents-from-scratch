@@ -2026,6 +2026,47 @@ const FIELD_TEMPLATE = {
         validateMemo({...FIG_2_1, enclosures: ["One", "Two"]})
             .warnings.every((f) => f.rule !== "enclosures-need-tabs"),
         TABBING.cite);
+
+    /*
+     * Two figure notes suppress the geographic address, and figure 2-8
+     * collapses the HQDA principals into one line.
+     */
+    const {hasGeographicAddress, HQDA_PRINCIPALS_COLLECTIVE} = await import("./ar25-50.js");
+    const withGeography = "HQDA (DAMI-XX), 1000 ARMY PENTAGON, WASHINGTON, DC  20310-1000";
+    const withoutGeography = "HQDA (DAMI-XX)";
+
+    checkTrue("a street-and-ZIP address is recognized as geographic",
+        hasGeographicAddress(withGeography), "AR 25-50, fig 2-6 note 3");
+    checkTrue("a bare office symbol is not",
+        !hasGeographicAddress(withoutGeography), "AR 25-50, fig 2-6 note 3");
+
+    for (const [scope, cite] of [["armyStaff", "AR 25-50, fig 2-5 note 4"],
+                                 ["acomHeadquarters", "AR 25-50, fig 2-7 note 4"]]) {
+        checkTrue(`${scope}: a geographic address on internal correspondence is reported`,
+            validateMemo({...FIG_2_1, internalTo: scope, addressees: [withGeography]})
+                .errors.some((f) => f.rule === "geographic-address-on-internal"), cite);
+        checkTrue(`${scope}: omitting it is accepted`,
+            validateMemo({...FIG_2_1, internalTo: scope, addressees: [withoutGeography]})
+                .errors.every((f) => f.rule !== "geographic-address-on-internal"), cite);
+    }
+
+    checkTrue("a memorandum that is not internal keeps its geographic address",
+        validateMemo({...FIG_2_1, addressees: [withGeography]})
+            .errors.every((f) => f.rule !== "geographic-address-on-internal"),
+        "AR 25-50, fig 2-6 note 3");
+
+    // fig 2-8 addresses them as one line rather than naming 36 offices.
+    checkTrue("several HQDA principals as separate addressees raises the collective form",
+        validateMemo({...FIG_2_1, addressees: [
+            "Deputy Chief of Staff, G-1", "Deputy Chief of Staff, G-3/5/7", "Deputy Chief of Staff, G-4",
+        ]}).warnings.some((f) => f.rule === "hqda-principals-collective"),
+        HQDA_PRINCIPALS_COLLECTIVE.cite);
+    checkTrue("ordinary commands do not",
+        validateMemo({...FIG_2_1, addressees: [
+            "Commander, 1st Cavalry Division", "Commander, 4th Infantry Division",
+            "Commander, 10th Mountain Division",
+        ]}).warnings.every((f) => f.rule !== "hqda-principals-collective"),
+        HQDA_PRINCIPALS_COLLECTIVE.cite);
 }
 
 // ---------------------------------------------------------------------------

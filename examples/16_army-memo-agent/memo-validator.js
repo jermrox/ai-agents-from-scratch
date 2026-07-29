@@ -52,6 +52,10 @@ import {
     APPENDIX_F,
     TABBING,
     checkTabSequence,
+    INTERNAL_CORRESPONDENCE,
+    hasGeographicAddress,
+    HQDA_PRINCIPALS_COLLECTIVE,
+    countHqdaPrincipals,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -599,6 +603,38 @@ function checkTabbing(memo, out) {
     }
 }
 
+/**
+ * Two figure notes that suppress the geographic address, and one that
+ * collapses a long list of HQDA principals into a single line.
+ */
+function checkInternalAddressing(memo, out) {
+    const addressees = memo.addressees ?? [];
+
+    const internal = INTERNAL_CORRESPONDENCE[memo.internalTo];
+    if (internal) {
+        for (const a of addressees) {
+            if (hasGeographicAddress(a)) {
+                out.push(error("content", "geographic-address-on-internal",
+                    `This is ${internal.description}, so the full geographic location is omitted: "${a}"`,
+                    internal.cite));
+            }
+        }
+    } else if (memo.internalTo) {
+        out.push(warn("content", "unknown-internal-scope",
+            `"${memo.internalTo}" is not a case the regulation defines. The two that suppress the geographic address are ${Object.keys(INTERNAL_CORRESPONDENCE).join(" and ")}.`,
+            INTERNAL_CORRESPONDENCE.armyStaff.cite));
+    }
+
+    // Figure 2-8 names them collectively rather than one by one, which also
+    // keeps the list under the five-address limit of para 2-4a(5)(c).
+    const principals = countHqdaPrincipals(addressees);
+    if (principals >= 3) {
+        out.push(warn("content", "hqda-principals-collective",
+            `${principals} of the addressees are HQDA principal officials. Figure 2-8 addresses them as one line, "${HQDA_PRINCIPALS_COLLECTIVE.text}", which para B-2 defines as all the positions in figure B-2.`,
+            HQDA_PRINCIPALS_COLLECTIVE.cite));
+    }
+}
+
 function checkPostscript(paragraphs, out) {
     for (const text of collectText(paragraphs)) {
         if (POSTSCRIPTS.pattern.test(text)) {
@@ -985,6 +1021,7 @@ export function validateMemo(memo, options = {}) {
     checkCorrespondenceVehicle(memo, out);
     checkDigitalSignature(memo, out);
     checkTabbing(memo, out);
+    checkInternalAddressing(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");
