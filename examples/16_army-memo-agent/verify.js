@@ -1478,30 +1478,271 @@ const FIELD_TEMPLATE = {
     // Appendix D, reproduced block for block.
     const block = (signer, correspondence) => buildSignature(signer, correspondence).lines.join(" / ");
 
-    check("fig D-14: a command sergeant major uses USA, not a branch",
-        block({name: "William H. Sargent", grade: "CSM", spellOut: true}),
-        "WILLIAM H. SARGENT / Command Sergeant Major, USA", "AR 25-50, fig D-14");
-    check("fig D-14: a master sergeant uses USA",
-        block({name: "Ronald L. Stanley", grade: "MSG", title: "Operations Sergeant"}),
-        "RONALD L. STANLEY / MSG, USA / Operations Sergeant", "AR 25-50, fig D-14");
-    check("fig D-14: a retired sergeant first class uses USA Retired",
-        block({name: "Bryan J. Gramps", grade: "SFC", retired: true}),
-        "BRYAN J. GRAMPS / SFC, USA Retired", "AR 25-50, fig D-14");
-    check("fig D-20: an enlisted reservist uses USAR in place of USA",
-        block({name: "Name", grade: "SFC", reserveNotOnActiveDuty: true, title: "Platoon Sergeant"}),
-        "NAME / SFC, USAR / Platoon Sergeant", "AR 25-50, fig D-20 and para 6-7");
-    check("para 6-7: a commissioned reservist adds USAR after the branch",
-        block({name: "Name", grade: "MAJ", branch: "AG", reserveNotOnActiveDuty: true, title: "S1"}),
-        "NAME / MAJ, AG, USAR / S1", "AR 25-50, para 6-7");
-    check("fig D-2: a lieutenant colonel may spell the grade out",
-        block({name: "Name", grade: "LTC", branch: "AG", spellOut: true, title: "Adjutant General"}),
-        "NAME / Lieutenant Colonel, AG / Adjutant General", "AR 25-50, paras 6-5c(1) and fig D-2");
-    check("fig D-2: a deputy commander who is a general officer uses USA",
-        block({name: "Name", grade: "MG", title: "Deputy Commander"}),
-        "NAME / Major General, USA / Deputy Commander", "AR 25-50, paras 6-5c(3) and 6-5c(4)");
-    check("fig D-2: a general officer on the general staff uses GS",
-        block({name: "Name", grade: "MG", generalStaff: true, title: "Chief of Staff"}),
-        "NAME / Major General, GS / Chief of Staff", "AR 25-50, para 6-5c(7)");
+    /*
+     * Every signature block printed in appendix D, reproduced. The figures are
+     * the test oracle: each expectation below is what the published figure
+     * prints, not what this code happens to produce.
+     *
+     * Two literal defects in the published figures are NOT reproduced -
+     * "NAME (CALL CAPS)" in figures D-2 and D-3, and "LTC,AG" with no space
+     * after the comma in figure D-6. Both are typographical errors in the PDF,
+     * contradicted by the same string set correctly elsewhere in the same
+     * appendix.
+     */
+    const D = [
+        // fig D-1, signed by the commanding general. No authority line.
+        ["D-1", {name: "Name", grade: "LTG", commanding: true},
+            "NAME / Lieutenant General, USA / Commanding"],
+
+        // fig D-2, signed by an authorized subordinate of the commander.
+        ["D-2", {name: "Name", grade: "MG", title: "Deputy Commander"},
+            "NAME / Major General, USA / Deputy Commander"],
+        ["D-2", {name: "Name", grade: "MG", generalStaff: true, title: "Chief of Staff"},
+            "NAME / Major General, GS / Chief of Staff"],
+        ["D-2", {name: "Name", grade: "LTC", branch: "AG", spellOut: true, title: "Adjutant General"},
+            "NAME / Lieutenant Colonel, AG / Adjutant General"],
+
+        // fig D-3, head of an HQDA staff agency.
+        ["D-3", {name: "Name", grade: "LTG", title: "Chief of Engineers"},
+            "NAME / Lieutenant General, USA / Chief of Engineers"],
+
+        // fig D-4, authorized representative of an HQDA staff agency.
+        ["D-4", {name: "Name", grade: "COL", branch: "EN", spellOut: true, title: "Executive Officer"},
+            "NAME / Colonel, EN / Executive Officer"],
+
+        // fig D-5, commanding officer of a unit, headquarters, or installation.
+        ["D-5", {name: "Name", grade: "COL", branch: "IN", spellOut: true, commanding: true},
+            "NAME / Colonel, IN / Commanding"],
+
+        // fig D-6, authorized representative of that commander.
+        ["D-6", {name: "Name", grade: "LTC", branch: "AG", title: "Adjutant General"},
+            "NAME / LTC, AG / Adjutant General"],
+        ["D-6", {name: "Name", grade: "MAJ", branch: "AG", spellOut: true, title: "Assistant Adjutant General"},
+            "NAME / Major, AG / Assistant Adjutant General"],
+        ["D-6", {name: "Name", grade: "MAJ", branch: "AG", spellOut: true, title: "Chief, Personnel Division"},
+            "NAME / Major, AG / Chief, Personnel Division"],
+        ["D-6", {name: "Name", grade: "CW3", title: "Chief, Systems Division"},
+            "NAME / CW3, USA / Chief, Systems Division"],
+
+        // fig D-7, representative for the head of a staff office.
+        ["D-7", {name: "Name", grade: "LTC", branch: "TC", title: "Chief, Freight Division"},
+            "NAME / LTC, TC / Chief, Freight Division"],
+        ["D-7", {name: "Name", grade: "LTC", branch: "JA", title: "Chief, Military Justice Branch"},
+            "NAME / LTC, JA / Chief, Military Justice Branch"],
+        ["D-7", {name: "Name", grade: "CPT", branch: "FI", spellOut: true,
+                 title: "Deputy Finance and Accounting\nOfficer"},
+            "NAME / Captain, FI / Deputy Finance and Accounting / Officer"],
+
+        // fig D-8, authorized civilian. Name and title only.
+        ["D-8", {name: "Name", civilian: true, title: "Chief, Civilian Personnel Branch"},
+            "NAME / Chief, Civilian Personnel Branch"],
+        ["D-8", {name: "Name", civilian: true, title: "Director, Research and Engineering\nDirectorate"},
+            "NAME / Director, Research and Engineering / Directorate"],
+
+        // fig D-9, an officer writing as an individual: name, grade, branch,
+        // and organization - the organization is the last line, not a title.
+        ["D-9", {name: "Name", grade: "CPT", branch: "AR", organization: "Co B, 2/34 Armor"},
+            "NAME / CPT, AR / Co B, 2/34 Armor"],
+        ["D-9", {name: "Name", grade: "CW2", organization: "Co A, 2/34 Armor"},
+            "NAME / CW2, USA / Co A, 2/34 Armor"],
+
+        // fig D-11, retired personnel. Two lines, no branch, no organization.
+        // Para 6-6 says retired personnel "follow the same rules as active
+        // personnel", so the grade abbreviation stays optional under 6-5c(1):
+        // this figure prints the long form, and figure D-14 prints "SFC, USA
+        // Retired" in the short one. Both are correct, so `spellOut` selects
+        // which - it is not a rule about retirement.
+        ["D-11", {name: "Name", grade: "COL", retired: true, spellOut: true},
+            "NAME / Colonel, USA Retired"],
+        ["D-11", {name: "Name", grade: "CPT", retired: true, spellOut: true},
+            "NAME / Captain, USA Retired"],
+        ["D-11", {name: "Name", grade: "MAJ", retired: true, spellOut: true},
+            "NAME / Major, USA Retired"],
+
+        // fig D-12, abbreviated titles paired with abbreviated grades.
+        ["D-12", {name: "Name", grade: "LTC", generalStaff: true, spellOut: true,
+                  title: "Chief, Administrative Systems\nDivision"},
+            "NAME / Lieutenant Colonel, GS / Chief, Administrative Systems / Division"],
+        ["D-12", {name: "Name", grade: "LTC", generalStaff: true, title: "Chief, Admin Sys Div"},
+            "NAME / LTC, GS / Chief, Admin Sys Div"],
+        ["D-12", {name: "Name", grade: "COL", generalStaff: true, spellOut: true,
+                  title: "Director, Administrative\nManagement"},
+            "NAME / Colonel, GS / Director, Administrative / Management"],
+        ["D-12", {name: "Name", grade: "COL", generalStaff: true, title: "Dir, Admin Mgt"},
+            "NAME / COL, GS / Dir, Admin Mgt"],
+
+        // fig D-13, unabbreviated titles. A warrant officer on the general
+        // staff takes GS, not USA, and a title may run to three lines.
+        ["D-13", {name: "Name", grade: "CW3", generalStaff: true, spellOut: true,
+                  title: "Chief, Operational Testing and\nLicensing Division"},
+            "NAME / Chief Warrant Officer, GS / Chief, Operational Testing and / Licensing Division"],
+        ["D-13", {name: "Name", grade: "COL", branch: "IN", spellOut: true,
+                  title: "Assistant Inspector General for\nMilitary Operations for Plans\nand Procedures"},
+            "NAME / Colonel, IN / Assistant Inspector General for / Military Operations for Plans / and Procedures"],
+        ["D-13", {name: "Name", civilian: true,
+                  title: "Director, Nuclear Testing and\nAccident Prevention Division"},
+            "NAME / Director, Nuclear Testing and / Accident Prevention Division"],
+
+        // fig D-14, noncommissioned officers. Four of the seven are two-line
+        // blocks with no title at all, and grades appear in both forms.
+        ["D-14", {name: "William H. Sargent", grade: "CSM", spellOut: true},
+            "WILLIAM H. SARGENT / Command Sergeant Major, USA"],
+        ["D-14", {name: "John L. Jones", grade: "1SG", spellOut: true},
+            "JOHN L. JONES / First Sergeant, USA"],
+        ["D-14", {name: "Name", grade: "1SG"}, "NAME / 1SG, USA"],
+        ["D-14", {name: "Ronald L. Stanley", grade: "MSG", title: "Operations Sergeant"},
+            "RONALD L. STANLEY / MSG, USA / Operations Sergeant"],
+        ["D-14", {name: "Name", grade: "SFC", acting: true, commanding: false, title: "Acting First Sergeant"},
+            "NAME / SFC, USA / Acting First Sergeant"],
+        ["D-14", {name: "Name", grade: "SFC", title: "Platoon Sergeant"},
+            "NAME / SFC, USA / Platoon Sergeant"],
+        ["D-14", {name: "Bryan J. Gramps", grade: "SFC", retired: true},
+            "BRYAN J. GRAMPS / SFC, USA Retired"],
+
+        // fig D-15, enlisted USAR Soldier on active duty - USA, not USAR.
+        ["D-15", {name: "Name", grade: "SFC", title: "Acting First Sergeant"},
+            "NAME / SFC, USA / Acting First Sergeant"],
+
+        // fig D-16, USAR officer on active duty - branch, no USAR.
+        ["D-16", {name: "Name", grade: "MAJ", branch: "AG", title: "Chief, Technical Services Team"},
+            "NAME / MAJ, AG / Chief, Technical Services Team"],
+
+        // fig D-17, officer on the general staff, colonel or below.
+        ["D-17", {name: "Name", grade: "LTC", generalStaff: true, title: "Chief of Staff"},
+            "NAME / LTC, GS / Chief of Staff"],
+
+        // fig D-18, officer detailed as an inspector general.
+        ["D-18", {name: "Name", grade: "MAJ", inspectorGeneral: true, title: "Chief, Inspections Branch"},
+            "NAME / MAJ, IG / Chief, Inspections Branch"],
+
+        // fig D-19, medical corps officer. MC is a branch and behaves like one.
+        ["D-19", {name: "Name", grade: "COL", branch: "MC", title: "Command Surgeon"},
+            "NAME / COL, MC / Command Surgeon"],
+
+        // fig D-20, reserve NCO not on active duty - USAR replaces USA.
+        ["D-20", {name: "Name", grade: "SFC", reserveNotOnActiveDuty: true, title: "Platoon Sergeant"},
+            "NAME / SFC, USAR / Platoon Sergeant"],
+
+        // fig D-21, reserve officer not on active duty - USAR follows the
+        // branch, giving a three-element grade line, and the acting title
+        // replaces "Commanding".
+        ["D-21", {name: "Name", grade: "MAJ", branch: "MC", reserveNotOnActiveDuty: true,
+                  commanding: true, acting: true},
+            "NAME / MAJ, MC, USAR / Acting Commander"],
+
+        // fig D-22, reserve warrant officer - USAR is the branch, per its note.
+        ["D-22", {name: "Name", grade: "CW3", reserveNotOnActiveDuty: true,
+                  title: "Chief, Systems Division"},
+            "NAME / CW3, USAR / Chief, Systems Division"],
+    ];
+
+    for (const [fig, signer, expected] of D) {
+        check(`fig ${fig}: ${expected.replace(/ \/ /g, ", ")}`,
+            block(signer), expected, `AR 25-50, fig ${fig}`);
+    }
+
+    // fig D-10, letters. Every grade spelled out, no branch for anyone, and
+    // "U.S. Army" - or "U.S. Army Reserve" - in the branch's place.
+    const letters = [
+        [{name: "Name", grade: "MG", commanding: true},
+            "Name / Major General, U.S. Army / Commanding"],
+        [{name: "Name", grade: "COL", branch: "GS", title: "Chief of Staff"},
+            "Name / Colonel, U.S. Army / Chief of Staff"],
+        [{name: "Name", grade: "MAJ", branch: "TC", title: "Transportation Officer"},
+            "Name / Major, U.S. Army / Transportation Officer"],
+        [{name: "Name", grade: "LTG", title: "Deputy Chief of Staff for\nPersonnel"},
+            "Name / Lieutenant General, U.S. Army / Deputy Chief of Staff for / Personnel"],
+        [{name: "Name", grade: "WO1", title: "Chief, Signal Office"},
+            "Name / Warrant Officer, U.S. Army / Chief, Signal Office"],
+        [{name: "Name", grade: "MAJ", branch: "AG", reserveNotOnActiveDuty: true,
+          title: "Assistant Adjutant General"},
+            "Name / Major, U.S. Army Reserve / Assistant Adjutant General"],
+        [{name: "Name", grade: "CPT", branch: "AG", title: "Assistant Adjutant General"},
+            "Name / Captain, U.S. Army / Assistant Adjutant General"],
+        [{name: "Name", civilian: true, title: "Director, Nuclear Testing\nand Accident Prevention"},
+            "Name / Director, Nuclear Testing / and Accident Prevention"],
+    ];
+    for (const [signer, expected] of letters) {
+        check(`fig D-10: ${expected.replace(/ \/ /g, ", ")}`,
+            block(signer, "letter"), expected, "AR 25-50, fig D-10 and para 6-4f(1)");
+    }
+
+    // Table 6-1 and appendix D disagree on the spelled-out warrant officer
+    // grade. Both halves are pinned so neither can drift into the other.
+    {
+        const {spellOutGrade, spellOutGradeForSignature} = await import("./signature-blocks.js");
+        check("table 6-1 spells CW3 with the numeral",
+            spellOutGrade("CW3"), "Chief Warrant Officer 3", "AR 25-50, table 6-1");
+        check("a signature block spells CW3 without it, per figs D-10 and D-13",
+            spellOutGradeForSignature("CW3"), "Chief Warrant Officer",
+            "AR 25-50, figs D-10 and D-13");
+        check("WO1 in a signature block is \"Warrant Officer\"",
+            spellOutGradeForSignature("WO1"), "Warrant Officer", "AR 25-50, fig D-10");
+        check("no other grade is affected by the warrant officer exception",
+            spellOutGradeForSignature("MG"), spellOutGrade("MG"), "AR 25-50, table 6-1");
+    }
+
+    checkTrue("dropping a branch on a letter is reported, not done silently",
+        buildSignature({name: "N", grade: "MAJ", branch: "AG", title: "S1"}, "letter")
+            .findings.some((f) => f.rule === "letter-branch-dropped"),
+        "AR 25-50, para 6-5c(8)");
+    checkTrue("a medical corps branch survives onto a letter",
+        buildSignature({name: "N", grade: "COL", branch: "MC", title: "Command Surgeon"}, "letter")
+            .lines[1] === "Colonel, MC",
+        "AR 25-50, para 6-5c(9)");
+
+    // Chaplains - para 6-5c. No comma before the designation, unlike every
+    // other grade line in the appendix.
+    check("para 6-5c: a chaplain's grade is parenthesized, with no comma before USA",
+        block({name: "J. Jones", grade: "CPT", chaplain: true}),
+        "J. JONES / Chaplain (CPT) USA", "AR 25-50, para 6-5c");
+    check("para 6-7: a reserve chaplain uses USAR in USA's place",
+        block({name: "Name", grade: "MAJ", chaplain: true}),
+        "NAME / Chaplain (MAJ) USA", "AR 25-50, para 6-5c(6)");
+    check("para 6-7: a chaplain not on active duty uses USAR",
+        block({name: "Name", grade: "MAJ", chaplain: true, reserveNotOnActiveDuty: true}),
+        "NAME / Chaplain (MAJ) USAR", "AR 25-50, para 6-7");
+    checkTrue("the unverified chaplain-on-a-letter form is flagged, not invented",
+        buildSignature({name: "N", grade: "MAJ", chaplain: true}, "letter")
+            .findings.some((f) => f.rule === "chaplain-letter-form-unverified"),
+        "AR 25-50, figs D-23 and D-24");
+
+    // Army National Guard - para 6-5c(10) and 6-5c(11).
+    check("para 6-5c(11): a Guard NCO not on active duty uses the State abbreviation",
+        block({name: "Name", grade: "SFC", nationalGuardNotOnActiveDuty: true,
+               state: "KS", title: "Platoon Sergeant"}),
+        "NAME / SFC, KSARNG / Platoon Sergeant", "AR 25-50, para 6-5c(11)");
+    check("para 6-5c(11): a Guard officer not on active duty keeps the branch",
+        block({name: "Name", grade: "MAJ", branch: "AG", nationalGuardNotOnActiveDuty: true,
+               state: "KS", title: "S1"}),
+        "NAME / MAJ, AG, KSARNG / S1", "AR 25-50, para 6-5c(11)");
+    check("para 6-5c(10): a Title 10 Guard officer uses USA",
+        block({name: "Name", grade: "MG", jointCommand: true, title: "Deputy Commander"}),
+        "NAME / Major General, USA / Deputy Commander", "AR 25-50, para 6-5c(10)");
+    checkTrue("a Guard signer with no State abbreviation is reported",
+        buildSignature({name: "N", grade: "SFC", nationalGuardNotOnActiveDuty: true, title: "T"})
+            .findings.some((f) => f.rule === "arng-state-missing"),
+        "AR 25-50, para 6-5c(11)");
+
+    // Joint commands and contract surgeons - paras 6-5c(8) and 6-8b.
+    check("para 6-5c(8): an officer at a Joint command uses only USA",
+        block({name: "Name", grade: "LTC", branch: "IN", jointCommand: true, title: "J3 Plans"}),
+        "NAME / LTC, USA / J3 Plans", "AR 25-50, para 6-5c(8)");
+    check("para 6-8b: a contract surgeon uses USA",
+        block({name: "Name", grade: "COL", contractSurgeon: true, title: "Contract Surgeon"}),
+        "NAME / COL, USA / Contract Surgeon", "AR 25-50, para 6-8b");
+
+    // Para 6-3c: signing for another person is a handwritten act, so the typed
+    // block must NOT change - the rule is reported instead.
+    {
+        const forAnother = buildSignature(
+            {name: "Name", grade: "COL", branch: "IN", title: "Commander", signingForAnother: true});
+        check("para 6-3c: the typed block is unchanged when someone signs for the named official",
+            forAnother.lines.join(" / "), "NAME / COL, IN / Commander", "AR 25-50, para 6-3c");
+        checkTrue("para 6-3c: the handwritten \"for\" is reported to the drafter",
+            forAnother.findings.some((f) => f.rule === "signing-for-another"),
+            "AR 25-50, para 6-3c");
+    }
 
     checkTrue("an enlisted block is not asked for a branch",
         buildSignature({name: "N", grade: "SFC", title: "Platoon Sergeant"})

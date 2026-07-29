@@ -83,6 +83,37 @@ export function spellOutGrade(grade) {
 }
 
 /**
+ * Table 6-1 and appendix D disagree about the spelled-out warrant officer
+ * grade, and the disagreement is real, not a typo.
+ *
+ * Table 6-1 carries the numeral: "CW3  Chief Warrant Officer 3". Both figures
+ * that spell a warrant officer's grade in a signature block drop it - figure
+ * D-13 prints "Chief Warrant Officer, GS" and figure D-10 prints "Warrant
+ * Officer, U.S. Army". Neither is a placeholder: the same figures name Major
+ * General, Lieutenant General, Colonel, Major and Captain exactly, so the
+ * missing numeral is a choice, and it is made twice in two figures.
+ *
+ * The figures win here because they are examples of the thing being built - a
+ * signature block. Table 6-1 stays the authority everywhere else, which is why
+ * spellOutGrade() above is unchanged.
+ */
+export const WARRANT_OFFICER_SIGNATURE_TITLES = {
+    CW5: "Chief Warrant Officer",
+    CW4: "Chief Warrant Officer",
+    CW3: "Chief Warrant Officer",
+    CW2: "Chief Warrant Officer",
+    WO1: "Warrant Officer",
+};
+export const WARRANT_OFFICER_TITLE_CITE = "AR 25-50, figs D-10 and D-13 (table 6-1 carries the numeral)";
+
+/** The grade as it is spelled out in a signature block specifically. */
+export function spellOutGradeForSignature(grade) {
+    const abbr = normalizeGrade(grade);
+    if (!abbr) return null;
+    return WARRANT_OFFICER_SIGNATURE_TITLES[abbr] ?? GRADE_ABBREVIATIONS[abbr];
+}
+
+/**
  * Designations that replace the branch abbreviation entirely.
  *
  *   GS / IG - "Officers assigned or detailed as general staff officers and
@@ -100,7 +131,40 @@ export const DESIGNATIONS = {
     army: "USA",
     armyLetters: "U.S. Army",
     reserve: "USAR",
+    reserveLetters: "U.S. Army Reserve",
     retired: "USA Retired",
+};
+
+/**
+ * Branches that survive onto a letter.
+ *
+ * "Do not use military abbreviations on letters; use 'U.S. Army.'" - 6-4f(1),
+ * and figure D-10 carries no branch at all: "Major, U.S. Army", "Captain,
+ * U.S. Army", "Warrant Officer, U.S. Army". Para 6-5c(9) names the exception:
+ * "Branch designation should be used in letters only when necessary for
+ * credibility. For example, use medical corps or chaplain."
+ */
+export const LETTER_BRANCH_EXCEPTIONS = ["MC", "CH"];
+export const LETTER_BRANCH_CITE = "AR 25-50, paras 6-4f(1), 6-5c(8), and 6-5c(9)";
+
+/**
+ * "Army National Guard personnel not on active duty will use the two-letter
+ *  State abbreviation followed by 'ARNG'" - para 6-5c(11), for example KSARNG.
+ * Title 10 Guard personnel use "USA" instead - para 6-5c(10).
+ */
+export const nationalGuardDesignation = (state) => `${String(state ?? "").toUpperCase()}ARNG`;
+export const NATIONAL_GUARD_CITE = "AR 25-50, paras 6-5c(10) and 6-5c(11)";
+
+/**
+ * "The person signing will write his or her own name and add the word 'for' in
+ *  front of the typed name in the signature block." - para 6-3c
+ *
+ * The word is added by hand at signing, so the typed block is unchanged. This
+ * is reported rather than rendered, because typing it would be wrong.
+ */
+export const SIGNING_FOR_ANOTHER = {
+    cite: "AR 25-50, para 6-3c",
+    instruction: "The person signing writes their own name and adds the word \"for\" by hand in front of the typed name. The typed signature block stays the absent official's and is not changed.",
 };
 
 /**
@@ -111,14 +175,25 @@ export const DESIGNATIONS = {
  * @param {string} [signer.grade]       "MAJ" or "Major". Omit for civilians.
  * @param {string} [signer.branch]      Branch abbreviation, for example "IN", "AG".
  * @param {string} signer.title         Duty title. - para 6-4a(2)
+ * @param {string} [signer.organization] Last line when the letterhead does not
+ *                                      carry it. - para 6-5d, fig D-9
  * @param {boolean} [signer.civilian]   Civilian official. - paras 6-4a note 2, 6-8
  * @param {boolean} [signer.commanding] Append "Commanding". - para 6-4a(3)
+ * @param {boolean} [signer.acting]     Acting incumbent, so the title becomes
+ *                                      "Acting Commander". - para 6-5e(1), fig D-21
+ * @param {boolean} [signer.spellOut]   Spell out the grade even when the
+ *                                      abbreviation is allowed. - para 6-5c(1), fig D-12
  * @param {boolean} [signer.generalStaff]      Use "GS". - para 6-5c(7)
  * @param {boolean} [signer.inspectorGeneral]  Use "IG". - para 6-5c(7)
  * @param {boolean} [signer.jointCommand]      Use "USA". - para 6-5c(8)
+ * @param {boolean} [signer.contractSurgeon]   Use "USA". - para 6-8b
  * @param {boolean} [signer.chaplain]   "Chaplain (MAJ) USA". - para 6-5c(6)
  * @param {boolean} [signer.retired]    "USA Retired", no branch. - para 6-6
- * @param {boolean} [signer.reserveNotOnActiveDuty] Add "USAR". - para 6-7
+ * @param {boolean} [signer.reserveNotOnActiveDuty] Use "USAR". - para 6-7, figs D-20 to D-22
+ * @param {boolean} [signer.nationalGuardNotOnActiveDuty] Use "<ST>ARNG". - para 6-5c(11)
+ * @param {string}  [signer.state]      Two-letter State, for the ARNG designation.
+ * @param {boolean} [signer.signingForAnother] Someone signs for the named
+ *                                      official, adding "for" by hand. - para 6-3c
  * @param {"memorandum"|"letter"} [correspondence]
  * @returns {{name: string, gradeAndBranch: string|null, title: string,
  *            lines: string[], findings: object[]}}
@@ -158,26 +233,46 @@ export function buildSignature(signer, correspondence = "memorandum") {
     // correspondence, grade abbreviations are optional" (para 6-5c(1)), and
     // figures D-2 and D-14 show both forms - "Lieutenant Colonel, AG" beside
     // "MSG, USA". `spellOut` selects the long form.
-    const spelled = spellOutGrade(abbr);
+    const spelled = spellOutGradeForSignature(abbr);
     const mustSpell = isLetter || isGeneralOfficer(abbr) || signer.spellOut === true;
     const gradeText = mustSpell
         ? (spelled ?? signer.grade ?? "")
         : (abbr ?? signer.grade ?? "");
 
+    // The component designation - the thing that says which Army this signer
+    // belongs to. It occupies the slot "USA" would occupy rather than stacking
+    // on top of it: figure D-20 is "SFC, USAR", not "SFC, USA, USAR", and the
+    // note under figure D-22 says a USAR warrant officer "should always use
+    // USAR as their branch". Where a real branch is carried, para 6-7 puts the
+    // component after it instead - figure D-21, "MAJ, MC, USAR".
+    let component = isLetter ? DESIGNATIONS.armyLetters : DESIGNATIONS.army;
+    if (signer.reserveNotOnActiveDuty) {
+        component = isLetter ? DESIGNATIONS.reserveLetters : DESIGNATIONS.reserve;
+    } else if (signer.nationalGuardNotOnActiveDuty) {
+        // "will use the two-letter State abbreviation followed by ARNG" - 6-5c(11)
+        if (!signer.state) {
+            findings.push({
+                rule: "arng-state-missing",
+                message: "An Army National Guard signer not on active duty needs the two-letter State abbreviation that precedes \"ARNG\".",
+                cite: NATIONAL_GUARD_CITE,
+            });
+        }
+        component = nationalGuardDesignation(signer.state);
+    }
+
     // Designation, in the order the regulation resolves conflicts: retired
-    // status wins, then the GS/IG detail, then the categories that take USA,
-    // then the branch.
+    // status wins, then the GS/IG detail, then the categories that carry no
+    // branch at all, then the branch itself.
     //
-    // Enlisted personnel take "USA", never a branch abbreviation. Figure D-14
-    // shows this throughout - "Command Sergeant Major, USA", "MSG, USA",
-    // "SFC, USA" - and a reservist not on active duty takes "USAR" in its
-    // place rather than in addition to it (fig D-20).
+    // Enlisted personnel take the component, never a branch abbreviation.
+    // Figure D-14 shows this throughout - "Command Sergeant Major, USA",
+    // "MSG, USA", "SFC, USA".
+    const branchKeptOnLetter = LETTER_BRANCH_EXCEPTIONS.includes(
+        String(signer.branch ?? "").toUpperCase());
+
     let designation;
-    if (isEnlisted(abbr) && !signer.retired) {
-        designation = signer.reserveNotOnActiveDuty
-            ? DESIGNATIONS.reserve
-            : (isLetter ? DESIGNATIONS.armyLetters : DESIGNATIONS.army);
-    } else if (signer.retired) {
+    let trailing = null;      // component appended after a real branch, per 6-7
+    if (signer.retired) {
         // "no organization or branch of the Army will be shown" - para 6-6
         designation = DESIGNATIONS.retired;
         if (signer.branch) {
@@ -187,15 +282,32 @@ export function buildSignature(signer, correspondence = "memorandum") {
                 cite: "AR 25-50, para 6-6",
             });
         }
-    } else if (signer.generalStaff) {
-        designation = DESIGNATIONS.generalStaff;
-    } else if (signer.inspectorGeneral) {
-        designation = DESIGNATIONS.inspectorGeneral;
-    } else if (isGeneralOfficer(abbr) || signer.jointCommand || isWarrantOfficer(abbr)) {
-        designation = isLetter ? DESIGNATIONS.armyLetters : DESIGNATIONS.army;
-    } else if (isLetter) {
-        // "Do not use military abbreviations on letters; use 'U.S. Army.'" - 6-4f(1)
-        designation = DESIGNATIONS.armyLetters;
+    } else if (signer.generalStaff || signer.inspectorGeneral) {
+        // "In these cases, officers will not use their branch designation."
+        //  - para 6-5c(7). Figure D-2 shows this outranks the general-officer
+        //  rule: "Major General, GS", not "Major General, USA". Figure D-13
+        //  shows it reaching warrant officers: "Chief Warrant Officer, GS".
+        designation = signer.generalStaff
+            ? DESIGNATIONS.generalStaff
+            : DESIGNATIONS.inspectorGeneral;
+        if (component !== DESIGNATIONS.army && component !== DESIGNATIONS.armyLetters) {
+            trailing = component;
+        }
+    } else if (isEnlisted(abbr) || isGeneralOfficer(abbr) || isWarrantOfficer(abbr)
+               || signer.jointCommand || signer.contractSurgeon) {
+        // General officers (6-5c(3)), warrant officers (6-5c(5)), officers at a
+        // Joint command headquarters (6-5c(8)), and contract surgeons (6-8b)
+        // carry no branch, so the component stands alone.
+        designation = component;
+    } else if (isLetter && !branchKeptOnLetter) {
+        designation = component;
+        if (signer.branch) {
+            findings.push({
+                rule: "letter-branch-dropped",
+                message: `A letter carries no branch abbreviation, so "${signer.branch}" is replaced by "${component}". Branch is kept only where credibility requires it, such as medical corps or chaplain.`,
+                cite: LETTER_BRANCH_CITE,
+            });
+        }
     } else {
         designation = signer.branch ?? null;
         if (!designation) {
@@ -205,37 +317,66 @@ export function buildSignature(signer, correspondence = "memorandum") {
                 cite: "AR 25-50, para 6-4f(2)",
             });
         }
+        // "Add the identification 'USAR' after [...] the branch assignment of
+        //  commissioned officers." - para 6-7, figure D-21 "MAJ, MC, USAR".
+        if (component !== DESIGNATIONS.army && component !== DESIGNATIONS.armyLetters) {
+            trailing = component;
+        }
     }
 
     // "For chaplains, put the grade in parentheses and precede it with the word
-    //  'Chaplain'" - para 6-5c(c), for example "Chaplain (CPT) USA".
+    //  'Chaplain'" - para 6-5c, for example "Chaplain (CPT) USA". There is no
+    //  comma before the designation, unlike every other grade line.
     let gradeAndBranch;
     if (signer.chaplain) {
-        gradeAndBranch = `Chaplain (${abbr ?? signer.grade})${" "}${DESIGNATIONS.army}`;
+        if (isLetter) {
+            // Figures D-23 and D-24 govern chaplain blocks and are on AR page
+            // 93, outside the pages this module was built against. The
+            // memorandum form is quoted verbatim in para 6-5c; the letter form
+            // is not, so it is reported rather than invented.
+            findings.push({
+                rule: "chaplain-letter-form-unverified",
+                message: "The chaplain signature block on a letter is not specified in the text of AR 25-50. Figures D-23 and D-24 govern it; check them before releasing.",
+                cite: "AR 25-50, figs D-23 and D-24",
+            });
+        }
+        const chaplainComponent = signer.retired ? DESIGNATIONS.retired : component;
+        gradeAndBranch = `Chaplain (${abbr ?? signer.grade}) ${chaplainComponent}`;
     } else {
-        gradeAndBranch = [gradeText, designation].filter(Boolean).join(", ");
+        gradeAndBranch = [gradeText, designation, trailing].filter(Boolean).join(", ");
     }
 
-    // "Add the identification 'USAR' after the grade of enlisted personnel or
-    //  the branch assignment of commissioned officers." - para 6-7.
-    // Enlisted blocks already carry USAR in place of USA, so this appends only
-    // for commissioned and warrant officers.
-    if (signer.reserveNotOnActiveDuty && !signer.retired && !isEnlisted(abbr)
-        && !String(gradeAndBranch).includes(DESIGNATIONS.reserve)) {
-        gradeAndBranch = `${gradeAndBranch}, ${DESIGNATIONS.reserve}`;
+    if (signer.signingForAnother) {
+        findings.push({
+            rule: "signing-for-another",
+            message: SIGNING_FOR_ANOTHER.instruction,
+            cite: SIGNING_FOR_ANOTHER.cite,
+        });
     }
 
     return finish(name, gradeAndBranch, signer, findings);
 }
 
 function finish(name, gradeAndBranch, signer, findings) {
-    // "'Commanding' for commanders to denote the active exercise of
-    //  authority." - para 6-4a(3)
-    const title = signer.commanding
-        ? [signer.title, "Commanding"].filter(Boolean).join("\n")
-        : (signer.title ?? "");
+    const titleLines = signer.title ? String(signer.title).split("\n") : [];
 
-    const lines = [name, gradeAndBranch, ...String(title).split("\n")].filter(Boolean);
+    // "'Commanding' for commanders to denote the active exercise of
+    //  authority." - para 6-4a(3). An officer serving in an acting capacity
+    //  takes the acting title instead (para 6-5e(1)) - figure D-21 is "Acting
+    //  Commander", not "Commanding", and figure D-15 is "Acting First
+    //  Sergeant".
+    if (signer.commanding) {
+        const word = signer.acting ? "Acting Commander" : "Commanding";
+        if (!titleLines.some((l) => l.trim() === word)) titleLines.push(word);
+    }
+
+    // "When the organization is not identified in the letterhead, show it as
+    //  the last line of the signature block." - para 6-5d. Figure D-9 is the
+    //  officer writing as an individual: "CPT, AR / Co B, 2/34 Armor".
+    if (signer.organization) titleLines.push(String(signer.organization));
+
+    const title = titleLines.join("\n");
+    const lines = [name, gradeAndBranch, ...titleLines].filter(Boolean);
 
     // "Civilians will use only a two-line signature block consisting of name
     //  and title, unless a third line is necessary for a long title." - 6-4a note 2
