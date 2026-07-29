@@ -2261,9 +2261,30 @@ const FIELD_TEMPLATE = {
         method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(form)});
 
     const home = await fetch(`${base}/`);
+    const homeHtml = await home.text();
     check("the page is served", home.status, 200, "front end");
     checkTrue("the page needs no network of its own",
-        !/\b(src|href)\s*=\s*["']https?:/i.test(await home.text()), "front end");
+        !/\b(src|href)\s*=\s*["']https?:/i.test(homeHtml), "front end");
+
+    /*
+     * The page's script is written inside a template literal, so an escape
+     * that collapses one level - `\"` becoming `"` - produces a syntax error
+     * that takes the *whole* script with it: no Generate, no download, no
+     * message saying why. Parsing what is actually served is the only way to
+     * catch that, because the server is perfectly happy to hand it over.
+     */
+    {
+        const script = /<script>([\s\S]*?)<\/script>/.exec(homeHtml)?.[1] ?? "";
+        checkTrue("the page carries a script", script.trim().length > 0, "front end");
+        let parsed = true;
+        try {
+            // eslint-disable-next-line no-new-func
+            new Function(script);
+        } catch {
+            parsed = false;
+        }
+        checkTrue("the page's script parses", parsed, "front end");
+    }
 
     const generated = await (await post("/generate")).json();
     check("generate returns the type it read", generated.title, "Memorandum", "AR 25-50, para 2-4");
@@ -2332,6 +2353,165 @@ const FIELD_TEMPLATE = {
     checkTrue("the front end does not import the CLI entry point",
         !/from\s+["']\.\/army-memo-agent\.js["']/.test(serverSource),
         "no import cycle through a top-level await");
+}
+
+// ---------------------------------------------------------------------------
+// The drafting model
+// ---------------------------------------------------------------------------
+
+/*
+ * What the model writes is the one part of a memorandum this module cannot
+ * check against AR 25-50 - that is what the validator is for. What it *can*
+ * check is everything around the model: that a job gets the model to itself,
+ * that one request's memorandum cannot inform the next one's, that a missing
+ * model degrades into a clear message rather than a stack trace, and that a
+ * draft comes back as something you can still edit.
+ *
+ * `stubDrafter` is the seam. The loop cannot tell it from the real thing,
+ * which is the point of keeping the drafter behind an interface.
+ */
+{
+    const {
+        stubDrafter, loadDrafter, getDrafter, disposeDrafter, modelAvailable,
+        MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, DEFAULT_MODEL_PATH,
+    } = await import("./memo-drafter.js");
+    const {bodyFromParagraphs, parseBody, createMemoServer} = await import("./memo-server.js");
+    const {OFFLINE_CONTENT, OFFLINE_CONTEXT} = await import("./army-memo-agent.js");
+    const {buildParagraphTree, runMemoAgent} = await import("./memo-intent.js");
+
+    // The schema is the guardrail: the model is physically unable to emit
+    // anything outside it. So it must not contain a single thing the model has
+    // no standing to decide.
+    check("the model may write only a subject, addressees, and paragraphs",
+        Object.keys(MEMO_CONTENT_SCHEMA.properties).sort(),
+        ["addressees", "paragraphs", "subject"], "AR 25-50, para 2-4");
+    for (const forbidden of ["officeSymbol", "date", "signature", "letterhead",
+                             "arimsRecordNumber", "authorityLine"]) {
+        checkTrue(`the model cannot supply ${forbidden}, which is a matter of record`,
+            !(forbidden in MEMO_CONTENT_SCHEMA.properties), "AR 25-50, para 2-4a");
+    }
+    check("a paragraph carries a depth, not a label",
+        Object.keys(MEMO_CONTENT_SCHEMA.properties.paragraphs.items.properties).sort(),
+        ["level", "text"], "AR 25-50, para 2-4b(4)(b)");
+    checkTrue("the system prompt tells the model it never formats",
+        /never format/i.test(SYSTEM_PROMPT), "AR 25-50, para 2-4");
+
+    // A missing model is a message, not a crash.
+    checkTrue("a model path that does not exist is reported, not thrown through",
+        !(await modelAvailable("/nonexistent/model.gguf")), "no model present");
+    {
+        let message = null;
+        await loadDrafter({modelPath: "/nonexistent/model.gguf"}).catch((e) => { message = e.message; });
+        checkTrue("loading a missing model explains where to put one",
+            message?.includes("/nonexistent/model.gguf") && /DOWNLOAD\.md|MEMO_MODEL_PATH/.test(message),
+            "no model present");
+    }
+    // A failed load must not be cached, or the process can never recover.
+    {
+        await getDrafter({modelPath: "/nonexistent/model.gguf"}).catch(() => {});
+        let second = null;
+        await getDrafter({modelPath: "/nonexistent/model.gguf"}).catch((e) => { second = e.message; });
+        checkTrue("a failed load is retried rather than cached forever",
+            Boolean(second), "no model present");
+        await disposeDrafter();
+    }
+
+    // Jobs run one at a time, and each starts from a cleared history.
+    {
+        let concurrent = 0, peak = 0;
+        const slow = stubDrafter(async () => {
+            concurrent += 1;
+            peak = Math.max(peak, concurrent);
+            await new Promise((r) => setTimeout(r, 15));
+            concurrent -= 1;
+            return OFFLINE_CONTENT;
+        });
+        await Promise.all([1, 2, 3, 4].map(() => slow.withSession((draft) => draft("r", null))));
+        check("concurrent drafting jobs are serialized", peak, 1, "one sequence, one prompt");
+    }
+    {
+        // A job that throws must not wedge the queue behind it.
+        const flaky = stubDrafter(async (request) => {
+            if (request === "boom") throw new Error("nope");
+            return OFFLINE_CONTENT;
+        });
+        await flaky.withSession((draft) => draft("boom", null)).catch(() => {});
+        const after = await flaky.withSession((draft) => draft("fine", null));
+        checkTrue("a failed job does not block the ones behind it",
+            after.subject.length > 0, "one sequence, one prompt");
+    }
+
+    // The loop feeds findings back and keeps the better draft.
+    {
+        const seen = [];
+        const drafter = stubDrafter(async (request, feedback) => {
+            seen.push(feedback);
+            return OFFLINE_CONTENT;
+        });
+        const {memo} = await drafter.withSession((draft) => runMemoAgent({
+            request: "notify the battalions",
+            context: {...OFFLINE_CONTEXT, type: "standard"},
+            draft,
+        }));
+        check("the first pass gets no feedback", seen[0], null, "draft/validate/repair");
+        checkTrue("the loop produces a compliant memorandum from a stub",
+            validateMemo(memo).compliant, "AR 25-50");
+    }
+
+    // A draft comes back as form values, so it is still yours to edit.
+    {
+        const body = "Top one.\n\nTop two:\n\n  Sub a.\n\n  Sub b.\n\nBack to top.";
+        check("a paragraph tree round-trips through the textarea syntax",
+            bodyFromParagraphs(buildParagraphTree(parseBody(body))), body,
+            "AR 25-50, para 2-4b(4)(b)");
+    }
+
+    // The whole route, over real HTTP, with the model stubbed out.
+    {
+        const server = createMemoServer({drafter: stubDrafter(async () => OFFLINE_CONTENT)});
+        await new Promise((r) => server.listen(0, r));
+        const base = `http://127.0.0.1:${server.address().port}`;
+        const post = (path, body) => fetch(`${base}${path}`, {
+            method: "POST", headers: {"content-type": "application/json"},
+            body: JSON.stringify(body)});
+
+        const drafted = await (await post("/draft", {request: "tell the battalions range 14 closes"})).json();
+        checkTrue("the draft route returns a subject", drafted.subject?.length > 0, "front end");
+        checkTrue("and a body in the textarea syntax",
+            parseBody(drafted.body).length > 0, "front end");
+        checkTrue("and reports how many passes it took", Number.isInteger(drafted.passes), "front end");
+        checkTrue("and every finding it fed back is cited",
+            (drafted.findings ?? []).every((f) => f.rule && f.cite), "front end");
+
+        // What the model wrote still has to go through the same formatter.
+        const regenerated = await (await post("/generate", {
+            request: "tell the battalions range 14 closes",
+            subject: drafted.subject, body: drafted.body, addressees: drafted.addressees,
+        })).json();
+        check("a drafted memorandum renders with no errors",
+            regenerated.findings.filter((f) => f.severity === "error"), [], "AR 25-50");
+
+        check("a draft with nothing to say is refused",
+            (await post("/draft", {})).status, 400, "front end");
+
+        const health = await (await fetch(`${base}/health`)).json();
+        checkTrue("health reports whether a model is there", health.ok === true
+            && typeof health.model.available === "boolean", "front end");
+
+        await new Promise((r) => server.close(r));
+    }
+
+    // The default bind is loopback: this serves a Word file and loads a model
+    // on demand, so reaching it from off-box should be a decision.
+    {
+        const {readFile} = await import("fs/promises");
+        const read = (name) => readFile(new URL(`./${name}`, import.meta.url), "utf8");
+        checkTrue("the server binds loopback unless told otherwise",
+            /host = "127\.0\.0\.1"/.test(await read("memo-server.js")), "production default");
+        checkTrue("the model path can be set without editing anything",
+            DEFAULT_MODEL_PATH.length > 0 && /MEMO_MODEL_PATH/.test(await read("memo-drafter.js")),
+            "production default");
+    }
 }
 
 function hasPlaceholdersDeep(value) {

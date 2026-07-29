@@ -1,6 +1,6 @@
 # Code explanation: `army-memo-agent.js`
 
-Eleven files, each with one job:
+Twelve files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
@@ -11,9 +11,10 @@ Eleven files, each with one job:
 | `signature-blocks.js` | Chapter 6 and appendix D: table 6-1 grades, GS/IG, general officers, warrant officers, civilians, retired, USAR, ARNG, chaplains, authority lines. |
 | `templates.js` | One editable skeleton per memorandum type, with `[BRACKETED]` placeholders. |
 | `memo-validator.js` | Compliance checks. Every finding cites AR 25-50 and is tagged `content` or `format`. |
-| `memo-intent.js` | Request &rarr; memorandum type; content + facts of record &rarr; a spec. |
+| `memo-intent.js` | Request &rarr; memorandum type; content + facts of record &rarr; a spec; the draft/validate/repair loop. |
+| `memo-drafter.js` | The drafting model as a service: loaded once, one job at a time, no context bleed. |
 | `memo-server.js` | **The front end.** A page that takes a request and returns a checked memorandum and a Word file. |
-| `army-memo-agent.js` | The draft/validate/repair loop and the CLI. |
+| `army-memo-agent.js` | The CLI. |
 | `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
 
 ## Run
@@ -52,7 +53,8 @@ node examples/16_army-memo-agent/army-memo-agent.js --docx memo.docx \
 | `--docx <path>` | Word deliverable |
 | `--html <path>` / `--text <path>` | Previews |
 | `--seal <path>` | The DoD seal image, once (see `assets/README.md`) |
-| `--serve` | Open the front end on http://localhost:4250 (`--port` to change) |
+| `--serve` | Open the front end on http://localhost:4250 (`--port`, `--host` to change) |
+| `--model <path>` | A GGUF to draft with; `MEMO_MODEL_PATH` does the same |
 | `--offline` | Skip the model |
 
 The live path needs `models/Qwen3-1.7B-Q8_0.gguf` (see [DOWNLOAD.md](../../DOWNLOAD.md)). Everything except the drafting step runs without a model, which is the point - the parts that must be exactly right are the parts that do not need one.
@@ -275,13 +277,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-458 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+486 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 458/458 checks passed.
+# AR 25-50 layout verification: 486/486 checks passed.
 ```
 
 ---
@@ -552,7 +554,36 @@ Range Control will complete the following work:
 
 becomes `1.`, `2.`, `a.`, `b.` — positioned on the quarter-inch grid, with continuation lines returning to the left margin.
 
-Four routes, all POST except the first two: `/` the page, `/seal.png` the seal, `/detect` the type, `/generate` a rendered preview plus cited findings, `/docx` the Word file, `/spec` the JSON you can re-render later with `--spec`.
+Routes: `GET /` the page, `GET /seal.png`, `GET /health`, `GET /types`; `POST /detect` the type, `POST /draft` the words, `POST /generate` a rendered preview plus cited findings, `POST /docx` the Word file, `POST /spec` the JSON you can re-render later with `--spec`.
+
+---
+
+## The drafting model
+
+`memo-drafter.js` exists because the CLI could afford to load a model, ask it one thing and throw it away, and a server cannot. It owns three things the CLI never had to think about:
+
+**Loaded once.** `getDrafter()` caches the *load promise*, not the loaded model — so requests that arrive during a cold start wait for the first load rather than each starting their own. A failed load is deliberately not cached, or a process that started before the volume mounted could never recover.
+
+**One at a time.** Jobs are serialized through a promise chain. Two concurrent prompts on one llama.cpp sequence interleave their tokens and corrupt both answers. The chain advances on failure as well as success — otherwise one error wedges every request behind it for the life of the process.
+
+**No bleed.** Each job starts from a cleared chat history. *Within* a job the repair passes share it on purpose, because the model needs to see the draft it is being asked to fix; across jobs it would mean one memorandum informing the next, and a context that grows until it overflows — a server that works for an hour and then stops.
+
+The grammar is what makes the arrangement safe:
+
+```javascript
+const grammar = await llama.createGrammarForJsonSchema(MEMO_CONTENT_SCHEMA);
+return grammar.parse(await session.prompt(prompt, {grammar}));
+```
+
+The model is physically unable to emit anything outside the schema, so the parse cannot fail and the layout code never has to defend itself against what the model said. Look at what the schema does **not** contain: no office symbol, no date, no signature block, no letterhead, no numbering, no spacing. Those are matters of record or matters of layout, and a model has no standing to supply either. `verify.js` asserts each absence, because the schema is the only thing standing between a language model and a document of record.
+
+`stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
+
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 486 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+
+Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
+
+---
 
 One structural note. `army-memo-agent.js` ends in a top-level `await main()`, so nothing it imports may import it back — the entry module's evaluation never completes, the cycle never settles, and `--serve` exits with *"unsettled top-level await"* instead of listening. `memo-intent.js` exists to hold what the CLI and the front end both need. `verify.js` asserts the cycle stays broken.
 

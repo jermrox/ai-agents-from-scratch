@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "memo": "node examples/16_army-memo-agent/army-memo-agent.js",
+    "memo:serve": "node examples/16_army-memo-agent/memo-server.js",
+    "memo:verify": "node examples/16_army-memo-agent/verify.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "type": "module",

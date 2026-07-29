@@ -34,166 +34,29 @@ import {renderText, renderHtmlDocument} from "./memo-formatter.js";
 import {validateMemo, formatReport, repairInstructions} from "./memo-validator.js";
 import {formatMemoDate, MEMO_TYPES} from "./ar25-50.js";
 import {createTemplate, describeTemplates} from "./templates.js";
-import {buildParagraphTree, assembleMemo, detectMemoType} from "./memo-intent.js";
+import {buildParagraphTree, assembleMemo, detectMemoType, runMemoAgent} from "./memo-intent.js";
+import {
+    getDrafter, disposeDrafter, stubDrafter, modelAvailable,
+    MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, DEFAULT_MODEL_PATH,
+} from "./memo-drafter.js";
 
 // Re-exported so the CLI stays the single import for callers that had them
 // here. They live in memo-intent.js now because the front end needs them too,
 // and a module with a top-level `await main()` cannot be imported from one it
 // imports itself.
-export {buildParagraphTree, assembleMemo, detectMemoType};
+export {buildParagraphTree, assembleMemo, detectMemoType, runMemoAgent};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ---------------------------------------------------------------------------
-// The contract the model fills in
-// ---------------------------------------------------------------------------
-
-/**
- * Paragraphs arrive flat with an explicit `level`, not as a nested tree.
- * A flat list is far easier to constrain with a grammar, and the agent rebuilds
- * the tree - which means the model cannot invent a fifth subdivision level that
- * AR 25-50 (fig 2-1) does not allow.
- */
-const MEMO_CONTENT_SCHEMA = {
-    type: "object",
-    properties: {
-        subject: {
-            type: "string",
-            description: "Ten words or less, no acronyms, no closing period.",
-        },
-        addressees: {
-            type: "array",
-            items: {type: "string"},
-            description: "Offices expected to complete the action.",
-        },
-        paragraphs: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    level: {type: "number", description: "0 main, 1 = a., 2 = (1), 3 = (a)"},
-                    text: {type: "string", description: "Sentence text only, no numbering."},
-                },
-                required: ["level", "text"],
-            },
-        },
-    },
-    required: ["subject", "addressees", "paragraphs"],
-};
-
-const SYSTEM_PROMPT = `You draft the CONTENT of U.S. Army memorandums. You never format them.
-
-Write in the Army style required by AR 25-50:
-- Bottom line up front: purpose sentence first, then the recommendation or main point.
-- Active voice. Put the actor before the verb.
-- Short words, sentences averaging about 15 words, paragraphs no longer than 10 lines.
-- Use "I," "you," and "we" rather than "this office" or "this headquarters."
-- Never begin a sentence with "It is," "There is," or "There are."
-- Capitalize Soldier, Family, and Civilian in their Army senses.
-- Military time only, four digits, and never the word "hours" after it.
-- The LAST paragraph is always the point of contact: grade, first and last name,
-  office symbol, telephone number, and email address.
-- Subject line: ten words or less, no acronyms, no closing period.
-
-Do not number your paragraphs. Do not write "MEMORANDUM FOR", "SUBJECT:", dates,
-signature blocks, or any layout. Set the level field instead: 0 for a main
-paragraph, 1 for an "a." subparagraph, 2 for "(1)", 3 for "(a)". If you use
-level 1 under a paragraph, use it at least twice.`;
-
-// ---------------------------------------------------------------------------
-// Flat levels -> paragraph tree
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Assembling the full memo
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // The draft / validate / repair loop
 // ---------------------------------------------------------------------------
 
-/**
- * Draft, render, validate, and re-draft until the content findings clear or the
- * pass budget runs out.
- *
- * `draft` is any async (request, feedback) => content function. The offline demo
- * passes a stub; the live path passes the constrained LLM call. Keeping it a
- * parameter is what makes the loop testable without a model.
- */
-export async function runMemoAgent({request, context, draft, maxPasses = 3, onPass}) {
-    let content = await draft(request, null);
-    let best = {memo: assembleMemo(content, context)};
-    best.result = validateMemo(best.memo);
-
-    for (let pass = 1; pass < maxPasses; pass++) {
-        onPass?.({pass, result: best.result, memo: best.memo});
-
-        const instructions = repairInstructions(best.result);
-        if (instructions.length === 0) break;
-
-        content = await draft(request, instructions);
-        const memo = assembleMemo(content, context);
-        const result = validateMemo(memo);
-
-        // Keep the better draft rather than the latest one - a repair pass can
-        // trade one advisory for two, and a stub drafter returns the same text
-        // every time.
-        if (score(result) >= score(best.result)) break;
-        best = {memo, result};
-    }
-
-    return best;
-}
-
-/** Lower is better: errors dominate, advisories break ties. */
-function score(result) {
-    return result.errors.length * 100 + result.warnings.length;
-}
 
 // ---------------------------------------------------------------------------
 // Live path: node-llama-cpp with a JSON-schema grammar
 // ---------------------------------------------------------------------------
 
-async function createLlmDrafter() {
-    const {getLlama, LlamaChatSession} = await import("node-llama-cpp");
-
-    const llama = await getLlama({debug: false});
-    const model = await llama.loadModel({
-        modelPath: path.join(__dirname, "..", "..", "models", "Qwen3-1.7B-Q8_0.gguf"),
-    });
-    const context = await model.createContext({contextSize: 4096});
-    const session = new LlamaChatSession({
-        contextSequence: context.getSequence(),
-        systemPrompt: SYSTEM_PROMPT,
-    });
-
-    // The grammar is the guardrail. The model physically cannot emit prose
-    // outside the schema, so the parse below never fails.
-    const grammar = await llama.createGrammarForJsonSchema(MEMO_CONTENT_SCHEMA);
-
-    const draft = async (request, feedback) => {
-        const prompt = feedback
-            ? [
-                "Revise the memorandum content. Keep what already works and fix only these findings:",
-                ...feedback,
-                "",
-                `Original request: ${request}`,
-            ].join("\n")
-            : `Draft the content for this memorandum.\n\nRequest: ${request}`;
-
-        const answer = await session.prompt(prompt, {grammar});
-        return grammar.parse(answer);
-    };
-
-    const dispose = () => {
-        session.dispose();
-        context.dispose();
-        model.dispose();
-        llama.dispose();
-    };
-
-    return {draft, dispose};
-}
 
 // ---------------------------------------------------------------------------
 // Offline path: a canned draft, so the pipeline runs with no model present
@@ -253,7 +116,7 @@ function parseArgs(argv) {
     const args = {
         offline: false, html: null, text: null, docx: null, request: null,
         template: null, spec: null, emitSpec: null, seal: null, list: false,
-        serve: false, port: undefined,
+        serve: false, port: undefined, host: undefined, model: null,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -268,6 +131,8 @@ function parseArgs(argv) {
         else if (a === "--seal") args.seal = argv[++i];
         else if (a === "--serve") args.serve = true;
         else if (a === "--port") args.port = Number(argv[++i]);
+        else if (a === "--host") args.host = argv[++i];
+        else if (a === "--model") args.model = argv[++i];
         else args.request = args.request ? `${args.request} ${a}` : a;
     }
     return args;
@@ -280,7 +145,7 @@ async function main() {
     // matters of record are placeholders you fill in afterwards.
     if (args.serve) {
         const {serve} = await import("./memo-server.js");
-        await serve({port: args.port, seal: args.seal});
+        await serve({port: args.port, host: args.host, seal: args.seal, modelPath: args.model});
         return;
     }
 
@@ -309,15 +174,15 @@ async function main() {
     let drafter;
     if (offline) {
         console.log("Running offline: canned content, real formatter and validator.\n");
-        drafter = {draft: async () => OFFLINE_CONTENT, dispose: () => {}};
+        drafter = stubDrafter(async () => OFFLINE_CONTENT);
     } else {
         try {
-            drafter = await createLlmDrafter();
+            drafter = await getDrafter(args.model ? {modelPath: args.model} : undefined);
         } catch (err) {
             console.error(`Could not start the drafting model: ${err.message}\n`);
-            console.error("Run `npm install`, then place Qwen3-1.7B-Q8_0.gguf under models/");
-            console.error("(see DOWNLOAD.md). Or use --offline: the formatter, the validator,");
-            console.error("and verify.js all run without a model.");
+            console.error("Run `npm install`, then place a GGUF under models/ (see DOWNLOAD.md),");
+            console.error("or set MEMO_MODEL_PATH. Or use --offline: the formatter, the");
+            console.error("validator, the .docx and verify.js all run without a model.");
             process.exitCode = 1;
             return;
         }
@@ -330,17 +195,19 @@ async function main() {
     if (type === "record") context.letterhead = null;   // plain paper - fig 2-17
     if (type === "record") context.authorityLine = null;
 
-    const {memo, result} = await runMemoAgent({
+    // One job holds the model for the whole draft/validate/repair loop, so the
+    // repair passes see the draft they are fixing.
+    const {memo} = await drafter.withSession((draft) => runMemoAgent({
         request,
         context,
-        draft: drafter.draft,
+        draft,
         onPass: ({pass, result}) => {
             const n = result.contentFindings.length;
             if (n > 0) console.log(`Pass ${pass}: ${n} content finding(s), re-drafting.`);
         },
-    });
+    }));
 
-    drafter.dispose();
+    await disposeDrafter();
     await emit(memo, args);
 }
 

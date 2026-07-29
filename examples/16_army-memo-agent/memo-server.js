@@ -35,7 +35,8 @@ import {validateMemo} from "./memo-validator.js";
 import {renderDocx} from "./memo-docx.js";
 import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
 import {createTemplate, describeTemplates, recordFieldPlaceholders, RECORD_FIELDS} from "./templates.js";
-import {detectMemoType, assembleMemo} from "./memo-intent.js";
+import {detectMemoType, assembleMemo, runMemoAgent} from "./memo-intent.js";
+import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,6 +68,20 @@ export function parseBody(text) {
             text: block.replace(/^[ \t]*- ?/, "").replace(/\s*\n\s*/g, " ").trim(),
         };
     }).filter((p) => p.text);
+}
+
+/**
+ * The inverse of parseBody(): a paragraph tree back into the textarea syntax,
+ * so what the model drafted lands in the form as something you can edit rather
+ * than as a finished document you can only accept or discard.
+ */
+export function bodyFromParagraphs(paragraphs = [], depth = 0) {
+    const out = [];
+    for (const p of paragraphs) {
+        if (p?.text) out.push("  ".repeat(depth) + p.text);
+        if (p?.children?.length) out.push(bodyFromParagraphs(p.children, depth + 1));
+    }
+    return out.join("\n\n");
 }
 
 /** A list entry per line, blanks dropped. */
@@ -219,6 +234,8 @@ const page = () => `<!doctype html>
       ${TYPES.map((t) => `<option value="${t.type}">${t.title} — ${t.cite}</option>`).join("")}
     </select>
     <p class="detected" id="detected"></p>
+    <button type="button" class="secondary" id="draft">Draft the words with the model</button>
+    <p class="detected" id="draftnote"></p>
   </fieldset>
 
   <fieldset>
@@ -322,6 +339,39 @@ async function download(path, filename) {
   URL.revokeObjectURL(a.href);
 }
 
+$("draft").addEventListener("click", async () => {
+  const btn = $("draft");
+  if (!$("request").value.trim()) { $("draftnote").textContent = "Say what it needs to do first."; return; }
+  btn.disabled = true;
+  btn.textContent = "Drafting\u2026";
+  $("draftnote").textContent = "Loading the model on first use; this takes a moment.";
+  try {
+    const r = await fetch("/draft", {method:"POST", headers:{"content-type":"application/json"},
+                                     body: JSON.stringify(formData())});
+    const d = await r.json();
+    if (!r.ok) { $("draftnote").textContent = d.error; return; }
+    $("subject").value = d.subject;
+    $("body").value = d.body;
+    if (d.addressees && !$("addressees").value.trim()) $("addressees").value = d.addressees;
+    $("draftnote").textContent = "Drafted in " + d.passes + " pass" + (d.passes === 1 ? "" : "es") +
+      ". Edit anything, then Generate.";
+    generate();
+  } catch (e) {
+    $("draftnote").textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Draft the words with the model";
+  }
+});
+
+// The button is only useful if a model is actually there; say so if not.
+fetch("/health").then((r) => r.json()).then((h) => {
+  if (h.model.available) return;
+  $("draft").disabled = true;
+  $("draftnote").innerHTML = "No drafting model at <span class='rule'>" +
+    escapeHtml(h.model.path) + "</span>. Write the words yourself \u2014 everything else works.";
+}).catch(() => {});
+
 $("f").addEventListener("submit", (e) => { e.preventDefault(); generate(); });
 $("dl").addEventListener("click", () => download("/docx", "memorandum.docx"));
 $("spec").addEventListener("click", () => download("/spec", "memorandum.json"));
@@ -371,11 +421,35 @@ function withServedSeal(memo, host) {
     return {...memo, letterhead: {...memo.letterhead, seal: `http://${host}/seal.png`}};
 }
 
-export function createMemoServer({seal} = {}) {
+/**
+ * @param {object}  [options]
+ * @param {string}  [options.seal]       Override the shipped seal image.
+ * @param {string}  [options.modelPath]  Where the drafting model lives.
+ * @param {object}  [options.drafter]    A drafter to use instead of loading one.
+ *   Anything with `withSession(fn)` works - see stubDrafter() in
+ *   memo-drafter.js. This is the seam a different backend plugs into, and it
+ *   is what lets the drafting route be tested without a model on disk.
+ */
+export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
     return http.createServer(async (req, res) => {
         try {
             if (req.method === "GET" && (req.url === "/" || req.url.startsWith("/?"))) {
                 return send(res, 200, "text/html; charset=utf-8", page());
+            }
+            // Browsers ask for this unprompted; answering keeps a 404 out of
+            // every console that opens the page.
+            if (req.method === "GET" && req.url === "/favicon.ico") {
+                res.writeHead(204); return res.end();
+            }
+            if (req.method === "GET" && req.url === "/health") {
+                return json(res, 200, {
+                    ok: true,
+                    model: {
+                        path: modelPath ?? DEFAULT_MODEL_PATH,
+                        available: Boolean(injected) || await modelAvailable(modelPath ?? DEFAULT_MODEL_PATH),
+                    },
+                    types: TYPES.length,
+                });
             }
             if (req.method === "GET" && req.url === "/types") {
                 return json(res, 200, TYPES);
@@ -389,6 +463,49 @@ export function createMemoServer({seal} = {}) {
             if (req.method !== "POST") return json(res, 404, {error: "Not found"});
 
             const form = await readJson(req);
+
+            /*
+             * The model writes the words, and only the words. It gets the
+             * request and the findings from the previous pass, and returns
+             * subject + paragraphs; the matters of record and every
+             * measurement stay where they were. One job holds the model for
+             * the whole draft/validate/repair loop, so a repair pass sees the
+             * draft it is fixing.
+             */
+            if (req.url === "/draft") {
+                const request = String(form.request ?? "").trim();
+                if (!request) return json(res, 400, {error: "Say what the memorandum needs to do."});
+
+                let drafter = injected;
+                if (!drafter) {
+                    try {
+                        drafter = await getDrafter(modelPath ? {modelPath} : undefined);
+                    } catch (err) {
+                        return json(res, 503, {error: err.message, modelPath: modelPath ?? DEFAULT_MODEL_PATH});
+                    }
+                }
+
+                const type = detectMemoType(form.type && MEMO_TYPES[form.type] ? form.type : request);
+                const context = {...specFromForm({...form, body: "", subject: ""}), type};
+                let passes = 0;
+
+                const {memo: drafted, result} = await drafter.withSession((draft) => runMemoAgent({
+                    request, context, draft,
+                    onPass: () => { passes += 1; },
+                }));
+
+                // Handed back as form values, not as a finished document: the
+                // page is still yours to edit before anything is rendered.
+                return json(res, 200, {
+                    type,
+                    subject: drafted.subject,
+                    body: bodyFromParagraphs(drafted.paragraphs),
+                    addressees: (drafted.addressees ?? []).join("\n"),
+                    passes,
+                    findings: result.contentFindings.map(({severity, rule, message, cite}) =>
+                        ({severity, rule, message, cite})),
+                });
+            }
 
             if (req.url === "/detect") {
                 const type = detectMemoType(form.request ?? "");
@@ -429,19 +546,54 @@ export function createMemoServer({seal} = {}) {
     });
 }
 
-export function serve({port = 4250, seal} = {}) {
-    const server = createMemoServer({seal});
-    return new Promise((resolve) => {
-        server.listen(port, () => {
-            const {port: actual} = server.address();
-            console.log(`AR 25-50 memorandum front end: http://localhost:${actual}`);
-            console.log("Matters of record default to placeholders you fill in afterwards.");
-            resolve(server);
-        });
+/**
+ * Listen, and shut down cleanly.
+ *
+ * The host defaults to loopback on purpose. This serves an editable Word
+ * deliverable and loads a language model on demand; binding it to every
+ * interface should be something somebody chose, not something they got.
+ */
+export async function serve({port = 4250, host = "127.0.0.1", seal, modelPath} = {}) {
+    const server = createMemoServer({seal, modelPath});
+
+    // Requests in flight keep the process alive; new ones stop being accepted.
+    // Without this a restart drops whatever memorandum was mid-render.
+    let closing = false;
+    const shutdown = async (signal) => {
+        if (closing) return;
+        closing = true;
+        console.log(`\n${signal}: finishing in-flight requests.`);
+        server.close(() => {});
+        await disposeDrafter();
+        process.exit(0);
+    };
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+    await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, host, resolve);
     });
+
+    const {port: actual} = server.address();
+    const model = modelPath ?? DEFAULT_MODEL_PATH;
+    console.log(`AR 25-50 memorandum front end: http://${host}:${actual}`);
+    console.log("Matters of record default to placeholders you fill in afterwards.");
+    console.log(await modelAvailable(model)
+        ? `Drafting model: ${model}`
+        : `No drafting model at ${model} - you write the words, everything else still works.`);
+    return server;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-    const portArg = process.argv.indexOf("--port");
-    await serve({port: portArg >= 0 ? Number(process.argv[portArg + 1]) : undefined});
+    const flag = (name) => {
+        const i = process.argv.indexOf(name);
+        return i >= 0 ? process.argv[i + 1] : undefined;
+    };
+    await serve({
+        port: flag("--port") ? Number(flag("--port")) : Number(process.env.PORT) || undefined,
+        host: flag("--host") ?? process.env.HOST,
+        seal: flag("--seal"),
+        modelPath: flag("--model"),
+    });
 }

@@ -10,6 +10,7 @@
  */
 
 import {recordFieldPlaceholders} from "./templates.js";
+import {validateMemo, repairInstructions} from "./memo-validator.js";
 
 // ---------------------------------------------------------------------------
 // The paragraph tree
@@ -112,4 +113,46 @@ export function detectMemoType(request = "") {
         if (pattern.test(text)) return type;
     }
     return "standard";
+}
+
+// ---------------------------------------------------------------------------
+// The draft / validate / repair loop
+// ---------------------------------------------------------------------------
+
+/**
+ * Draft, render, validate, and re-draft until the content findings clear or the
+ * pass budget runs out.
+ *
+ * `draft` is any async (request, feedback) => content function. The offline demo
+ * passes a stub; the live path passes the constrained LLM call. Keeping it a
+ * parameter is what makes the loop testable without a model.
+ */
+export async function runMemoAgent({request, context, draft, maxPasses = 3, onPass}) {
+    let content = await draft(request, null);
+    let best = {memo: assembleMemo(content, context)};
+    best.result = validateMemo(best.memo);
+
+    for (let pass = 1; pass < maxPasses; pass++) {
+        onPass?.({pass, result: best.result, memo: best.memo});
+
+        const instructions = repairInstructions(best.result);
+        if (instructions.length === 0) break;
+
+        content = await draft(request, instructions);
+        const memo = assembleMemo(content, context);
+        const result = validateMemo(memo);
+
+        // Keep the better draft rather than the latest one - a repair pass can
+        // trade one advisory for two, and a stub drafter returns the same text
+        // every time.
+        if (score(result) >= score(best.result)) break;
+        best = {memo, result};
+    }
+
+    return best;
+}
+
+/** Lower is better: errors dominate, advisories break ties. */
+function score(result) {
+    return result.errors.length * 100 + result.warnings.length;
 }
