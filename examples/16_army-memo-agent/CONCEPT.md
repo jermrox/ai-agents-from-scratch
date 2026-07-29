@@ -86,6 +86,32 @@ This also fixes a subtle bug worth knowing about. A naive wrapper does `text.spl
 
 ---
 
+### The deliverable is Word, and that constrains the design
+
+A PDF would be easier to make exact and would be the wrong answer. What gets staffed is a `.docx`, and it has to survive somebody opening it and editing a sentence.
+
+That rules out the obvious shortcut. The previews render pre-broken lines - one regulation line at a time - which is perfect for verification and useless as a document: edit any sentence and the frozen line breaks shatter. So the Word renderer emits **whole paragraphs** carrying the exact geometry (first-line indent, quarter-inch tab stops, single spacing, `keepLines`, `widowControl`) and lets Word break the lines itself.
+
+The two agree because both measure Arial identically - the layout engine uses the Helvetica advance widths Arial was built to match. The same fact that makes verification possible makes the editable document possible.
+
+The formatting itself is then locked in `settings.xml`:
+
+```xml
+<w:documentProtection w:formatting="1" w:enforcement="1"/>
+```
+
+Text stays editable; font, size, spacing, indents, and margins cannot be changed from inside Word. AR 25-50 fixes all of those, and a reviewer tidying up the spacing is the most common way a compliant memorandum stops being one.
+
+---
+
+### Templates are the editing surface
+
+Each memorandum type ships as a skeleton with `[BRACKETED]` placeholders. That gives two ways to edit the same document, neither of which can damage the layout: fill the JSON spec and re-render, or type over the placeholders in the locked Word file. The validator reports every placeholder still unfilled, so a memorandum that says `[FULL NAME]` cannot quietly reach a staffing folder.
+
+This is the same separation as the LLM split, applied to a human: **give the editor the content and keep the format out of reach.**
+
+---
+
 ### The regulation ships its own test suite
 
 Figures 2-1 through 2-5 of AR 25-50 print their line counts in the left margin - literally the numbers 1, 2, 3 running down the side of each example memo. Those numbers are a test oracle.
@@ -127,7 +153,9 @@ Two details that matter more than they look:
 1. **The model refuses the frame.** Smaller models sometimes emit `"1. Range 14 closes..."` with the number baked into the text, producing `1.  1. Range 14 closes...`. The validator's `manual-numbering` check catches it; the grammar cannot, because a leading digit is a legal string.
 2. **Advisory fatigue.** The passive-voice and sentence-length checks (paras 1-38, 1-39b(2)) are heuristics against a style standard, not hard rules. Wire them to a hard gate and the agent will loop forever chasing an advisory the regulation itself hedges with *"with few exceptions"*.
 3. **Pagination is an estimate.** Lines per page derive from a 13.8 pt line height (Word's single spacing for 12 pt Arial) and an assumed letterhead height. A different letterhead template moves the first page's capacity, which is why it is an option rather than a constant.
-4. **The seal cannot be shipped.** Para 1-16b(1) requires the DoD seal and para 1-16b(2) forbids substituting any other device, so the renderer leaves a slot and the validator raises `seal-missing` until you supply the seal from the APD letterhead template. Drawing an approximation would produce a document that looks official and is not.
+4. **The seal is never drawn.** Para 1-16b(1) requires the DoD seal and para 1-16b(2) forbids substituting any other device, so the renderer uses the official image from the APD letterhead template or none at all, and the validator raises `seal-missing` until you supply it. The seal does not change, so this is a one-time setup - see `assets/README.md`. Drawing an approximation would produce a document that looks official and is not.
+5. **Intent detection is shallow on purpose.** `detectMemoType()` matches the phrases that name a type in AR 25-50 and prints back what it chose. A wrong guess is cheap to correct with `--template`; a wrong guess made silently would not be.
+6. **Word decides the real page breaks.** The layout engine's pagination drives the previews and the decision to number pages; `keepLines` and `widowControl` carry the para 2-5c rules into Word. On a page that is close to full, Word's break and the engine's can differ by a line.
 
 ---
 

@@ -22,6 +22,8 @@ import {
     MEMO_DATE_PATTERN,
 } from "./ar25-50.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
+import {TYPE} from "./ar25-50.js";
+const TYPE_CITE = TYPE.cite;
 import {buildParagraphTree} from "./army-memo-agent.js";
 
 let passed = 0;
@@ -477,6 +479,300 @@ const FIG_2_1 = {
     // The only advisory should be the seal the repository cannot ship.
     check("the only advisory is the missing DoD seal",
         result.warnings.map((f) => f.rule), ["seal-missing"], "AR 25-50, para 1-16b(1)");
+}
+
+// ---------------------------------------------------------------------------
+// The Word deliverable
+// ---------------------------------------------------------------------------
+
+/**
+ * The .docx is what actually gets staffed, so its formatting is asserted
+ * against the same constants rather than eyeballed. These read the generated
+ * OOXML directly: twips do not lie about a margin the way a screenshot does.
+ *
+ * 1 inch = 1440 twips. 12 pt = 24 half-points.
+ */
+{
+    const {renderDocx} = await import("./memo-docx.js");
+    const {createTemplate} = await import("./templates.js");
+    const JSZip = (await import("jszip")).default;
+
+    const open = async (memo) => {
+        const zip = await JSZip.loadAsync(await renderDocx(memo));
+        const read = async (p) => (zip.file(p) ? zip.file(p).async("string") : null);
+        return {
+            document: await read("word/document.xml"),
+            styles: await read("word/styles.xml"),
+            settings: await read("word/settings.xml"),
+            names: Object.keys(zip.files),
+        };
+    };
+
+    const {OFFLINE_CONTENT, OFFLINE_CONTEXT, assembleMemo} = await import("./army-memo-agent.js");
+    const memo = assembleMemo(OFFLINE_CONTENT, OFFLINE_CONTEXT);
+    const docx = await open(memo);
+
+    checkTrue("docx: the document default face is Arial",
+        /<w:rFonts[^>]*w:ascii="Arial"/.test(docx.styles), TYPE_CITE);
+    checkTrue("docx: the document default size is 12 pt",
+        /<w:sz w:val="24"\/>/.test(docx.styles), TYPE_CITE);
+
+    // "Use standard size paper (8 1/2 by 11 inches)." - para 2-3a
+    checkTrue("docx: the page is 8.5 by 11 inches",
+        /<w:pgSz w:w="12240" w:h="15840"/.test(docx.document), "AR 25-50, para 2-3a");
+
+    // "Use standard margins: 1-inch from the left, right, and bottom edges." - 2-3c
+    const margin = /<w:pgMar([^>]*)\/>/.exec(docx.document)?.[1] ?? "";
+    for (const side of ["right", "bottom", "left"]) {
+        checkTrue(`docx: the ${side} margin is 1 inch`,
+            new RegExp(`w:${side}="1440"`).test(margin), "AR 25-50, para 2-3c");
+    }
+
+    // "Do not justify right margins." - para 2-3c
+    checkTrue("docx: no paragraph is justified",
+        !/<w:jc w:val="both"\/>/.test(docx.document), "AR 25-50, para 2-3c");
+
+    // Single spacing, no space added before or after. - para 2-4b(2)
+    checkTrue("docx: paragraphs are single spaced with no added space",
+        /<w:spacing w:after="0" w:before="0" w:line="240" w:lineRule="auto"\/>/.test(docx.document),
+        "AR 25-50, para 2-4b(2)");
+
+    // The quarter-inch grid: "1." puts its text at 0.25 in = 360 twips,
+    // "a." at 0.5 in = 720 twips. - para 1-39b(10)
+    checkTrue("docx: a main paragraph tabs to the quarter-inch grid",
+        /<w:tab w:val="left" w:pos="360"\/>/.test(docx.document), "AR 25-50, para 1-39b(10)");
+    checkTrue("docx: a first subdivision tabs to the half-inch grid",
+        /<w:tab w:val="left" w:pos="720"\/>/.test(docx.document), "AR 25-50, para 1-39b(10)");
+    checkTrue("docx: a first subdivision indents its first line a quarter inch",
+        /<w:ind w:left="0" w:firstLine="360"\/>/.test(docx.document), "AR 25-50, fig 2-1");
+
+    // The wrap returns to the left margin, so left indent is always zero.
+    checkTrue("docx: paragraph wraps return to the left margin",
+        !/<w:ind w:left="(?!0")\d+" w:firstLine/.test(docx.document),
+        "AR 25-50, para 2-4a(6)");
+
+    // The date is placed by a right tab at the right margin, 6.5 in = 9360.
+    checkTrue("docx: the date is flush right at the 6.5-inch margin",
+        /<w:tab w:val="right" w:pos="9360"\/>/.test(docx.document), "AR 25-50, para 2-4a(3)(b)");
+
+    // The signature block begins at the centre of the page, 3.25 in = 4680.
+    checkTrue("docx: the signature block begins at the centre of the page",
+        /<w:tab w:val="left" w:pos="4680"\/>/.test(docx.document), "AR 25-50, para 2-4c(2)(a)");
+
+    // Two spaces after ending punctuation must survive into the XML. - 1-39b(9)
+    checkTrue("docx: two spaces follow ending punctuation",
+        /2026\.\s{2}Reschedule/.test(docx.document), "AR 25-50, para 1-39b(9)");
+    checkTrue("docx: runs preserve their whitespace",
+        /xml:space="preserve"/.test(docx.document), "AR 25-50, para 1-39b(9)");
+
+    // Widow and orphan handling. - paras 2-5c(1) and 2-5c(2)
+    checkTrue("docx: short paragraphs are kept whole across a page break",
+        /<w:keepLines\/>/.test(docx.document), "AR 25-50, para 2-5c(1)");
+    checkTrue("docx: widow control is on", /<w:widowControl\/>/.test(docx.document),
+        "AR 25-50, para 2-5c(2)");
+
+    // Formatting is locked; text is not.
+    checkTrue("docx: formatting is protected against change",
+        /<w:documentProtection w:formatting="1" w:enforcement="1"\/>/.test(docx.settings),
+        "AR 25-50, paras 1-19 and 2-3c");
+    checkTrue("docx: the text itself stays editable",
+        !/w:edit="readOnly"/.test(docx.settings), "editable deliverable");
+
+    checkTrue("docx: a letterhead memorandum carries a first-page header",
+        docx.names.includes("word/header1.xml"), "AR 25-50, para 2-3a(1)");
+}
+
+{
+    // A memorandum for record is plain white paper with no letterhead header
+    // and no authority line. - fig 2-17
+    const {renderDocx} = await import("./memo-docx.js");
+    const {createTemplate} = await import("./templates.js");
+    const JSZip = (await import("jszip")).default;
+
+    const mfr = createTemplate("record");
+    const zip = await JSZip.loadAsync(await renderDocx(mfr));
+    const document = await zip.file("word/document.xml").async("string");
+
+    checkTrue("docx: an MFR is addressed MEMORANDUM FOR RECORD",
+        /MEMORANDUM FOR RECORD/.test(document), "AR 25-50, fig 2-17");
+    checkTrue("docx: an MFR carries no authority line",
+        !/AUTHORITY LINE/.test(document), "AR 25-50, fig 2-17");
+    checkTrue("docx: an MFR starts at the 1-inch top margin",
+        /<w:pgMar w:top="1440"/.test(document), "AR 25-50, fig 2-17 and para 2-5a");
+
+    const result = validateMemo(mfr);
+    checkTrue("an MFR on letterhead is reported",
+        validateMemo({...mfr, letterhead: {organization: "X"}})
+            .errors.some((f) => f.rule === "mfr-letterhead"),
+        "AR 25-50, fig 2-17");
+    checkTrue("an MFR with an authority line is reported",
+        validateMemo({...mfr, authorityLine: "FOR THE COMMANDER:"})
+            .errors.some((f) => f.rule === "mfr-authority-line"),
+        "AR 25-50, fig 2-17");
+}
+
+{
+    // The decision memorandum underlines its heading words. - fig 2-18
+    const {renderDocx} = await import("./memo-docx.js");
+    const {createTemplate} = await import("./templates.js");
+    const JSZip = (await import("jszip")).default;
+
+    const zip = await JSZip.loadAsync(await renderDocx(createTemplate("decision")));
+    const document = await zip.file("word/document.xml").async("string");
+
+    checkTrue("docx: decision-memorandum headings are underlined",
+        /<w:u w:val="single"\/>/.test(document), "AR 25-50, fig 2-18");
+    checkTrue("docx: the underline marker itself does not reach the page",
+        !/_FOR DECISION_/.test(document), "AR 25-50, para 1-32");
+    checkTrue("docx: the approval line keeps its columns",
+        /APPROVED/.test(document) && /DISAPPROVED/.test(document), "AR 25-50, fig 2-18");
+}
+
+{
+    // MOU heading and signature blocks. - para 2-6c
+    const {renderDocx} = await import("./memo-docx.js");
+    const {createTemplate} = await import("./templates.js");
+    const JSZip = (await import("jszip")).default;
+
+    const zip = await JSZip.loadAsync(await renderDocx(createTemplate("mou")));
+    const document = await zip.file("word/document.xml").async("string");
+
+    checkTrue("docx: the MOU title, BETWEEN, and AND are centred",
+        (document.match(/<w:jc w:val="center"\/>/g) ?? []).length >= 5, "AR 25-50, para 2-6c(1)");
+    checkTrue("docx: the MOU carries no office symbol or addressee line",
+        !/MEMORANDUM FOR/.test(document), "AR 25-50, para 2-6c(1)");
+    checkTrue("docx: MOU signature blocks are overscored",
+        /_{10,}/.test(document), "AR 25-50, para 2-6c(5)(b)");
+}
+
+// ---------------------------------------------------------------------------
+// The THRU form and memorandum-type detection
+// ---------------------------------------------------------------------------
+
+{
+    // "FOR", not "MEMORANDUM FOR", once a THRU chain is present. - figs 2-11, 2-12
+    const single = layoutMemo({
+        ...FIG_2_1,
+        thru: ["U.S. Army North (ARNO-CG), 1400 East Grayson St., Fort Sam Houston, TX 78234-7000"],
+        addressees: ["Records Management and Declassification Agency (AAHS-RDR)"],
+    });
+    check("fig 2-11: a THRU memorandum addresses the action office with FOR",
+        single.flow[indexOf(single, "memorandum-for")].text,
+        "FOR Records Management and Declassification Agency (AAHS-RDR)",
+        "AR 25-50, fig 2-11");
+    check("fig 2-11: a single THRU sits on the MEMORANDUM THRU line",
+        single.flow[indexOf(single, "thru")].text.startsWith("MEMORANDUM THRU U.S. Army North"),
+        true, "AR 25-50, fig 2-11");
+    check("fig 2-11: a single THRU wraps flush with the left margin",
+        single.flow.filter((l) => l.role === "thru")[1]?.indentIn, 0,
+        "AR 25-50, para 2-4a(5)");
+
+    const dual = layoutMemo({
+        ...FIG_2_1,
+        thru: [
+            "Logistics Information Management Division (DALO-PLI), 500 Army Pentagon, Washington, DC 20310-0500",
+            "Field Division (AMCIO-F), U.S. Army Materiel Command, 4400 Martin Rd., Redstone Arsenal, AL 35898-5000",
+        ],
+        addressees: ["Director of Information Management (ANFB-IMR)"],
+    });
+    check("fig 2-12: two THRU addressees stack under a bare MEMORANDUM THRU",
+        dual.flow[indexOf(dual, "thru")].text, "MEMORANDUM THRU", "AR 25-50, fig 2-12");
+    check("fig 2-12: stacked THRU addresses indent their second line a quarter inch",
+        dual.flow.filter((l) => l.role === "thru").find((l) => l.indentIn > 0)?.indentIn, 0.25,
+        "AR 25-50, para 2-4a(5)(b)");
+    checkTrue("more than two THRU addressees is reported",
+        validateMemo({...FIG_2_1, thru: ["A", "B", "C"]})
+            .warnings.some((f) => f.rule === "thru-count"),
+        "AR 25-50, fig 2-12");
+}
+
+{
+    const {detectMemoType} = await import("./army-memo-agent.js");
+    check("intent: a decision request selects the decision memorandum",
+        detectMemoType("I need a decision memo for the CG to approve the range plan"), "decision",
+        "AR 25-50, para 2-8");
+    check("intent: documenting a phone call selects the MFR",
+        detectMemoType("document the telephone conversation I had with range control"), "record",
+        "AR 25-50, para 2-7");
+    check("intent: an agreement with funds selects the MOA",
+        detectMemoType("draft a memorandum of agreement with the garrison"), "moa",
+        "AR 25-50, para 2-6b");
+    check("intent: routing through the chain selects THRU",
+        detectMemoType("send this thru the brigade commander to FORSCOM"), "thru",
+        "AR 25-50, para 2-4a(5)(d)");
+    check("intent: anything else is a standard memorandum",
+        detectMemoType("tell the battalions the range is closed"), "standard",
+        "AR 25-50, para 2-4");
+}
+
+{
+    // Signature-block formalities. - chapter 6
+    const {buildSignature, normalizeGrade, spellOutGrade} = await import("./signature-blocks.js");
+
+    check("table 6-1: MAJ is Major", spellOutGrade("MAJ"), "Major", "AR 25-50, table 6-1");
+    check("table 6-1: a spelled-out grade normalizes to its abbreviation",
+        normalizeGrade("Lieutenant Colonel"), "LTC", "AR 25-50, table 6-1");
+
+    check("a field-grade officer abbreviates grade and branch on a memorandum",
+        buildSignature({name: "Marcus T. Hale", grade: "LTC", branch: "IN", title: "Director"}).lines,
+        ["MARCUS T. HALE", "LTC, IN", "Director"], "AR 25-50, para 6-4c");
+
+    check("a general officer spells out the grade and uses USA on a memorandum",
+        buildSignature({name: "Jane A. Ruiz", grade: "MG", title: "Commanding General"}).lines,
+        ["JANE A. RUIZ", "Major General, USA", "Commanding General"],
+        "AR 25-50, paras 6-4f(3) and 6-5c(3)");
+
+    check("a general staff officer uses GS in place of a branch",
+        buildSignature({name: "A B Smith", grade: "COL", branch: "IN", generalStaff: true, title: "Chief"}).lines[1],
+        "COL, GS", "AR 25-50, para 6-5c(7)");
+
+    check("an inspector general uses IG in place of a branch",
+        buildSignature({name: "A B Smith", grade: "COL", inspectorGeneral: true, title: "IG"}).lines[1],
+        "COL, IG", "AR 25-50, para 6-5c(7)");
+
+    check("a civilian signature block is name and title only",
+        buildSignature({name: "David A. Okonkwo", civilian: true, title: "Range Operations Specialist"}).lines,
+        ["DAVID A. OKONKWO", "Range Operations Specialist"], "AR 25-50, para 6-8a");
+
+    check("retired personnel show USA Retired and no branch",
+        buildSignature({name: "A B Smith", grade: "COL", retired: true, title: "None"}).lines[1],
+        "COL, USA Retired", "AR 25-50, para 6-6");
+
+    check("a reservist not on active duty adds USAR",
+        buildSignature({name: "A B Smith", grade: "MAJ", branch: "AG", reserveNotOnActiveDuty: true, title: "S1"}).lines[1],
+        "MAJ, AG, USAR", "AR 25-50, para 6-7");
+
+    check("a commander's block denotes the active exercise of authority",
+        buildSignature({name: "A B Smith", grade: "COL", branch: "IN", title: "Commander", commanding: true}).lines.at(-1),
+        "Commanding", "AR 25-50, para 6-4a(3)");
+
+    check("a letter spells the grade out and uses U.S. Army",
+        buildSignature({name: "MARCUS T. HALE", grade: "LTC", branch: "IN", title: "Director"}, "letter").lines,
+        ["Marcus T. Hale", "Lieutenant Colonel, U.S. Army", "Director"],
+        "AR 25-50, paras 6-4a(1) and 6-4f(1)");
+
+    checkTrue("a civilian block carrying a military grade is reported",
+        buildSignature({name: "A B", civilian: true, grade: "MAJ", title: "Analyst"})
+            .findings.some((f) => f.rule === "civilian-grade"),
+        "AR 25-50, para 6-8a");
+    checkTrue("a grade outside table 6-1 is reported",
+        buildSignature({name: "A B", grade: "XYZ", branch: "IN", title: "T"})
+            .findings.some((f) => f.rule === "unknown-grade"),
+        "AR 25-50, table 6-1");
+}
+
+{
+    // Templates carry placeholders, and the validator says so.
+    const {createTemplate, findPlaceholders} = await import("./templates.js");
+    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+        const template = createTemplate(type);
+        checkTrue(`the ${type} template is fully placeholdered`,
+            findPlaceholders(template).length > 0, "template");
+    }
+    checkTrue("unfilled placeholders are reported before signature",
+        validateMemo(createTemplate("standard"))
+            .warnings.some((f) => f.rule === "unfilled-placeholder"),
+        "template not yet filled in");
 }
 
 // ---------------------------------------------------------------------------

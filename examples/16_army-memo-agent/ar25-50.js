@@ -245,6 +245,21 @@ export function normalizePunctuationSpacing(text) {
     return out.split(guard).join(" ");
 }
 
+/**
+ * `_underscored_` marks a run to underline - figure 2-18 underlines the leading
+ * heading word of each decision-memorandum paragraph. Only the Word renderer
+ * acts on it; the text and HTML previews strip the markers, since the .docx is
+ * the deliverable and emphasis is not a layout measurement.
+ *
+ * "Use boldface or italic type to emphasize a specific or important fact. Do
+ *  not overuse this method for emphasis." - para 1-32
+ */
+export const EMPHASIS_MARKER = /_([^_\n]+)_/g;
+
+export function stripEmphasis(text) {
+    return String(text ?? "").replace(EMPHASIS_MARKER, "$1");
+}
+
 /** True when `text` already satisfies para 1-39b(9). */
 export function hasCorrectPunctuationSpacing(text) {
     if (!text) return true;

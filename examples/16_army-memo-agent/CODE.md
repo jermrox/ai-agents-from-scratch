@@ -1,33 +1,53 @@
 # Code explanation: `army-memo-agent.js`
 
-Five files, each with one job:
+Nine files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
 | `ar25-50.js` | The regulation, codified. Constants, each carrying its paragraph citation. No logic beyond formatting helpers. |
 | `text-metrics.js` | Arial/Helvetica advance widths, tokenizing, line breaking in inches. |
-| `memo-formatter.js` | Layout engine plus two backends: plain text and print-ready HTML. |
+| `memo-formatter.js` | Layout engine plus two preview backends: plain text and print-ready HTML. |
+| `memo-docx.js` | **The deliverable.** Word output: exact type, margins, tab stops, running heads, and a formatting lock. |
+| `signature-blocks.js` | Chapter 6 formalities: table 6-1 grades, GS/IG, general officers, civilians, retired, USAR, authority lines. |
+| `templates.js` | One editable skeleton per memorandum type, with `[BRACKETED]` placeholders. |
 | `memo-validator.js` | Compliance checks. Every finding cites AR 25-50 and is tagged `content` or `format`. |
-| `army-memo-agent.js` | The draft/validate/repair loop, and the CLI. |
-| `verify.js` | Asserts the renderer against figures 2-1 through 2-5 of the regulation itself. |
+| `army-memo-agent.js` | Intent detection, the draft/validate/repair loop, and the CLI. |
+| `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
 
 ## Run
 
 ```bash
+# List the memorandum types and the paragraph that governs each
+node examples/16_army-memo-agent/army-memo-agent.js --list-types
+
+# Start from an editable template and produce the Word deliverable
+node examples/16_army-memo-agent/army-memo-agent.js --template decision \
+    --docx decision-memo.docx --emit-spec decision-memo.json
+
+# Fill in decision-memo.json, then render it again - same layout, your text
+node examples/16_army-memo-agent/army-memo-agent.js --spec decision-memo.json \
+    --docx decision-memo.docx
+
 # No model required - canned content through the real formatter and validator
 node examples/16_army-memo-agent/army-memo-agent.js --offline
 
-# Check the renderer against AR 25-50's own figures
+# Check the renderer and the .docx against AR 25-50's own figures
 node examples/16_army-memo-agent/verify.js
 
-# Print-ready output
-node examples/16_army-memo-agent/army-memo-agent.js --offline \
-    --html memo.html --text memo.txt
-
-# With a local model
-node examples/16_army-memo-agent/army-memo-agent.js \
+# With a local model, letting it pick the memorandum type from the request
+node examples/16_army-memo-agent/army-memo-agent.js --docx memo.docx \
     "Notify subordinate battalions that Range 14 closes for maintenance 3-7 August 2026."
 ```
+
+| Flag | Effect |
+| --- | --- |
+| `--template <type>` | Start from an editable skeleton: `standard`, `thru`, `record`, `decision`, `mou`, `moa` |
+| `--spec <file.json>` | Render a spec you have already filled in |
+| `--emit-spec <file.json>` | Write the spec out so you can edit it |
+| `--docx <path>` | Word deliverable |
+| `--html <path>` / `--text <path>` | Previews |
+| `--seal <path>` | The DoD seal image, once (see `assets/README.md`) |
+| `--offline` | Skip the model |
 
 The live path needs `models/Qwen3-1.7B-Q8_0.gguf` (see [DOWNLOAD.md](../../DOWNLOAD.md)). Everything except the drafting step runs without a model, which is the point - the parts that must be exactly right are the parts that do not need one.
 
@@ -247,6 +267,91 @@ node examples/16_army-memo-agent/verify.js
 
 ---
 
+## 10) The Word deliverable
+
+A PDF would be easier and would be the wrong answer. What gets staffed is a `.docx`, and it has to stay correct after somebody opens it and edits a sentence. So `memo-docx.js` does **not** emit the pre-broken lines the previews use - Word gets whole paragraphs plus the exact geometry, and does its own line breaking:
+
+```javascript
+new Paragraph({
+    spacing: {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO},
+    indent:   {left: 0, firstLine: IN(indentIn)},   // wrap returns to the margin
+    tabStops: [{type: TabStopType.LEFT, position: IN(textStartIn)}],
+    keepLines: lines <= 3,     // para 2-5c(1)
+    widowControl: true,        // para 2-5c(2)
+    children: [run(label), tabRun(), ...emphasize(text)],
+})
+```
+
+The two renderers agree because both measure Arial the same way. A document of frozen one-line paragraphs would shatter on the first edit; this one reflows.
+
+`indent: {left: 0, firstLine: X}` is the whole AR 25-50 wrap rule in one line of OOXML: first line at the subdivision indent, every continuation back at the left margin.
+
+**Running heads.** The first-page header is the letterhead; the default header repeats the office symbol and subject for continuation pages (paras 2-5a to 2-5c). Word then handles page breaks itself, which is why `keepLines` and `widowControl` carry the para 2-5c rules rather than hard-coded breaks. `titlePage: true` is what makes the two headers distinct.
+
+**Formatting lock.** The user requirement was that nothing may change the font, size, spacing, or format. `settings.xml` gets:
+
+```xml
+<w:documentProtection w:formatting="1" w:enforcement="1"/>
+```
+
+Text stays fully editable - that is the point of shipping Word - but formatting cannot be changed from inside the application. Adding `w:edit="readOnly"` would lock the text too. This is a deterrent rather than a security control: unpassworded protection is removable from the Review tab, which is the right level for a document a staff officer still has to finish.
+
+---
+
+## 11) Templates and the editing surface
+
+Every memorandum type has a skeleton in `templates.js` with `[BRACKETED]` placeholders where a value belongs:
+
+```bash
+node army-memo-agent.js --template decision --emit-spec memo.json --docx memo.docx
+```
+
+You now have two editing surfaces for the same document, and neither can damage the layout:
+
+- **`memo.json`** - change the values, re-render with `--spec`
+- **`memo.docx`** - type over the placeholders in Word, where formatting is locked
+
+The validator reports every placeholder still unfilled (`unfilled-placeholder`), so a memorandum that still says `[FULL NAME]` cannot quietly reach a staffing folder.
+
+The decision-memorandum skeleton is not free-form: figure 2-18 fixes it at FOR DECISION, PURPOSE, RECOMMENDATION(S) with the approval line, BACKGROUND, DISCUSSION with courses of action, IMPACT, COORDINATION, and the point of contact. `decision-memo-skeleton` reports any that go missing.
+
+Two node flags exist for the shapes that figure needs:
+
+- `literal: true` - a tabular row (the `APPROVED X / DISAPPROVED X / SEE ME X` line, a concurrence row). No letter, spacing preserved, columns placed by `tabsIn`.
+- `_underscores_` - underline a run. Figure 2-18 underlines each heading word. Only the Word renderer acts on it; the previews strip the markers, since the `.docx` is the deliverable and emphasis is not a measurement.
+
+---
+
+## 12) Signature blocks: the formalities
+
+`signature-blocks.js` holds chapter 6, because the signature block is the part most likely to be wrong and the rules depend on facts about the signer rather than on style:
+
+```javascript
+buildSignature({name: "Jane A. Ruiz", grade: "MG", title: "Commanding General"})
+// -> ["JANE A. RUIZ", "Major General, USA", "Commanding General"]
+```
+
+The resolution order matters, and it is the regulation's, not a preference: retired status wins (para 6-6, no branch at all), then a GS or IG detail (para 6-5c(7), replaces the branch), then the categories that take `USA` - general officers, warrant officers, joint commands (paras 6-5c(3), (5), (8)) - then the branch abbreviation.
+
+Other rules it encodes: general officers spell the grade out (paras 6-4f(3), 6-5c(1)); civilians get two lines, name and title, never a grade (paras 6-4a note 2, 6-8a); letters use upper-and-lowercase names, spelled-out grades, and `U.S. Army` instead of a branch (paras 6-4a(1), 6-4f(1)); reservists not on active duty add `USAR` (para 6-7); commanders append `Commanding` (para 6-4a(3)).
+
+`authorityLineNeeded()` implements para 6-2b, which is the rule people miss: the authority line is **omitted** when the head of the office signs personally, and omitted when the text already carries a mandatory phrase such as *"The Commander desires ..."*.
+
+---
+
+## 13) Intent
+
+`detectMemoType()` reads the request for the phrases that name a type in AR 25-50:
+
+```javascript
+detectMemoType("document the telephone conversation with range control")  // -> "record"
+detectMemoType("I need a decision memo for the CG")                       // -> "decision"
+```
+
+It is deliberately shallow, and the chosen type is always printed back. A wrong guess is cheap to correct with `--template`; a wrong guess made *silently* would not be.
+
+---
+
 ## Writing your own memo
 
 ```javascript
@@ -290,9 +395,13 @@ Other memo types set `type`: `"thru"` (para 2-4a(5)(d), with a `thru` array), `"
 
 ## Scope
 
-This example implements **chapter 2** of AR 25-50 - memorandums - and the chapter 1 rules that govern them. Letters (chapter 3) use a different date format, `cc:` instead of `CF:`, no digital signatures (para 3-6c(2)(b)), and spelled-out grades; they are not implemented. Signature-block forms for every category of personnel are in appendix D of the regulation, and forms of address in appendix C.
+This example implements **chapter 2** of AR 25-50 (memorandums), the chapter 1 rules that govern them, and the chapter 6 signature-block and authority-line rules. All six memorandum forms are covered: standard, THRU, memorandum for record, decision memorandum, MOU, and MOA.
+
+Letters (chapter 3) are **not** implemented - they use a different date format, `cc:` instead of `CF:`, no digital signatures (para 3-6c(2)(b)), and spelled-out grades. `signature-blocks.js` already handles the letter form of a signature block, so that is the piece in place. Forms of address are in appendix C of the regulation.
 
 Two judgement calls are flagged in the code rather than hidden:
 
 - **Page numbering.** Para 2-5d states no exception for the first page of a multiple-page memorandum, so the default numbers it. Set `numberFirstPage: false` for the common office practice of numbering continuation pages only.
 - **Letterhead geometry.** AR 25-50 requires the APD template but does not publish its point sizes. The values in `LETTERHEAD` are the template's defaults and are labelled as such - they are not quotations from the regulation.
+- **`CF: (w/o encls)`.** Para 2-4c(5) spells it `w/o encls`; figure 2-14 prints `wo/encls`. The prose wins, since it states the rule explicitly.
+- **The DoD seal is never drawn.** Para 1-16b(1) requires it and para 1-16b(2) forbids substituting any other device, so the renderer uses the official image from the APD template or none at all. See `assets/README.md` - it is a one-time setup, because the seal does not change.

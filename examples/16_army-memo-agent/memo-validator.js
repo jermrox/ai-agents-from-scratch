@@ -36,7 +36,9 @@ import {
     SPACING,
 } from "./ar25-50.js";
 
-import {layoutMemo, renderText} from "./memo-formatter.js";
+import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
+import {findPlaceholders} from "./templates.js";
+import {buildSignature, authorityLineNeeded, normalizeGrade, GRADE_TABLE_CITE} from "./signature-blocks.js";
 
 function finding(severity, klass, rule, message, cite, extra = {}) {
     return {severity, class: klass, rule, message, cite, ...extra};
@@ -412,7 +414,7 @@ function checkClosing(memo, out) {
 function checkPresentation(memo, doc, out) {
     const lh = memo.letterhead ?? {};
 
-    if (!lh.seal) {
+    if (!lh.seal && usesLetterhead(memo)) {
         out.push(warn("format", "seal-missing",
             "No DoD seal supplied. All official letterhead stationery will bear the DoD seal; use the letterhead template on the APD website and pass its seal image as letterhead.seal. The renderer draws a labelled placeholder until then.",
             LETTERHEAD.sealCite,
@@ -425,13 +427,13 @@ function checkPresentation(memo, doc, out) {
             LETTERHEAD.insigniaCite));
     }
 
-    if (!lh.organization) {
+    if (!lh.organization && usesLetterhead(memo)) {
         out.push(warn("content", "letterhead-organization",
             "Letterhead has no organizational name. Letterhead identifies the originating organization and provides the complete standardized mailing address.",
             "AR 25-50, para 1-16a"));
     }
 
-    if (!lh.cityStateZip || !/\d{5}(-\d{4})?/.test(lh.cityStateZip)) {
+    if (usesLetterhead(memo) && (!lh.cityStateZip || !/\d{5}(-\d{4})?/.test(lh.cityStateZip))) {
         out.push(warn("content", "zip-missing",
             "Letterhead has no ZIP code. The ZIP code will be used on all letterhead.",
             "AR 25-50, para 1-35"));
@@ -538,6 +540,127 @@ function lastIndexOfRoles(lines, roles) {
 }
 
 // ---------------------------------------------------------------------------
+// Memorandum type rules
+// ---------------------------------------------------------------------------
+
+/**
+ * Rules that only bind particular memorandum types, which is where most real
+ * mistakes happen - an MFR on letterhead with an authority line looks perfectly
+ * correct until you check figure 2-17.
+ */
+function checkMemoType(memo, out) {
+    if (memo.type === "record") {
+        // "Type the MFR on plain white paper." - fig 2-17
+        // Tested against the spec, not usesLetterhead(): the renderer already
+        // forces plain paper for an MFR, so asking it would always say "no
+        // letterhead" and the mistake in the spec would go unreported.
+        if (memo.letterhead != null) {
+            out.push(error("format", "mfr-letterhead",
+                "A memorandum for record is typed on plain white paper, not letterhead. Set letterhead to null.",
+                "AR 25-50, fig 2-17"));
+        }
+        // "Do not use an authority line. Anyone may prepare and sign an MFR." - fig 2-17
+        if (memo.authorityLine) {
+            out.push(error("content", "mfr-authority-line",
+                "A memorandum for record does not carry an authority line; anyone may prepare and sign an MFR.",
+                "AR 25-50, fig 2-17"));
+        }
+        if (memo.addressees?.length) {
+            out.push(error("format", "mfr-addressee",
+                "A memorandum for record is addressed MEMORANDUM FOR RECORD and takes no addressee.",
+                "AR 25-50, fig 2-17"));
+        }
+    }
+
+    // "Do not address memorandums to more than two THRU addressees unless it is
+    //  absolutely necessary." - fig 2-12
+    if ((memo.thru?.length ?? 0) > 2) {
+        out.push(warn("content", "thru-count",
+            `${memo.thru.length} THRU addressees. Do not address memorandums to more than two unless it is absolutely necessary.`,
+            "AR 25-50, fig 2-12"));
+    }
+
+    if (memo.type === "decision") {
+        // The skeleton is fixed by fig 2-18.
+        const headings = ["FOR DECISION", "PURPOSE", "RECOMMENDATION", "BACKGROUND",
+                          "DISCUSSION", "IMPACT", "COORDINATION"];
+        const text = collectText(memo.paragraphs ?? []).join(" ").toUpperCase();
+        const missing = headings.filter((h) => !text.includes(h));
+        if (missing.length) {
+            out.push(warn("content", "decision-memo-skeleton",
+                `The decision memorandum is missing these paragraphs: ${missing.join(", ")}.`,
+                "AR 25-50, para 2-8b and fig 2-18"));
+        }
+    }
+
+    if ((memo.type === "mou" || memo.type === "moa") && (memo.signers?.length ?? 0) < 2) {
+        out.push(error("content", "agreement-signers",
+            "An MOU or MOA carries the signature block of each agreeing agency, in protocol order with the senior official on the right.",
+            "AR 25-50, para 2-6c(5)"));
+    }
+}
+
+/**
+ * Signature-block formalities from chapter 6, delegated to signature-blocks.js
+ * so the rules live next to the grade table they depend on.
+ */
+function checkSignatureFormalities(memo, out) {
+    const sig = memo.signature;
+    if (!sig) return;
+
+    if (sig.gradeAndBranch) {
+        const first = String(sig.gradeAndBranch).split(",")[0].trim();
+        // Only check tokens that look like a grade attempt.
+        if (/^[A-Za-z0-9]{2,4}$/.test(first) && !normalizeGrade(first)) {
+            out.push(warn("content", "grade-not-in-table",
+                `"${first}" is not an Army grade abbreviation in table 6-1.`,
+                GRADE_TABLE_CITE));
+        }
+    }
+
+    if (sig.signer) {
+        const built = buildSignature(sig.signer, "memorandum");
+        for (const f of built.findings) {
+            out.push(warn("content", f.rule, f.message, f.cite));
+        }
+    }
+
+    const decision = authorityLineNeeded({
+        signerIsHead: memo.signerIsHead ?? false,
+        bodyText: collectText(memo.paragraphs ?? []).join(" "),
+    });
+    if (!decision.required && memo.authorityLine && memo.type !== "record") {
+        out.push(warn("content", "authority-line-unnecessary",
+            `${decision.reason} Remove the authority line.`, decision.cite));
+    }
+}
+
+/**
+ * Unfilled template placeholders. Not a regulation rule - a workflow one. A
+ * memorandum that still says [FULL NAME] is not ready to sign, and this is the
+ * check that stops it reaching the staffing folder.
+ */
+function checkPlaceholders(memo, out) {
+    const spots = findPlaceholders({
+        officeSymbol: memo.officeSymbol,
+        arimsRecordNumber: memo.arimsRecordNumber,
+        subject: memo.subject,
+        addressees: memo.addressees,
+        thru: memo.thru,
+        paragraphs: memo.paragraphs,
+        signature: memo.signature,
+        letterhead: memo.letterhead,
+        enclosures: memo.enclosures,
+    });
+
+    for (const spot of spots) {
+        out.push(warn("content", "unfilled-placeholder",
+            `${spot.path} still holds template placeholders: ${spot.placeholders.join(", ")}`,
+            "template not yet filled in"));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -555,6 +678,9 @@ export function validateMemo(memo, options = {}) {
     checkClosing(memo, out);
     checkPresentation(memo, doc, out);
     checkRenderedSpacing(doc, out);
+    checkMemoType(memo, out);
+    checkSignatureFormalities(memo, out);
+    checkPlaceholders(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

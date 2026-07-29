@@ -29,6 +29,7 @@ import {
     inchesToChars,
     AGREEMENT_FORMAT,
     normalizePunctuationSpacing,
+    stripEmphasis,
 } from "./ar25-50.js";
 
 import {breakLines, measureTextIn} from "./text-metrics.js";
@@ -58,14 +59,18 @@ export const DEFAULT_OPTIONS = {
     numberFirstPage: true,
 };
 
-function resolveOptions(options = {}) {
+function resolveOptions(options = {}, {hasLetterhead = true} = {}) {
     const opts = {...DEFAULT_OPTIONS, ...options};
     const lineHeightIn = opts.lineHeightPt / 72;
     const bodyHeightIn = LAYOUT.pageHeightIn - LAYOUT.marginBottomIn;
 
+    // Plain-paper memorandums (the MFR of fig 2-17) start at the 1-inch top
+    // margin instead of below a letterhead, so page 1 holds more lines.
+    opts.topOffsetIn = hasLetterhead ? opts.letterheadHeightIn : 1.0;
+
     if (opts.firstPageLines == null) {
         opts.firstPageLines = Math.floor(
-            (bodyHeightIn - opts.letterheadHeightIn) / lineHeightIn
+            (bodyHeightIn - opts.topOffsetIn) / lineHeightIn
         );
     }
     if (opts.continuationPageLines == null) {
@@ -158,6 +163,21 @@ function wrap(text, {firstIndentIn = 0, wrapIndentIn = 0, opts, role = "body", b
 // Heading
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether page 1 carries computer-generated letterhead.
+ *
+ * "Use computer-generated letterhead for the first page of all memorandums" -
+ * para 2-3a(1) - with one stated exception: "Type the MFR on plain white
+ * paper" (fig 2-17). An MOU/MOA is prepared on plain white paper too, though
+ * "if an MOU/MOA is between two Army activities, DA letterhead is
+ * appropriate" (para 2-6c(1)), so it follows whether letterhead was supplied.
+ */
+export function usesLetterhead(memo) {
+    if (memo.type === "record") return false;
+    if (memo.letterhead === null) return false;
+    return true;
+}
+
 function buildLetterhead(memo, opts) {
     const lh = memo.letterhead ?? {};
     const lines = [
@@ -224,30 +244,51 @@ function buildAddressBlock(memo, opts) {
     const styleAddress = (a) =>
         memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a);
 
-    // Para 2-4a(5) wraps an address flush with the left margin "except for
-    // multiple-address memorandums", so a single THRU stop wraps flush left and
-    // a chain of them follows the multiple-address exception. Figures 2-11 and
-    // 2-12 govern the THRU form in detail and are not reproduced in the excerpt
-    // this module was built from.
-    const thruWrapIn = thru.length > 1 ? LAYOUT.multiAddressWrapIndentIn : 0;
-    for (const stop of thru) {
-        out.push(...wrap(`MEMORANDUM THRU ${styleAddress(stop)}`, {
+    // A memorandum for record replaces the whole address block. - fig 2-17
+    if (memo.type === "record") {
+        out.push(line("MEMORANDUM FOR RECORD", {role: "memorandum-for"}));
+        return out;
+    }
+
+    // Once a THRU chain is present the addressee line reads "FOR", not
+    // "MEMORANDUM FOR" - figures 2-11 and 2-12 both show it that way.
+    const keyword = thru.length ? "FOR" : "MEMORANDUM FOR";
+
+    if (thru.length === 1) {
+        // Single-address THRU: on the same line as the keyword, wrapping flush
+        // with the left margin. - fig 2-11
+        out.push(...wrap(`MEMORANDUM THRU ${styleAddress(thru[0])}`, {
             firstIndentIn: 0,
-            wrapIndentIn: thruWrapIn,
+            wrapIndentIn: 0,
             opts,
             role: "thru",
         }));
-        out.push(...blank(1));
+        out.push(...gap(SPACING.betweenParagraphs));
+    } else if (thru.length > 1) {
+        // "Do not address memorandums to more than two THRU addressees unless
+        //  it is absolutely necessary." - fig 2-12
+        out.push(line("MEMORANDUM THRU", {role: "thru"}));
+        out.push(...gap(SPACING.memorandumForToFirstAddress));
+        thru.forEach((stop, i) => {
+            out.push(...wrap(styleAddress(stop), {
+                firstIndentIn: 0,
+                wrapIndentIn: LAYOUT.multiAddressWrapIndentIn,
+                opts,
+                role: "thru",
+            }));
+            if (i < thru.length - 1) out.push(...gap(SPACING.betweenParagraphs));
+        });
+        out.push(...gap(SPACING.betweenParagraphs));
     }
 
     if (memo.seeDistribution || addressees.length > ADDRESS_LIMITS.seeDistributionAbove) {
-        out.push(line("MEMORANDUM FOR SEE DISTRIBUTION", {role: "memorandum-for"}));
+        out.push(line(`${keyword} SEE DISTRIBUTION`, {role: "memorandum-for"}));
         return out;
     }
 
     if (addressees.length <= 1) {
         const target = styleAddress(addressees[0] ?? "");
-        out.push(...wrap(`MEMORANDUM FOR ${target}`, {
+        out.push(...wrap(`${keyword} ${target}`.trim(), {
             firstIndentIn: 0,
             wrapIndentIn: 0, // "begin the second line flush with the left margin" - 2-4a(5)
             opts,
@@ -256,7 +297,7 @@ function buildAddressBlock(memo, opts) {
         return out;
     }
 
-    out.push(line("MEMORANDUM FOR", {role: "memorandum-for"}));
+    out.push(line(keyword, {role: "memorandum-for"}));
     out.push(...gap(SPACING.memorandumForToFirstAddress));
     for (const a of addressees) {
         out.push(...wrap(styleAddress(a), {
@@ -286,30 +327,39 @@ function buildBody(memo, opts) {
     const blocks = [];
 
     const walk = (nodes, depth) => {
-        nodes.forEach((node, index) => {
+        let ordinal = 0;   // literal rows are unlabelled and do not take a letter
+        nodes.forEach((node) => {
             const indentIn = LAYOUT.indentByLevelIn[Math.min(depth, LAYOUT.indentByLevelIn.length - 1)];
+            const index = node.literal ? ordinal : ordinal++;
             const label = (depth === 0 && !numbered)
                 ? ""
                 : PARAGRAPH_LABELS[Math.min(depth, MAX_SUBDIVISION_DEPTH)].format(index);
 
-            // Sentence spacing is a format rule (para 1-39b(9)), so the
-            // renderer enforces it rather than trusting the author's text.
-            const text = normalizePunctuationSpacing(node.text ?? "");
+            // A literal row is a tabular line such as the approval line or a
+            // coordination row of a decision memorandum (fig 2-18). It takes no
+            // label and its spacing is preserved as written, because the
+            // columns are the content.
+            const text = node.literal
+                ? stripEmphasis(node.text ?? "")
+                : stripEmphasis(normalizePunctuationSpacing(node.text ?? ""));
 
             blocks.push({
                 kind: "paragraph",
                 depth,
-                label,
+                label: node.literal ? "" : label,
                 text,
-                lines: wrap(text, {
-                    firstIndentIn: indentIn,
-                    // Continuation lines return to the left margin, not under
-                    // the label - visible throughout figs 2-1 to 2-5.
-                    wrapIndentIn: LAYOUT.wrapToLeftMargin ? 0 : indentIn,
-                    opts,
-                    role: "paragraph",
-                    prefix: label || null,
-                }),
+                literal: !!node.literal,
+                lines: node.literal
+                    ? [line(text, {indentIn, role: "paragraph"})]
+                    : wrap(text, {
+                        firstIndentIn: indentIn,
+                        // Continuation lines return to the left margin, not
+                        // under the label - visible throughout figs 2-1 to 2-5.
+                        wrapIndentIn: LAYOUT.wrapToLeftMargin ? 0 : indentIn,
+                        opts,
+                        role: "paragraph",
+                        prefix: label || null,
+                    }),
             });
 
             if (node.children?.length) walk(node.children, depth + 1);
@@ -598,10 +648,11 @@ function continuationHeading(memo, opts) {
  * validator consume this, so they can never disagree about the layout.
  */
 export function layoutMemo(memo, options = {}) {
-    const opts = resolveOptions(options);
+    const hasLetterhead = usesLetterhead(memo);
+    const opts = resolveOptions(options, {hasLetterhead});
     const isAgreement = memo.type === "mou" || memo.type === "moa";
 
-    const letterhead = buildLetterhead(memo, opts);
+    const letterhead = hasLetterhead ? buildLetterhead(memo, opts) : null;
     const heading = isAgreement
         ? buildAgreementHeading(memo, opts)
         : buildHeading(memo, opts);
@@ -627,6 +678,7 @@ export function layoutMemo(memo, options = {}) {
 
     return {
         opts,
+        hasLetterhead,
         letterhead,
         bodyBlocks,
         flow,
@@ -705,11 +757,11 @@ export function renderText(memo, options = {}) {
     doc.pages.forEach((page, i) => {
         if (i > 0) out.push("\f");
 
-        if (page.isFirst) {
+        if (page.isFirst && doc.hasLetterhead) {
             out.push(`${opts.sealPlaceholder}`);
             for (const l of doc.letterhead.lines) out.push(renderLineToText(l, opts));
             out.push(...Array(SPACING.letterheadToOfficeSymbol.linesBelow - 1).fill(""));
-        } else {
+        } else if (!page.isFirst) {
             for (const l of page.heading) out.push(renderLineToText(l, opts));
         }
 
@@ -775,15 +827,18 @@ function renderLineToHtml(l, opts) {
 export function renderHtml(memo, options = {}) {
     const doc = layoutMemo(memo, options);
     const opts = doc.opts;
-    const seal = doc.letterhead.seal;
+    const seal = doc.letterhead?.seal ?? null;
 
     const sealHtml = seal
         ? `<img class="seal" src="${escapeHtml(seal)}" alt="Department of Defense seal">`
         : `<div class="seal placeholder" role="img" aria-label="Department of Defense seal placeholder">DoD<br>SEAL</div>`;
 
     const pagesHtml = doc.pages.map((page) => {
-        const head = page.isFirst
-            ? `<header class="letterhead">
+        const head = !page.isFirst
+            ? page.heading.map((l) => renderLineToHtml(l, opts)).join("\n    ")
+            : !doc.hasLetterhead
+            ? ""
+            : `<header class="letterhead">
       ${sealHtml}
       <div class="lh-text">
         ${doc.letterhead.lines.map((l, i) =>
@@ -791,8 +846,7 @@ export function renderHtml(memo, options = {}) {
         ).join("\n        ")}
       </div>
     </header>
-    ${Array(SPACING.letterheadToOfficeSymbol.linesBelow - 1).fill(`<div class="ln">&nbsp;</div>`).join("")}`
-            : page.heading.map((l) => renderLineToHtml(l, opts)).join("\n    ");
+    ${Array(SPACING.letterheadToOfficeSymbol.linesBelow - 1).fill(`<div class="ln">&nbsp;</div>`).join("")}`;
 
         const body = page.lines.map((l) => renderLineToHtml(l, opts)).join("\n    ");
         const number = showPageNumber(doc, page, opts)

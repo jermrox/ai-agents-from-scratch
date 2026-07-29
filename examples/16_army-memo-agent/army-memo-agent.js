@@ -32,6 +32,7 @@ import fs from "fs/promises";
 import {renderText, renderHtmlDocument} from "./memo-formatter.js";
 import {validateMemo, formatReport, repairInstructions} from "./memo-validator.js";
 import {formatMemoDate, MEMO_TYPES} from "./ar25-50.js";
+import {createTemplate, describeTemplates} from "./templates.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -298,19 +299,69 @@ const OFFLINE_CONTEXT = {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-    const args = {offline: false, html: null, text: null, request: null};
+    const args = {
+        offline: false, html: null, text: null, docx: null, request: null,
+        template: null, spec: null, emitSpec: null, seal: null, list: false,
+    };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === "--offline") args.offline = true;
+        else if (a === "--list-types") args.list = true;
         else if (a === "--html") args.html = argv[++i];
         else if (a === "--text") args.text = argv[++i];
+        else if (a === "--docx") args.docx = argv[++i];
+        else if (a === "--template") args.template = argv[++i];
+        else if (a === "--spec") args.spec = argv[++i];
+        else if (a === "--emit-spec") args.emitSpec = argv[++i];
+        else if (a === "--seal") args.seal = argv[++i];
         else args.request = args.request ? `${args.request} ${a}` : a;
     }
     return args;
 }
 
+/**
+ * Pick the memorandum type from what the user actually asked for.
+ *
+ * Deliberately shallow: it reads the request for the phrases that name a type
+ * in AR 25-50 and otherwise returns "standard". Getting this wrong is cheap to
+ * correct with --template; getting it wrong *silently* would not be, so the
+ * chosen type is always printed back.
+ */
+export function detectMemoType(request = "") {
+    const text = String(request).toLowerCase();
+    const rules = [
+        [/\bmemorandum of agreement\b|\bmoa\b/, "moa"],
+        [/\bmemorandum of understanding\b|\bmou\b/, "mou"],
+        [/\bmemorandum for record\b|\bmfr\b|\b(record|document|memorialize|write up)\b[^.]*\b(call|phone call|conversation|meeting|discussion|decision reached|agreement reached)\b/, "record"],
+        [/\bdecision memo\w*\b|\bfor decision\b|\bseeking (a )?decision\b|\bapproval memo\w*\b/, "decision"],
+        [/\bthru\b|\bthrough the chain of command\b|\bendorse\w*\b/, "thru"],
+    ];
+    for (const [pattern, type] of rules) {
+        if (pattern.test(text)) return type;
+    }
+    return "standard";
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
+
+    if (args.list) {
+        for (const t of describeTemplates()) {
+            console.log(`  ${t.type.padEnd(9)} ${t.title.padEnd(30)} ${t.cite}`);
+        }
+        return;
+    }
+
+    // --template and --spec skip the model entirely: one produces an editable
+    // skeleton, the other renders a spec you have already filled in.
+    if (args.template || args.spec) {
+        const memo = args.spec
+            ? JSON.parse(await fs.readFile(args.spec, "utf8"))
+            : createTemplate(args.template);
+        await emit(memo, args);
+        return;
+    }
+
     const offline = args.offline || !args.request;
 
     const request = args.request ??
@@ -333,9 +384,16 @@ async function main() {
         }
     }
 
+    // The memorandum type follows the request, and is reported back so a wrong
+    // guess is visible rather than silent.
+    const type = detectMemoType(request);
+    const context = {...OFFLINE_CONTEXT, type};
+    if (type === "record") context.letterhead = null;   // plain paper - fig 2-17
+    if (type === "record") context.authorityLine = null;
+
     const {memo, result} = await runMemoAgent({
         request,
-        context: OFFLINE_CONTEXT,
+        context,
         draft: drafter.draft,
         onPass: ({pass, result}) => {
             const n = result.contentFindings.length;
@@ -344,20 +402,40 @@ async function main() {
     });
 
     drafter.dispose();
+    await emit(memo, args);
+}
 
+/**
+ * Render, report, and write whatever outputs were asked for. Shared by the
+ * drafting path and the template path so both go through the same validation.
+ */
+async function emit(memo, args) {
     const text = renderText(memo);
     console.log(text);
     console.log("\n" + "-".repeat(72) + "\n");
+
+    const result = validateMemo(memo);
     console.log(formatReport(result));
-    console.log(`\nType: ${MEMO_TYPES[memo.type].title} (${MEMO_TYPES[memo.type].cite})`);
+
+    const meta = MEMO_TYPES[memo.type] ?? MEMO_TYPES.standard;
+    console.log(`\nType: ${meta.title} (${meta.cite})`);
 
     if (args.text) {
         await fs.writeFile(args.text, text, "utf8");
-        console.log(`\nWrote ${args.text}`);
+        console.log(`Wrote ${args.text}`);
     }
     if (args.html) {
         await fs.writeFile(args.html, renderHtmlDocument(memo), "utf8");
         console.log(`Wrote ${args.html}`);
+    }
+    if (args.emitSpec) {
+        await fs.writeFile(args.emitSpec, JSON.stringify(memo, null, 2) + "\n", "utf8");
+        console.log(`Wrote ${args.emitSpec} - edit it and re-run with --spec ${args.emitSpec}`);
+    }
+    if (args.docx) {
+        const {writeDocx} = await import("./memo-docx.js");
+        await writeDocx(memo, args.docx, args.seal ? {seal: args.seal} : {});
+        console.log(`Wrote ${args.docx}`);
     }
 }
 
