@@ -2168,6 +2168,181 @@ const FIELD_TEMPLATE = {
 }
 
 // ---------------------------------------------------------------------------
+// The front end
+// ---------------------------------------------------------------------------
+
+/*
+ * The page collects three things and nothing else: what you need, your words,
+ * and the matters of record. Nothing it sends can move anything on the page -
+ * that is what makes the .docx safe to lock and still safe to type into.
+ */
+{
+    const {parseBody, specFromForm, createMemoServer} = await import("./memo-server.js");
+
+    // Indentation is the subdivision level, two spaces per rung. Figure 2-1
+    // stops at the third subdivision and buildParagraphTree() clamps there.
+    check("a blank line separates paragraphs",
+        parseBody("One.\n\nTwo.").map((p) => p.text), ["One.", "Two."], "AR 25-50, para 2-4b");
+    check("indentation is the subdivision level",
+        parseBody("Top.\n\n  Sub.\n\n    Deeper.").map((p) => p.level), [0, 1, 2],
+        "AR 25-50, fig 2-1");
+    check("a leading dash is a subparagraph too",
+        parseBody("Top.\n\n- Sub.").map((p) => p.level), [0, 1], "AR 25-50, fig 2-1");
+    check("a soft-wrapped line stays one paragraph",
+        parseBody("One sentence\nwrapped by the textarea.").map((p) => p.text),
+        ["One sentence wrapped by the textarea."], "AR 25-50, para 2-4b");
+    check("a tab counts as one rung", parseBody("Top.\n\n\tSub.").map((p) => p.level), [0, 1],
+        "AR 25-50, fig 2-1");
+
+    // The form never carries a number, because para 2-4b(4)(b) makes the label
+    // the renderer's job.
+    checkTrue("the body syntax has no way to type a paragraph number",
+        parseBody("1. Typed by hand.")[0].text === "1. Typed by hand."
+            && parseBody("1. Typed by hand.")[0].level === 0,
+        "AR 25-50, para 2-4b(4)(b)");
+
+    // Every matter of record left blank comes back a placeholder, never a
+    // plausible-looking value.
+    const blank = specFromForm({request: "tell the battalions the range closes"});
+    for (const {path, label} of (await import("./templates.js")).RECORD_FIELDS) {
+        const value = path.split(".").reduce((o, k) => o?.[k], blank);
+        checkTrue(`${label} defaults to a placeholder, not a plausible value`,
+            hasPlaceholdersDeep(value), "AR 25-50");
+    }
+    check("the date is a placeholder, because it goes on after signature",
+        blank.date, "[DATE]", "AR 25-50, para 2-4a(3)(b)");
+    checkTrue("an unfilled date is reported as unfilled",
+        validateMemo(blank).warnings.some(
+            (f) => f.rule === "unfilled-placeholder" && f.message.startsWith("date")),
+        "AR 25-50, para 2-4a(3)(b)");
+
+    // Supplied values are used as given.
+    const filled = specFromForm({
+        request: "notify the battalions", subject: "Range 14 Closure",
+        officeSymbol: "ATZB-RC", date: "3 August 2026",
+        signerName: "MARCUS T. HALE", signerGrade: "LTC, IN", signerTitle: "Director, Plans",
+    });
+    check("a supplied office symbol is used", filled.officeSymbol, "ATZB-RC", "AR 25-50, para 2-4a(1)");
+    check("a supplied date is used", filled.date, "3 August 2026", "AR 25-50, para 2-4a(3)(b)");
+    checkTrue("a fully supplied memorandum has no unfilled record fields",
+        !["officeSymbol", "date"].some((k) => hasPlaceholdersDeep(filled[k])), "AR 25-50");
+
+    // The type follows the request, and an explicit choice overrides it.
+    check("the request picks the type", specFromForm({request: "record the call with the SJA"}).type,
+        "record", "AR 25-50, para 2-7");
+    check("an explicit type wins over the guess",
+        specFromForm({request: "record the call with the SJA", type: "standard"}).type,
+        "standard", "AR 25-50, para 2-2");
+    check("an unknown type falls back to the request",
+        specFromForm({request: "record the call with the SJA", type: "nonsense"}).type,
+        "record", "AR 25-50, para 2-2");
+
+    // fig 2-17: an MFR is on plain paper with no authority line.
+    const mfr = specFromForm({request: "memorandum for record of the call", authorityLine: "FOR THE COMMANDER:"});
+    check("fig 2-17: an MFR comes out on plain paper", mfr.letterhead, null, "AR 25-50, fig 2-17");
+    check("fig 2-17: an MFR carries no authority line", mfr.authorityLine, null, "AR 25-50, fig 2-17");
+
+    // Whatever the page produces still has to satisfy the regulation.
+    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+        const spec = specFromForm({type, request: "", subject: "Range 14 Closure",
+                                   body: "Range 14 closes for maintenance in August 2026."});
+        check(`the front end's ${type} output raises no errors`,
+            validateMemo(spec).errors.map((f) => f.rule), [], "AR 25-50");
+    }
+
+    // The server itself: every route answers, and the .docx it returns is the
+    // same locked, Arial-12-only file the CLI writes.
+    const server = createMemoServer();
+    await new Promise((r) => server.listen(0, r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const form = {request: "tell the battalions range 14 closes", subject: "Range 14 Closure",
+                  body: "Range 14 closes for maintenance from 3 to 7 August 2026."};
+    const post = (path) => fetch(`${base}${path}`, {
+        method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(form)});
+
+    const home = await fetch(`${base}/`);
+    check("the page is served", home.status, 200, "front end");
+    checkTrue("the page needs no network of its own",
+        !/\b(src|href)\s*=\s*["']https?:/i.test(await home.text()), "front end");
+
+    const generated = await (await post("/generate")).json();
+    check("generate returns the type it read", generated.title, "Memorandum", "AR 25-50, para 2-4");
+    checkTrue("generate returns a rendered page", generated.html.includes("MEMORANDUM FOR"), "front end");
+    checkTrue("generate returns cited findings",
+        generated.findings.every((f) => f.rule && f.cite), "front end");
+
+    const docx = await post("/docx");
+    check("the .docx route returns a Word file", docx.headers.get("content-type"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "front end");
+    {
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(Buffer.from(await docx.arrayBuffer()));
+        const xml = await zip.file("word/document.xml").async("string");
+        const styles = await zip.file("word/styles.xml").async("string");
+        const settings = await zip.file("word/settings.xml").async("string");
+
+        check("the front end's .docx uses one type size",
+            [...new Set([...(xml + styles).matchAll(/<w:sz w:val="(\d+)"\/>/g)].map((m) => +m[1] / 2))],
+            [12], TYPE_CITE);
+        checkTrue("the front end's .docx locks formatting and nothing else",
+            /<w:documentProtection w:formatting="1" w:enforcement="1"\/>/.test(settings)
+                && !/w:edit="readOnly"/.test(settings),
+            "AR 25-50, paras 1-19 and 2-3");
+        checkTrue("the placeholders reach the file as ordinary editable text",
+            [...xml.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)]
+                .some((m) => m[1].includes("[OFFICE SYMBOL]")),
+            "AR 25-50, para 2-4a(1)");
+    }
+
+    const spec = await (await post("/spec")).json();
+    check("the spec route round-trips through --spec",
+        validateMemo(spec).errors.map((f) => f.rule), [], "AR 25-50");
+
+    check("an unknown route is a 404", (await fetch(`${base}/nope`)).status, 404, "front end");
+
+    // Para 1-16b(1) requires the seal and 1-16b(2) forbids substituting any
+    // other device, so the preview may not fall back to a broken image. An
+    // iframe's srcdoc has an opaque origin, which a filesystem path cannot
+    // load from - the page has to be pointed at a URL that resolves.
+    const seal = await fetch(`${base}/seal.png`);
+    check("the seal is served to the preview", seal.status, 200, "AR 25-50, para 1-16b(1)");
+    check("and served as an image", seal.headers.get("content-type"), "image/png",
+        "AR 25-50, para 1-16b(1)");
+    checkTrue("the preview points at a URL a browser can load, not a filesystem path",
+        /<img class="seal" src="https?:\/\//.test(generated.html), "AR 25-50, para 1-16b(1)");
+
+    await new Promise((r) => server.close(r));
+
+    /*
+     * army-memo-agent.js ends in a top-level `await main()`, so a module it
+     * imports may not import it back: the entry module's evaluation never
+     * completes, the cycle never settles, and `--serve` exits with "unsettled
+     * top-level await" instead of listening. memo-intent.js exists to hold
+     * what both of them need.
+     */
+    const intent = await import("./memo-intent.js");
+    checkTrue("what the front end needs lives outside the CLI entry point",
+        typeof intent.detectMemoType === "function"
+            && typeof intent.assembleMemo === "function"
+            && typeof intent.buildParagraphTree === "function",
+        "no import cycle through a top-level await");
+
+    const serverSource = await (await import("fs/promises"))
+        .readFile(new URL("./memo-server.js", import.meta.url), "utf8");
+    checkTrue("the front end does not import the CLI entry point",
+        !/from\s+["']\.\/army-memo-agent\.js["']/.test(serverSource),
+        "no import cycle through a top-level await");
+}
+
+function hasPlaceholdersDeep(value) {
+    if (value == null) return false;
+    if (typeof value === "string") return /\[[A-Z]{2,}[^\]]*\]/.test(value);
+    if (Array.isArray(value)) return value.some(hasPlaceholdersDeep);
+    if (typeof value === "object") return Object.values(value).some(hasPlaceholdersDeep);
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 
 const total = passed + failures.length;
 if (failures.length === 0) {

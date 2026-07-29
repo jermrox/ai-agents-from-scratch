@@ -1058,6 +1058,12 @@ function checkPlaceholders(memo, out) {
     const spots = findPlaceholders({
         officeSymbol: memo.officeSymbol,
         arimsRecordNumber: memo.arimsRecordNumber,
+        // The date is the placeholder most likely to survive to the staffing
+        // folder, because para 2-4a(3)(b) means it is *supposed* to be blank
+        // until the memorandum is signed. That makes reporting it more
+        // important than the others, not less.
+        date: memo.date,
+        suspenseDate: memo.suspenseDate,
         subject: memo.subject,
         addressees: memo.addressees,
         thru: memo.thru,

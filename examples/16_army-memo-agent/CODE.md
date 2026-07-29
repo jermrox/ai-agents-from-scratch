@@ -1,6 +1,6 @@
 # Code explanation: `army-memo-agent.js`
 
-Nine files, each with one job:
+Eleven files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
@@ -11,7 +11,9 @@ Nine files, each with one job:
 | `signature-blocks.js` | Chapter 6 and appendix D: table 6-1 grades, GS/IG, general officers, warrant officers, civilians, retired, USAR, ARNG, chaplains, authority lines. |
 | `templates.js` | One editable skeleton per memorandum type, with `[BRACKETED]` placeholders. |
 | `memo-validator.js` | Compliance checks. Every finding cites AR 25-50 and is tagged `content` or `format`. |
-| `army-memo-agent.js` | Intent detection, the draft/validate/repair loop, and the CLI. |
+| `memo-intent.js` | Request &rarr; memorandum type; content + facts of record &rarr; a spec. |
+| `memo-server.js` | **The front end.** A page that takes a request and returns a checked memorandum and a Word file. |
+| `army-memo-agent.js` | The draft/validate/repair loop and the CLI. |
 | `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
 
 ## Run
@@ -31,6 +33,9 @@ node examples/16_army-memo-agent/army-memo-agent.js --spec decision-memo.json \
 # No model required - canned content through the real formatter and validator
 node examples/16_army-memo-agent/army-memo-agent.js --offline
 
+# The front end: say what you need, get a memorandum and a .docx
+node examples/16_army-memo-agent/army-memo-agent.js --serve
+
 # Check the renderer and the .docx against AR 25-50's own figures
 node examples/16_army-memo-agent/verify.js
 
@@ -47,6 +52,7 @@ node examples/16_army-memo-agent/army-memo-agent.js --docx memo.docx \
 | `--docx <path>` | Word deliverable |
 | `--html <path>` / `--text <path>` | Previews |
 | `--seal <path>` | The DoD seal image, once (see `assets/README.md`) |
+| `--serve` | Open the front end on http://localhost:4250 (`--port` to change) |
 | `--offline` | Skip the model |
 
 The live path needs `models/Qwen3-1.7B-Q8_0.gguf` (see [DOWNLOAD.md](../../DOWNLOAD.md)). Everything except the drafting step runs without a model, which is the point - the parts that must be exactly right are the parts that do not need one.
@@ -269,13 +275,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-384 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+458 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 384/384 checks passed.
+# AR 25-50 layout verification: 458/458 checks passed.
 ```
 
 ---
@@ -503,6 +509,52 @@ await fs.writeFile("memo.html", renderHtmlDocument(memo));
 ```
 
 Other memo types set `type`: `"thru"` (para 2-4a(5)(d), with a `thru` array), `"record"` (para 2-7), `"decision"` (para 2-8), `"mou"` / `"moa"` (para 2-6, with a `parties` array and side-by-side `signers`).
+
+---
+
+## The front end
+
+```bash
+node examples/16_army-memo-agent/army-memo-agent.js --serve
+```
+
+Node's own `http` module, one page, no framework and no network. It makes the division of labour visible, because the page is laid out along it:
+
+| The page asks for | Who owns it |
+| --- | --- |
+| **What do you need** | `detectMemoType()` reads the memorandum type out of it (para 2-2). Override it if the guess is wrong; the guess is always shown. |
+| **Your words** | Subject and body — the only things a person actually writes. |
+| **Matters of record** | Office symbol, ARIMS number, date, letterhead, signature block. |
+
+Everything else — every measurement on the page — is not on the form, because none of it is a choice.
+
+**The matters of record default to placeholders.** Leave a field blank and it comes out as `[OFFICE SYMBOL]`, not as a plausible-looking value. That is the point: a memorandum reading `[OFFICE SYMBOL]` is obviously unfinished, while one reading `ATZB-RC` because that is what the demo used is wrong in a way nobody notices until it has been staffed. The date is normally one of them — para 2-4a(3)(b) puts it on the page *"after the memorandum has been signed"*, so at drafting time it is not knowable.
+
+**You fill them in afterwards, in Word, and nothing moves.** No measurement depends on what any of those fields say, which is exactly why the `.docx` can lock formatting and still be typed into:
+
+```xml
+<w:documentProtection w:formatting="1" w:enforcement="1"/>
+```
+
+Font, size, spacing, indents and margins are enforced; the text is not. There is no `w:edit="readOnly"`.
+
+**The body syntax is deliberately not a numbering scheme.** A blank line separates paragraphs; indentation is the subdivision level, two spaces per rung. You never type `1.` or `a.` — para 2-4b(4)(b) makes the label the renderer's job, and a hand-typed one would be duplicated by the one the tab grid puts there. Figure 2-1 stops at the third subdivision and `buildParagraphTree()` clamps there.
+
+```
+Range 14 closes for maintenance from 3 through 7 August 2026.
+
+Range Control will complete the following work:
+
+  Replace the target lifters on lanes 1 through 12.
+
+  Regrade the access road.
+```
+
+becomes `1.`, `2.`, `a.`, `b.` — positioned on the quarter-inch grid, with continuation lines returning to the left margin.
+
+Four routes, all POST except the first two: `/` the page, `/seal.png` the seal, `/detect` the type, `/generate` a rendered preview plus cited findings, `/docx` the Word file, `/spec` the JSON you can re-render later with `--spec`.
+
+One structural note. `army-memo-agent.js` ends in a top-level `await main()`, so nothing it imports may import it back — the entry module's evaluation never completes, the cycle never settles, and `--serve` exits with *"unsettled top-level await"* instead of listening. `memo-intent.js` exists to hold what the CLI and the front end both need. `verify.js` asserts the cycle stays broken.
 
 ---
 
