@@ -50,6 +50,8 @@ import {
     letterAudiences,
     LETTER_AUDIENCES,
     APPENDIX_F,
+    TABBING,
+    checkTabSequence,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -557,6 +559,46 @@ function checkDigitalSignature(memo, out) {
     }
 }
 
+/**
+ * Chapter 4's tabbing rules are physical - plastic tabs, blank carrier sheets,
+ * positions measured on paper - with one exception that lands in the text:
+ *
+ *   "To tab a correspondence package forwarded for signature or approval,
+ *    identify the tabs in the document. (Tabs may be any letter or number as
+ *    long as they are consecutive and fully identified in the text.)" - 4-4a
+ *
+ * Both halves of that parenthesis are checkable, so both are checked.
+ */
+function checkTabbing(memo, out) {
+    const bodyText = collectText(memo.paragraphs ?? []).join(" ");
+    const seq = checkTabSequence(memo.tabs ?? [], bodyText);
+
+    if (seq.labels.length) {
+        if (seq.mixedKinds) {
+            out.push(error("content", "tab-labels-mixed",
+                `Tab labels mix letters and numbers: ${seq.labels.join(", ")}. Tabs may be any letter or number, but one kind throughout.`,
+                TABBING.packageCite));
+        } else if (!seq.consecutive) {
+            out.push(error("content", "tab-labels-not-consecutive",
+                `Tab labels ${seq.labels.join(", ")} are not consecutive.`,
+                TABBING.packageCite));
+        }
+        if (seq.unmentioned.length) {
+            out.push(error("content", "tab-not-identified",
+                `The body never identifies ${seq.unmentioned.length === 1 ? "tab" : "tabs"} ${seq.unmentioned.join(", ")}. Every tab is fully identified in the text.`,
+                TABBING.packageCite));
+        }
+    }
+
+    // "If the correspondence has three or more enclosures, tab each one." - 4-3
+    const encls = memo.enclosures ?? [];
+    if (encls.length >= TABBING.tabWhenEnclosuresAtLeast && seq.labels.length === 0) {
+        out.push(warn("content", "enclosures-need-tabs",
+            `${encls.length} enclosures. Correspondence with three or more enclosures has each one tabbed, and each enclosure's first page is marked "${TABBING.stampEachEnclosure(1)}" and so on at the lower right corner.`,
+            `${TABBING.cite}; ${TABBING.stampCite}`));
+    }
+}
+
 function checkPostscript(paragraphs, out) {
     for (const text of collectText(paragraphs)) {
         if (POSTSCRIPTS.pattern.test(text)) {
@@ -942,6 +984,7 @@ export function validateMemo(memo, options = {}) {
     checkMassMailing(memo, out);
     checkCorrespondenceVehicle(memo, out);
     checkDigitalSignature(memo, out);
+    checkTabbing(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

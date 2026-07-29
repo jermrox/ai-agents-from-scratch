@@ -1990,6 +1990,42 @@ const FIELD_TEMPLATE = {
         "AR 25-50, para F-2e");
     check("the date box alignment is the one thing F-2e does mandate",
         APPENDIX_F.dateBox.alignment, "Right", "AR 25-50, para F-2e");
+
+    /*
+     * Chapter 4's tabbing rules are physical except for one sentence:
+     * "Tabs may be any letter or number as long as they are consecutive and
+     * fully identified in the text." - para 4-4a. Both halves are checkable.
+     */
+    const {checkTabSequence, TABBING} = await import("./ar25-50.js");
+    const body = "Tab A is the memorandum for signature. Tab B is the tasking. Tab C is the coordination.";
+
+    checkTrue("consecutive lettered tabs named in the body pass",
+        checkTabSequence(["A", "B", "C"], body).ok, TABBING.packageCite);
+    checkTrue("a gap in the sequence is caught",
+        !checkTabSequence(["A", "C"], body).consecutive, TABBING.packageCite);
+    checkTrue("numbers are as acceptable as letters",
+        checkTabSequence(["1", "2"], "Tab 1 is the memorandum. Tab 2 is the tasking.").ok,
+        TABBING.packageCite);
+    checkTrue("letters mixed with numbers are caught",
+        checkTabSequence(["A", "2"], body).mixedKinds, TABBING.packageCite);
+    check("a tab the body never names is caught",
+        checkTabSequence(["A", "B", "C", "D"], body).unmentioned, ["D"], TABBING.packageCite);
+
+    checkTrue("a tab missing from the body is reported on the memorandum",
+        validateMemo({...FIG_2_1, tabs: ["A", "B"],
+                      paragraphs: [{text: "Tab A is the memorandum for signature."}]})
+            .errors.some((f) => f.rule === "tab-not-identified"),
+        TABBING.packageCite);
+
+    // "If the correspondence has three or more enclosures, tab each one." - 4-3
+    checkTrue(`${TABBING.tabWhenEnclosuresAtLeast} enclosures with no tabs is reported`,
+        validateMemo({...FIG_2_1, enclosures: ["One", "Two", "Three"]})
+            .warnings.some((f) => f.rule === "enclosures-need-tabs"),
+        TABBING.cite);
+    checkTrue(`${TABBING.tabWhenEnclosuresAtLeast - 1} enclosures is not`,
+        validateMemo({...FIG_2_1, enclosures: ["One", "Two"]})
+            .warnings.every((f) => f.rule !== "enclosures-need-tabs"),
+        TABBING.cite);
 }
 
 // ---------------------------------------------------------------------------

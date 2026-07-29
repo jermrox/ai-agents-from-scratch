@@ -865,7 +865,59 @@ export const TABBING = {
         "backup information and staff coordination comments",
     ],
     packageCite: "AR 25-50, para 4-4a",
+
+    // "If an enclosure has its own enclosures that need tabbing, use a
+    //  different color or type of tab to identify these secondary documents."
+    //  - para 4-3. Figure 4-1 names them relative to their parent, "ENCL 1 TO
+    //  TAB B", and interleaves them in reading order.
+    secondaryLabel: (parent, n) => `ENCL ${n} TO TAB ${parent}`,
+
+    // "Write or type 'Encl' and the number at the lower right corner of the
+    //  first page of each enclosure before scanning or making any required
+    //  copies." - para 4-2d(1). This module emits the memorandum only, so it
+    //  is an instruction to whoever assembles the package.
+    stampEachEnclosure: (n) => `Encl ${n}`,
+    stampCite: "AR 25-50, para 4-2d(1)",
 };
+
+/**
+ * Whether a set of tab labels satisfies para 4-4a: "Tabs may be any letter or
+ * number as long as they are consecutive and fully identified in the text."
+ *
+ * Two conditions, and both are checkable: the labels run without a gap, and
+ * every one of them is named somewhere in the body.
+ */
+export function checkTabSequence(tabs = [], bodyText = "") {
+    const labels = tabs.map((t) => String(typeof t === "string" ? t : (t?.label ?? "")).trim())
+        .filter(Boolean);
+    if (labels.length === 0) return {ok: true, labels, consecutive: true, unmentioned: []};
+
+    const allLetters = labels.every((l) => /^[A-Za-z]$/.test(l));
+    const allNumbers = labels.every((l) => /^\d+$/.test(l));
+
+    let consecutive = false;
+    if (allLetters) {
+        const codes = labels.map((l) => l.toUpperCase().charCodeAt(0));
+        consecutive = codes.every((c, i) => i === 0 || c === codes[i - 1] + 1);
+    } else if (allNumbers) {
+        const nums = labels.map(Number);
+        consecutive = nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+    }
+
+    // "fully identified in the text" - the label has to be named, not merely
+    // implied by the count.
+    const text = String(bodyText);
+    const unmentioned = labels.filter((l) =>
+        !new RegExp(`\\btab\\s+${l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+
+    return {
+        ok: consecutive && unmentioned.length === 0,
+        labels,
+        consecutive,
+        mixedKinds: !allLetters && !allNumbers,
+        unmentioned,
+    };
+}
 
 /**
  * Distribution and copy-furnished listings are *blocked* flush with the left
