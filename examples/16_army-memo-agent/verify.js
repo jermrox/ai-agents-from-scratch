@@ -491,6 +491,241 @@ const FIG_2_1 = {
 }
 
 // ---------------------------------------------------------------------------
+// Addressed to a person: Exclusive For, appreciation, commendation
+// ---------------------------------------------------------------------------
+
+/**
+ * "Exception: When used for 'Exclusive For' correspondence, appreciation, and
+ *  commendation, address the memorandum to the name and title of the
+ *  addressee." - para 2-4a(5)
+ *
+ * Appendix C does not reach a memorandum: para C-2a scopes it to "addresses in
+ * letters, on envelopes, and for salutations and complimentary closes in
+ * letters", and no paragraph of chapter 2 cross-references it. A memorandum has
+ * no salutation and no complimentary close, so these forms are governed by
+ * paras 1-12 and 2-4a(5) alone.
+ */
+{
+    const {EXCLUSIVE_FOR, formatAddresseeName, PERSONAL_ADDRESS_TYPES} = await import("./ar25-50.js");
+
+    const exclusive = layoutMemo({
+        ...FIG_2_1,
+        type: "exclusiveFor",
+        addressees: ["MAJ Edward A. Dees, USA"],
+        addresseeTitle: "Chief, Plans Division",
+        addresseeAddress: "300 Army Pentagon, Washington, DC  20310-0300",
+    });
+    const joined = (doc, role) => doc.flow.filter((l) => l.role === role)
+        .map((l) => l.text).join(" ").replace(/\s+/g, " ").trim();
+    check("para 1-12b(1): an Exclusive For memorandum names the person, not the office",
+        joined(exclusive, "memorandum-for"),
+        "Memorandum Exclusive For MAJ Edward A. Dees, USA, Chief, Plans Division, 300 Army Pentagon, Washington, DC 20310-0300",
+        EXCLUSIVE_FOR.cite);
+
+    const toCommander = layoutMemo({
+        ...FIG_2_1,
+        type: "exclusiveFor",
+        toCommanderOf: "1st Battalion, 5th Infantry",
+        addresseeTitle: "Commander",
+    });
+    checkTrue("para 1-12b(1): the 'Commander of' form is available",
+        toCommander.flow[indexOf(toCommander, "memorandum-for")].text
+            .startsWith("Memorandum Exclusive For Commander of 1st Battalion"),
+        EXCLUSIVE_FOR.cite);
+
+    checkTrue("Exclusive For does not use the uppercase MEMORANDUM FOR keyword",
+        !exclusive.flow[indexOf(exclusive, "memorandum-for")].text.startsWith("MEMORANDUM FOR"),
+        EXCLUSIVE_FOR.cite);
+
+    for (const type of ["appreciation", "commendation"]) {
+        const memo = layoutMemo({
+            ...FIG_2_1, type,
+            addressees: ["SFC John A. Smith, USA"],
+            addresseeTitle: "Platoon Sergeant",
+        });
+        check(`para 2-4a(5): a memorandum of ${type} is addressed to the name and title`,
+            memo.flow[indexOf(memo, "memorandum-for")].text,
+            "MEMORANDUM FOR SFC John A. Smith, USA, Platoon Sergeant",
+            "AR 25-50, paras 2-2 and 2-4a(5)");
+    }
+
+    check("the three person-addressed forms are the ones the regulation names",
+        PERSONAL_ADDRESS_TYPES, ["exclusiveFor", "appreciation", "commendation"],
+        "AR 25-50, para 2-4a(5)");
+
+    // "show the military grade or civilian prefix, first name, middle initial
+    //  (if known), and last name in that order [...] use the following Service
+    //  designation abbreviations after the addressee's name" - para 5-9b
+    check("para 5-9b: an individual addressee is grade, first, middle initial, last, Service",
+        formatAddresseeName({grade: "MAJ", first: "Edward", middleInitial: "A", last: "Dees", service: "USA"}),
+        "MAJ Edward A. Dees, USA", "AR 25-50, para 5-9b");
+    check("para 5-9b: a civilian prefix takes the grade position",
+        formatAddresseeName({prefix: "Mr.", first: "David", last: "Okonkwo"}),
+        "Mr. David Okonkwo", "AR 25-50, para 5-9b");
+}
+
+// ---------------------------------------------------------------------------
+// Chapter 5 and appendix B - States, ZIP codes, and protocol order
+// ---------------------------------------------------------------------------
+
+{
+    const {STATE_ABBREVIATIONS, VALID_STATE_CODES, OVERSEAS_CODES, normalizeZipSpacing,
+           checkProtocolOrder, PROTOCOL_HQDA, PROTOCOL_OSD} = await import("./ar25-50.js");
+
+    // Table 5-3 is 54 entries; paras 5-10a adds AE, AP, AA.
+    check("tbl 5-3: fifty-four State and territory abbreviations",
+        Object.keys(STATE_ABBREVIATIONS).length, 54, "AR 25-50, table 5-3");
+    check("tbl 5-3: the territories are included",
+        [STATE_ABBREVIATIONS.Guam, STATE_ABBREVIATIONS["Puerto Rico"],
+         STATE_ABBREVIATIONS["Virgin Islands"], STATE_ABBREVIATIONS["District of Columbia"]],
+        ["GU", "PR", "VI", "DC"], "AR 25-50, table 5-3");
+    check("para 5-10a: the three overseas codes are also valid",
+        Object.keys(OVERSEAS_CODES), ["AE", "AP", "AA"], "AR 25-50, para 5-10a");
+    checkTrue("an APO address is not rejected for its State code",
+        VALID_STATE_CODES.has("AE"), "AR 25-50, para 5-10a");
+
+    // "Type the ZIP code two spaces after the last letter of the State." - 5-10b
+    check("para 5-10b: the ZIP goes two spaces after the State",
+        normalizeZipSpacing("Fort Carson, CO 80913-4321"),
+        "Fort Carson, CO  80913-4321", "AR 25-50, para 5-10b");
+    check("para 5-10b: normalization is idempotent",
+        normalizeZipSpacing(normalizeZipSpacing("Fort Carson, CO 80913-4321")),
+        "Fort Carson, CO  80913-4321", "AR 25-50, para 5-10b");
+    checkTrue("para 5-10b: the rendered memorandum carries the two spaces",
+        renderText({...FIG_2_1, addressees: ["Commander, 1st Battalion, Fort Carson, CO 80913-4321"]})
+            .includes("CO  80913-4321"), "AR 25-50, para 5-10b");
+
+    checkTrue("an unknown State code is reported",
+        validateMemo({...FIG_2_1, addressees: ["Commander, Somewhere, ZZ  12345-6789"]})
+            .errors.some((f) => f.rule === "unknown-state-code"), "AR 25-50, table 5-3");
+    checkTrue("a five-digit ZIP is reported",
+        validateMemo({...FIG_2_1, addressees: ["Commander, Fort Carson, CO  80913"]})
+            .warnings.some((f) => f.rule === "zip-not-plus-four"), "AR 25-50, para 5-10b");
+
+    // Appendix B protocol sequences.
+    check("fig B-2: the HQDA protocol sequence has 36 positions",
+        PROTOCOL_HQDA.length, 36, "AR 25-50, fig B-2");
+    check("fig B-2: it opens with the Secretary of the Army",
+        PROTOCOL_HQDA[0], "Secretary of the Army", "AR 25-50, fig B-2");
+    check("fig B-1: the OSD protocol sequence has 16 positions",
+        PROTOCOL_OSD.length, 16, "AR 25-50, fig B-1");
+
+    // Figure 2-5 addresses G-1, G-2, G-4 - which is fig B-2 order.
+    checkTrue("fig 2-5's own addressees are in protocol order",
+        checkProtocolOrder([
+            "DEPUTY CHIEF OF STAFF, G-1 (DAPE-ZA), 300 ARMY PENTAGON",
+            "DEPUTY CHIEF OF STAFF, G-2 (DAMI-ZA), 1000 ARMY PENTAGON",
+            "DEPUTY CHIEF OF STAFF, G-4 (DALO-ZA), 500 ARMY PENTAGON",
+        ]).inOrder, "AR 25-50, fig B-2");
+
+    checkTrue("addressees out of protocol order are reported",
+        validateMemo({...FIG_2_1, addressees: [
+            "DEPUTY CHIEF OF STAFF, G-4 (DALO-ZA)",
+            "DEPUTY CHIEF OF STAFF, G-1 (DAPE-ZA)",
+        ]}).warnings.some((f) => f.rule === "protocol-order"), "AR 25-50, fig B-2");
+
+    checkTrue("offices outside appendix B are not reordered on a guess",
+        checkProtocolOrder(["Information Office, FORSCOM", "Information Office, TRADOC"]).inOrder,
+        "AR 25-50, appendix B");
+
+    // "Do not use it when addressing Army correspondence." - para 1-13
+    checkTrue("ALARACT in an address is reported",
+        validateMemo({...FIG_2_1, addressees: ["ALARACT"]})
+            .errors.some((f) => f.rule === "alaract-in-address"), "AR 25-50, para 1-13");
+}
+
+// ---------------------------------------------------------------------------
+// Chapter 4 - the enclosure listing
+// ---------------------------------------------------------------------------
+
+/**
+ * "Enclosures should be listed only when they have not been identified in the
+ *  body of the correspondence." - para 4-2.
+ *
+ * That one sentence produces four different listings, reproduced here against
+ * tables 4-2, 4-3, 4-4, and 4-6.
+ */
+{
+    const {buildEnclosureListing, capitalizeFirstWord, TABBING} = await import("./ar25-50.js");
+    const shape = (encls) => {
+        const r = buildEnclosureListing(encls);
+        return [r.label, ...r.entries.map((e) => e.text)];
+    };
+    const inBody = (title) => ({title, identifiedInBody: true});
+
+    // Table 4-4: identified in the body - the bare word, no count, no list.
+    check("tbl 4-4: enclosures identified in the body list as 'Encls' alone",
+        shape([inBody("a"), inBody("b")]), ["Encls"], "AR 25-50, para 4-2c(4)");
+    check("tbl 4-4: one identified in the body lists as 'Encl' alone",
+        shape([inBody("a")]), ["Encl"], "AR 25-50, para 4-2c(4)");
+
+    // Table 4-3: one, not identified - no number, description on the next line.
+    check("tbl 4-3: one enclosure not identified takes no number but keeps its description",
+        shape(["Memorandum, USAREUR, 28 Feb 19"]),
+        ["Encl", "Memorandum, USAREUR, 28 Feb 19"], "AR 25-50, para 4-2c(3)");
+
+    // Table 4-2: two or more, not identified - count and numbered descriptions.
+    check("tbl 4-2: four enclosures not identified are counted and numbered",
+        shape([
+            "Memorandum, AMC, 29 Jan 19",
+            "Memorandum, FORSCOM, 1 Mar 19",
+            "Memorandum, TRADOC, 18 Apr 19",
+            "Memorandum, MEDCOM, 30 Apr 19",
+        ]),
+        ["4 Encls",
+         "1. Memorandum, AMC, 29 Jan 19",
+         "2. Memorandum, FORSCOM, 1 Mar 19",
+         "3. Memorandum, TRADOC, 18 Apr 19",
+         "4. Memorandum, MEDCOM, 30 Apr 19"],
+        "AR 25-50, para 4-2c(2)");
+
+    // Table 4-6: mixed - the count covers them all, identified runs collapse.
+    check("tbl 4-6: a mixed listing collapses the identified run to '1-3. as'",
+        shape([inBody("x"), inBody("y"), inBody("z"),
+               "Memorandum, USALSA, 5 Feb 19", "Memorandum, TJAG, 2 Jan 19"]),
+        ["5 Encls", "1\u20133. as",
+         "4. Memorandum, USALSA, 5 Feb 19",
+         "5. Memorandum, TJAG, 2 Jan 19"],
+        "AR 25-50, para 4-2c(6)");
+
+    check("tbl 4-6: a single identified enclosure in a mixed listing takes no range",
+        shape([inBody("x"), "Memorandum, TJAG, 2 Jan 19"]),
+        ["2 Encls", "1. as", "2. Memorandum, TJAG, 2 Jan 19"],
+        "AR 25-50, para 4-2c(6)");
+
+    // "capitalize the first letter in the first word of a listed enclosure"
+    check("para 4-2c(1): the first word of a listed enclosure is capitalized",
+        capitalizeFirstWord("memorandum, USAREUR, 28 Feb 19"),
+        "Memorandum, USAREUR, 28 Feb 19", "AR 25-50, para 4-2c(1)");
+    check("para 4-2c(1): capitalization reaches the rendered listing",
+        shape(["memorandum, USAREUR, 28 Feb 19"])[1],
+        "Memorandum, USAREUR, 28 Feb 19", "AR 25-50, para 4-2c(1)");
+
+    check("no enclosures produces no listing", shape([]), [null], "AR 25-50, para 4-2");
+
+    // The listing reaches the rendered memorandum in the right form.
+    const rendered = renderText({
+        ...FIG_2_1,
+        enclosures: [inBody("Range schedule"), "Memorandum, TJAG, 2 Jan 19"],
+    });
+    checkTrue("the mixed listing appears in the rendered memorandum",
+        rendered.includes("2 Encls") && rendered.includes("1. as")
+        && rendered.includes("2. Memorandum, TJAG, 2 Jan 19"),
+        "AR 25-50, para 4-2c(6)");
+
+    const identifiedOnly = renderText({...FIG_2_1, enclosures: [inBody("Range schedule")]});
+    checkTrue("an enclosure identified in the body renders as 'Encl' with no description",
+        identifiedOnly.includes("Encl") && !identifiedOnly.includes("Range schedule"),
+        "AR 25-50, para 4-2c(4)");
+
+    // "If the correspondence has three or more enclosures, tab each one." - 4-3
+    check("para 4-3: tabbing begins at three enclosures",
+        TABBING.tabWhenEnclosuresAtLeast, 3, TABBING.cite);
+    check("para 4-4a: the package tab order is fixed",
+        TABBING.packageOrder.length, 3, TABBING.packageCite);
+}
+
+// ---------------------------------------------------------------------------
 // Type: 12 pt Arial, never higher
 // ---------------------------------------------------------------------------
 
@@ -1296,6 +1531,88 @@ const FIELD_TEMPLATE = {
         validateMemo(createTemplate("standard"))
             .warnings.some((f) => f.rule === "unfilled-placeholder"),
         "template not yet filled in");
+}
+
+// ---------------------------------------------------------------------------
+// The limits of AR 25-50's own authority
+// ---------------------------------------------------------------------------
+
+/**
+ * Three rules that decide whether this module should be formatting the
+ * document at all. Each one is a boundary the regulation draws around itself,
+ * so the correct behavior is to report the boundary, never to format past it.
+ */
+{
+    const {supersedingAuthority, MASS_MAILING, letterAudiences} = await import("./ar25-50.js");
+
+    // Para 1-6 Note: HQDA principal officials sign under DoDM 5110.04 Vol 1.
+    checkTrue("a named superseding signer is detected",
+        supersedingAuthority({signerTitle: "Secretary of the Army"}).superseded,
+        "AR 25-50, para 1-6 (Note)");
+
+    checkTrue("an HQDA principal official from fig B-2 is detected",
+        supersedingAuthority({signerTitle: "Deputy Chief of Staff, G-4"}).superseded,
+        "AR 25-50, para 1-6 (Note) and fig B-2");
+
+    // Para 2-2 Note: origination, not just signature, triggers the SOP.
+    checkTrue("origination within the Army Staff is detected",
+        supersedingAuthority({originatingOrganization: "Army Staff"}).superseded,
+        "AR 25-50, para 2-2 (Note)");
+
+    checkTrue("an ordinary signer is not superseded",
+        supersedingAuthority({signerTitle: "Commanding", originatingOrganization: "1st Cavalry Division"})
+            .superseded === false,
+        "AR 25-50, para 1-6 (Note)");
+
+    checkTrue("a superseded memorandum is reported, not silently formatted",
+        validateMemo({...FIG_2_1, signature: {...FIG_2_1.signature, title: "Deputy Chief of Staff, G-4"}})
+            .warnings.some((f) => f.rule === "superseded-format"),
+        "AR 25-50, para 1-6 (Note)");
+
+    // Para E-1: "sent to 20 or more recipients."
+    const manyAddressees = Array.from({length: MASS_MAILING.threshold},
+        (_, i) => `Commander, ${i + 1} Brigade Combat Team`);
+
+    checkTrue(`${MASS_MAILING.threshold} recipients reach the mass-mailing threshold`,
+        validateMemo({...FIG_2_1, addressees: manyAddressees})
+            .warnings.some((f) => f.rule === "mass-mailing"),
+        MASS_MAILING.cite);
+
+    checkTrue(`${MASS_MAILING.threshold - 1} recipients do not`,
+        validateMemo({...FIG_2_1, addressees: manyAddressees.slice(0, -1)})
+            .warnings.every((f) => f.rule !== "mass-mailing"),
+        MASS_MAILING.cite);
+
+    // Para 3-2: the letter's audience is fixed, and a memorandum cannot serve it.
+    const audienceCases = [
+        ["The President of the United States", "the President or Vice President of the United States"],
+        ["Ms. Jane Roe, White House Liaison", "members of the White House staff"],
+        ["The Honorable John Doe, United States Senate", "Members of Congress"],
+        ["The Chief Justice of the Supreme Court", "Justices of the Supreme Court"],
+        ["The Honorable Jane Roe, Governor of Texas", "State Governors"],
+        ["The Honorable John Doe, Mayor of Woodbridge", "mayors"],
+        ["His Excellency, Ambassador of Canada", "foreign government officials"],
+        ["Mr. Robert Frost", "the public"],
+    ];
+    for (const [addressee, who] of audienceCases) {
+        check(`"${addressee}" is ${who}, so a letter is the vehicle`,
+            letterAudiences([addressee]).some((h) => h.who === who), true,
+            "AR 25-50, para 3-2");
+    }
+
+    checkTrue("an ordinary military addressee is not a letter audience",
+        letterAudiences(["Commander, 1st Cavalry Division"]).length === 0,
+        "AR 25-50, para 3-2");
+
+    checkTrue("addressing a memorandum to a letter audience is reported",
+        validateMemo({...FIG_2_1, addressees: ["The Honorable Jane Roe, Governor of Texas"]})
+            .warnings.some((f) => f.rule === "wrong-vehicle"),
+        "AR 25-50, para 3-2");
+
+    checkTrue("the figure 2-1 memorandum trips none of the three",
+        validateMemo(FIG_2_1).findings.every(
+            (f) => !["superseded-format", "mass-mailing", "wrong-vehicle"].includes(f.rule)),
+        "AR 25-50, fig 2-1");
 }
 
 // ---------------------------------------------------------------------------

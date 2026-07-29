@@ -257,8 +257,8 @@ async function createLlmDrafter() {
 const OFFLINE_CONTENT = {
     subject: "Range 14 Closure for Scheduled Maintenance",
     addressees: [
-        "Commander, 1st Battalion, 5th Infantry Regiment, 1234 Warrior Way, Fort Carson, CO 80913-4321",
-        "Commander, 2d Battalion, 5th Infantry Regiment, 1236 Warrior Way, Fort Carson, CO 80913-4321",
+        "Commander, 1st Battalion, 5th Infantry Regiment, 1234 Warrior Way, Fort Carson, CO  80913-4321",
+        "Commander, 2d Battalion, 5th Infantry Regiment, 1236 Warrior Way, Fort Carson, CO  80913-4321",
     ],
     // Two spaces after ending punctuation, per para 1-39b(9). The renderer
     // normalizes this anyway; writing it correctly here keeps the demo report
@@ -277,7 +277,7 @@ const OFFLINE_CONTEXT = {
     letterhead: {
         organization: "Headquarters, 4th Infantry Division",
         streetAddress: "1633 Mekong Street",
-        cityStateZip: "Fort Carson, CO 80913-4321",
+        cityStateZip: "Fort Carson, CO  80913-4321",
     },
     officeSymbol: "ATZB-RC",
     arimsRecordNumber: "25-50a",

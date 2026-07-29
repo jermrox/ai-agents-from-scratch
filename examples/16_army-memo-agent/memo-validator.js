@@ -36,6 +36,19 @@ import {
     SPACING,
     ADDRESSING,
     LISTING,
+    VALID_STATE_CODES,
+    STATE_TABLE_CITE,
+    ZIP,
+    OVERSEAS_CODES,
+    OVERSEAS_CITE,
+    checkProtocolOrder,
+    PROTOCOL_CITE,
+    ALARACT,
+    supersedingAuthority,
+    SUPERSEDING_AUTHORITY,
+    MASS_MAILING,
+    letterAudiences,
+    LETTER_AUDIENCES,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -122,6 +135,10 @@ function checkHeading(memo, out) {
     }
 
     checkAddressingStyle(addressees, out);
+    // These apply to a single addressee too, so they run outside
+    // checkAddressingStyle, which only concerns multiple-address memorandums.
+    checkAddressGeography(addressees, out);
+    checkProtocol(addressees, out);
 
     if (memo.distributionOnSeparatePage && !(memo.distribution?.length)) {
         out.push(error("content", "distribution-page-empty",
@@ -173,6 +190,73 @@ function checkAddressingStyle(addressees, out) {
                 break;
             }
         }
+    }
+
+}
+
+/**
+ * State codes and ZIP codes inside an addressee line.
+ *
+ *   "Use the USPS two-letter abbreviations listed in table 5-3." - para 5-10c
+ *   "The ZIP code is a nine-digit number [...] Type the ZIP code two spaces
+ *    after the last letter of the State." - para 5-10b
+ *   APO/FPO mail "will not have the city or country name placed in the
+ *    address." - para 5-10
+ */
+function checkAddressGeography(addressees, out) {
+    for (const a of addressees) {
+        const text = String(a);
+
+        // A trailing "XX 12345-6789" is the state-and-ZIP tail.
+        const tail = /\b([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/.exec(text.trim());
+        if (!tail) continue;
+
+        const [, code, zip] = tail;
+        if (!VALID_STATE_CODES.has(code)) {
+            out.push(error("content", "unknown-state-code",
+                `"${code}" is not a USPS State or territory abbreviation, nor an overseas code (AE, AP, AA).`,
+                STATE_TABLE_CITE));
+        }
+
+        if (!zip.includes("-")) {
+            out.push(warn("content", "zip-not-plus-four",
+                `"${zip}" is a five-digit ZIP. A complete address uses the nine-digit ZIP+4.`,
+                ZIP.cite));
+        }
+
+        // "Type the ZIP code two spaces after the last letter of the State."
+        const spacing = new RegExp(`\\b${code}( +)${zip.replace("-", "\\-")}\\s*$`).exec(text.trim());
+        if (spacing && spacing[1].length !== ZIP.spacesAfterState) {
+            out.push(warn("format", "zip-spacing",
+                `The ZIP code goes ${ZIP.spacesAfterState} spaces after the last letter of the State; the renderer normalized it.`,
+                ZIP.cite));
+        }
+
+        // APO/FPO addresses carry no city or country name.
+        if (/\b(APO|FPO)\b/i.test(text) && Object.keys(OVERSEAS_CODES).includes(code)) {
+            const beforeApo = text.split(/\b(?:APO|FPO)\b/i)[0];
+            if (/,\s*[A-Za-z][A-Za-z .]{3,}\s*,?\s*$/.test(beforeApo)) {
+                out.push(warn("content", "apo-city-name",
+                    "Mail addressed to an APO or FPO carries no city or country name; identifying overseas units could breach security.",
+                    OVERSEAS_CITE));
+            }
+        }
+    }
+}
+
+/**
+ * Protocol sequence. AR 25-50 states an order only for the two populations in
+ * appendix B - the Office of the Secretary of Defense (fig B-1) and HQDA
+ * principal officials (fig B-2) - so addressees outside those lists are
+ * ignored rather than reordered on a guess.
+ */
+function checkProtocol(addressees, out) {
+    if (addressees.length < 2) return;
+    const result = checkProtocolOrder(addressees);
+    if (!result.inOrder) {
+        out.push(warn("content", "protocol-order",
+            `"${result.offender.addressee}" is listed after "${result.previous.addressee}", but precedes it in the protocol sequence for HQDA principal officials.`,
+            PROTOCOL_CITE));
     }
 }
 
@@ -369,6 +453,77 @@ function checkPointOfContact(paragraphs, out) {
         out.push(warn("content", "poc-no-email",
             "The point of contact paragraph gives no email address.",
             "AR 25-50, para 1-23a"));
+    }
+}
+
+/**
+ * "Use the acronym ALARACT (all Army activities) only in electronically
+ *  transmitted messages [...] Do not use it when addressing Army
+ *  correspondence." - para 1-13
+ */
+function checkAlaract(memo, out) {
+    const targets = [...(memo.addressees ?? []), ...(memo.thru ?? []),
+                     ...(memo.distribution ?? []).map((d) => (typeof d === "string" ? d : d.text))];
+    if (targets.some((t) => ALARACT.pattern.test(String(t)))) {
+        out.push(error("content", "alaract-in-address",
+            "ALARACT is used only in electronically transmitted messages, not when addressing Army correspondence.",
+            ALARACT.cite));
+    }
+}
+
+/**
+ * Para 1-6 Note and para 2-2 Note both hand formatting authority to
+ * publications that are not AR 25-50 and are not public. When one of them
+ * applies, this module cannot claim compliance, so it says so instead of
+ * quietly applying AR 25-50 anyway.
+ */
+function checkSupersedingAuthority(memo, out) {
+    const verdict = supersedingAuthority({
+        signerTitle: [memo.signature?.title, memo.signature?.titleLines?.join(" ")]
+            .filter(Boolean).join(" "),
+        originatingOrganization: [memo.letterhead?.organization, memo.letterhead?.title]
+            .filter(Boolean).join(" "),
+    });
+    if (!verdict.superseded) return;
+
+    out.push(warn("content", "superseded-format",
+        `AR 25-50's formats do not govern this memorandum: ${verdict.reason}. ` +
+        `Format it under ${SUPERSEDING_AUTHORITY.publications.join(" and ")} instead. ` +
+        `This tool implements AR 25-50 only, so its output is a starting draft here, not a compliant product.`,
+        SUPERSEDING_AUTHORITY.cite));
+}
+
+/**
+ * "This appendix prescribes special requirements for mass mailings, which are
+ *  defined as similar correspondence [...] sent to 20 or more recipients."
+ *  - para E-1
+ *
+ * Appendix E adds no format element, so this cannot be a format finding. It
+ * attaches release-authority and review obligations to the organization, which
+ * only a human can discharge.
+ */
+function checkMassMailing(memo, out) {
+    const recipients = (memo.addressees ?? []).length + (memo.distribution ?? []).length;
+    if (recipients < MASS_MAILING.threshold) return;
+
+    out.push(warn("content", "mass-mailing",
+        `This reaches ${recipients} recipients, at or above the ${MASS_MAILING.threshold}-recipient mass-mailing threshold. ` +
+        `A named release authority and an error-free review are required before it goes out. ` +
+        MASS_MAILING.prohibitions.join(" "),
+        MASS_MAILING.cite));
+}
+
+/**
+ * Para 3-2 reserves a fixed audience to the letter. A memorandum addressed to
+ * one of them is the wrong document, which no amount of memorandum formatting
+ * fixes - so this reports the vehicle rather than the format.
+ */
+function checkCorrespondenceVehicle(memo, out) {
+    for (const {who, addressee} of letterAudiences(memo.addressees)) {
+        out.push(warn("content", "wrong-vehicle",
+            `"${addressee}" is ${who}, an audience the letter is used for, not the memorandum. ` +
+            `A letter differs in every part - see AR 25-50, chapter 3. This module builds memorandums only.`,
+            LETTER_AUDIENCES.cite));
     }
 }
 
@@ -743,6 +898,10 @@ export function validateMemo(memo, options = {}) {
     checkMemoType(memo, out);
     checkSignatureFormalities(memo, out);
     checkPlaceholders(memo, out);
+    checkAlaract(memo, out);
+    checkSupersedingAuthority(memo, out);
+    checkMassMailing(memo, out);
+    checkCorrespondenceVehicle(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

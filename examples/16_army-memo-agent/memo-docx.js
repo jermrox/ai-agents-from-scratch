@@ -36,9 +36,10 @@ import {
 
 import {
     LAYOUT, TEXT_WIDTH_IN, TYPE, LETTERHEAD, SPACING, PARAGRAPH_LABELS,
-    MAX_SUBDIVISION_DEPTH, ADDRESS_LIMITS, enclosureLabel, COPY_MARKERS,
+    MAX_SUBDIVISION_DEPTH, ADDRESS_LIMITS, buildEnclosureListing, COPY_MARKERS,
     normalizePunctuationSpacing, formatMemoDate, AGREEMENT_FORMAT, LISTING,
-    agreementParties, DECISION_APPROVAL,
+    agreementParties, DECISION_APPROVAL, EXCLUSIVE_FOR, PERSONAL_ADDRESS_TYPES,
+    normalizeZipSpacing,
 } from "./ar25-50.js";
 import {layoutMemo, usesLetterhead} from "./memo-formatter.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
@@ -335,9 +336,13 @@ function agreementClosingParagraphs(memo) {
     }
 
     // The enclosure listing sits at the left margin below the blocks. - fig 2-15
-    if (memo.enclosures?.length) {
+    const agreementListing = buildEnclosureListing(memo.enclosures ?? []);
+    if (agreementListing.label) {
         out.push(...blankParagraph(1));
-        out.push(new Paragraph({spacing: SINGLE, children: [run(enclosureLabel(memo.enclosures.length))]}));
+        out.push(new Paragraph({spacing: SINGLE, children: [run(agreementListing.label)]}));
+        for (const entry of agreementListing.entries) {
+            out.push(new Paragraph({spacing: SINGLE, children: [run(entry.text)]}));
+        }
     }
 
     return out;
@@ -383,8 +388,9 @@ function listingParagraph(entry) {
 
 function buildHeadingParagraphs(memo) {
     const out = [];
-    const styleAddress = (a) =>
-        memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a);
+    // ZIP two spaces after the State - para 5-10b.
+    const styleAddress = (a) => normalizeZipSpacing(
+        memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a));
 
     // Suspense date: flush right, bold, two lines above the date line. - 2-4a(4)
     if (memo.suspenseDate) {
@@ -404,6 +410,15 @@ function buildHeadingParagraphs(memo) {
 
     if (memo.type === "record") {
         out.push(new Paragraph({spacing: SINGLE, children: [run("MEMORANDUM FOR RECORD")]}));
+    } else if (memo.type === "exclusiveFor") {
+        // "Memorandum Exclusive For [Full Name], [Title], [Mailing Address]"
+        // - para 1-12b(1). Not the uppercase MEMORANDUM FOR.
+        const keyword = memo.toCommanderOf
+            ? EXCLUSIVE_FOR.commanderKeyword
+            : EXCLUSIVE_FOR.keyword;
+        const target = [memo.toCommanderOf ?? addressees[0], memo.addresseeTitle, memo.addresseeAddress]
+            .filter(Boolean).join(", ");
+        out.push(addressParagraph(`${keyword} ${target}`.trim()));
     } else {
         // After a THRU chain the addressee line reads "FOR". - figs 2-11, 2-12
         const keyword = thru.length ? "FOR" : "MEMORANDUM FOR";
@@ -424,7 +439,11 @@ function buildHeadingParagraphs(memo) {
         if (memo.seeDistribution || addressees.length > ADDRESS_LIMITS.seeDistributionAbove) {
             out.push(new Paragraph({spacing: SINGLE, children: [run(`${keyword} SEE DISTRIBUTION`)]}));
         } else if (addressees.length <= 1) {
-            out.push(addressParagraph(`${keyword} ${styleAddress(addressees[0] ?? "")}`.trim()));
+            // Appreciation and commendation address the person. - para 2-4a(5)
+            const personal = PERSONAL_ADDRESS_TYPES.includes(memo.type)
+                ? [addressees[0], memo.addresseeTitle, memo.addresseeAddress].filter(Boolean).join(", ")
+                : null;
+            out.push(addressParagraph(`${keyword} ${personal ?? styleAddress(addressees[0] ?? "")}`.trim()));
         } else {
             out.push(new Paragraph({spacing: SINGLE, children: [run(keyword)]}));
             out.push(...gapParagraphs(SPACING.memorandumForToFirstAddress));
@@ -641,14 +660,18 @@ function signatureBlockLines(sig) {
     return lines;
 }
 
+/**
+ * The enclosure listing, in whichever of the four chapter 4 forms applies.
+ * See buildEnclosureListing() - the shape depends on whether each enclosure
+ * was already identified in the body (para 4-2).
+ */
 function enclosureListingLines(encls) {
-    if (!encls.length) return [];
-    const lines = [{text: enclosureLabel(encls.length)}];
-    // A single enclosure is not itemized. - para 2-4c(3)
-    if (encls.length > 1) {
-        encls.forEach((e, i) => lines.push({text: `${i + 1}. ${e}`, hanging: true}));
-    }
-    return lines;
+    const listing = buildEnclosureListing(encls);
+    if (!listing.label) return [];
+    return [
+        {text: listing.label},
+        ...listing.entries.map((e) => ({text: e.text, hanging: true})),
+    ];
 }
 
 // ---------------------------------------------------------------------------

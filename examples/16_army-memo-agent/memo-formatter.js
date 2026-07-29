@@ -24,6 +24,7 @@ import {
     MAX_SUBDIVISION_DEPTH,
     ADDRESS_LIMITS,
     enclosureLabel,
+    buildEnclosureListing,
     COPY_MARKERS,
     formatMemoDate,
     inchesToChars,
@@ -34,6 +35,9 @@ import {
     ADDRESSING,
     agreementParties,
     DECISION_APPROVAL,
+    EXCLUSIVE_FOR,
+    PERSONAL_ADDRESS_TYPES,
+    normalizeZipSpacing,
 } from "./ar25-50.js";
 
 import {breakLines, measureTextIn} from "./text-metrics.js";
@@ -254,12 +258,31 @@ function buildAddressBlock(memo, opts) {
     const addressees = memo.addressees ?? [];
     const thru = memo.thru ?? [];
 
-    const styleAddress = (a) =>
-        memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a);
+    // The ZIP goes two spaces after the State (para 5-10b) - a format rule, so
+    // the renderer applies it rather than trusting the author's typing.
+    const styleAddress = (a) => normalizeZipSpacing(
+        memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a));
 
     // A memorandum for record replaces the whole address block. - fig 2-17
     if (memo.type === "record") {
         out.push(line("MEMORANDUM FOR RECORD", {role: "memorandum-for"}));
+        return out;
+    }
+
+    // "Exclusive For" is addressed to the person, and its keyword is not the
+    // usual uppercase MEMORANDUM FOR. - para 1-12b(1)
+    if (memo.type === "exclusiveFor") {
+        const keyword = memo.toCommanderOf
+            ? EXCLUSIVE_FOR.commanderKeyword
+            : EXCLUSIVE_FOR.keyword;
+        const target = [memo.toCommanderOf ?? addressees[0], memo.addresseeTitle, memo.addresseeAddress]
+            .filter(Boolean).join(", ");
+        out.push(...wrap(`${keyword} ${target}`.trim(), {
+            firstIndentIn: 0,
+            wrapIndentIn: 0,   // "begin it flush with the left margin" - 2-4a(5)
+            opts,
+            role: "memorandum-for",
+        }));
         return out;
     }
 
@@ -300,7 +323,12 @@ function buildAddressBlock(memo, opts) {
     }
 
     if (addressees.length <= 1) {
-        const target = styleAddress(addressees[0] ?? "");
+        // Appreciation and commendation are addressed to the name and title of
+        // the addressee, not to an office. - para 2-4a(5)
+        const personal = PERSONAL_ADDRESS_TYPES.includes(memo.type)
+            ? [addressees[0], memo.addresseeTitle, memo.addresseeAddress].filter(Boolean).join(", ")
+            : null;
+        const target = personal ?? styleAddress(addressees[0] ?? "");
         out.push(...wrap(`${keyword} ${target}`.trim(), {
             firstIndentIn: 0,
             wrapIndentIn: 0, // "begin the second line flush with the left margin" - 2-4a(5)
@@ -449,22 +477,22 @@ function buildClosing(memo, opts) {
         ...(sig.title ? wrapToColumn(sig.title, columnIn, opts) : []),
     ].map((r) => line(r.text, {indentIn: sigIndent + r.indentIn, role: "signature"}));
 
-    const encls = memo.enclosures ?? [];
+    // Chapter 4 decides the whole shape of this listing, and it turns on
+    // whether each enclosure was already identified in the body (para 4-2).
+    const listing = buildEnclosureListing(memo.enclosures ?? []);
     const leftColumn = [];
-    if (encls.length) {
-        leftColumn.push(line(enclosureLabel(encls.length), {role: "enclosure-label"}));
-        // A single enclosure is not itemized - the label is the whole listing.
-        // "For only one enclosure (Encl), do not precede 'Encl' with the number
-        //  1; use only 'Encl.'" - 2-4c(3)
-        if (encls.length > 1) {
-            encls.forEach((e, i) => {
-                leftColumn.push(...wrap(`${i + 1}. ${e}`, {
-                    firstIndentIn: 0,
-                    wrapIndentIn: LAYOUT.multiAddressWrapIndentIn,
-                    opts,
-                    role: "enclosure",
-                }));
-            });
+    if (listing.label) {
+        leftColumn.push(line(listing.label, {role: "enclosure-label"}));
+        for (const entry of listing.entries) {
+            leftColumn.push(...wrap(entry.text, {
+                firstIndentIn: 0,
+                // Chapter 4 shows only short single-line entries and says
+                // nothing about wrapping one; this hanging indent is the
+                // house convention, not a rule.
+                wrapIndentIn: LAYOUT.multiAddressWrapIndentIn,
+                opts,
+                role: "enclosure",
+            }));
         }
     }
 
@@ -667,10 +695,14 @@ function buildAgreementClosing(memo, opts) {
     }
 
     // The enclosure listing sits at the left margin below the blocks
-    // (fig 2-15), labelled by the general rule in para 2-4c(3).
-    if (memo.enclosures?.length) {
+    // (fig 2-15), in the chapter 4 form.
+    const agreementListing = buildEnclosureListing(memo.enclosures ?? []);
+    if (agreementListing.label) {
         out.push(...blank(1));
-        out.push(line(enclosureLabel(memo.enclosures.length), {role: "enclosure-label"}));
+        out.push(line(agreementListing.label, {role: "enclosure-label"}));
+        for (const entry of agreementListing.entries) {
+            out.push(line(entry.text, {role: "enclosure"}));
+        }
     }
 
     return out;

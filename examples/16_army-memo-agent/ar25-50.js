@@ -273,6 +273,285 @@ export const LEGACY_LETTERHEAD_SIZES = {
 };
 
 /**
+ * USPS two-letter State and territory abbreviations - table 5-3, complete and
+ * in the order printed. Fifty-four entries; American Samoa, the Northern
+ * Mariana Islands, and the Freely Associated States are not listed, so they
+ * are not invented here.
+ */
+export const STATE_ABBREVIATIONS = {
+    Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA",
+    Colorado: "CO", Connecticut: "CT", Delaware: "DE", "District of Columbia": "DC",
+    Florida: "FL", Georgia: "GA", Guam: "GU", Hawaii: "HI", Idaho: "ID",
+    Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY",
+    Louisiana: "LA", Maine: "ME", Maryland: "MD", Massachusetts: "MA",
+    Michigan: "MI", Minnesota: "MN", Mississippi: "MS", Missouri: "MO",
+    Montana: "MT", Nebraska: "NE", Nevada: "NV", "New Hampshire": "NH",
+    "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+    "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK",
+    Oregon: "OR", Pennsylvania: "PA", "Puerto Rico": "PR", "Rhode Island": "RI",
+    "South Carolina": "SC", "South Dakota": "SD", Tennessee: "TN", Texas: "TX",
+    Utah: "UT", Vermont: "VT", Virginia: "VA", "Virgin Islands": "VI",
+    Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY",
+};
+
+export const STATE_TABLE_CITE = "AR 25-50, table 5-3";
+
+/**
+ * Overseas "State" codes, which are not in table 5-3 but are valid in the same
+ * position:
+ *   AE  Armed Forces in Europe, the Middle East, Africa, and Canada
+ *   AP  Armed Forces in the Pacific
+ *   AA  Armed Forces in the Americas, excluding Canada
+ * - para 5-10a
+ *
+ * "Mail addressed to an Army Post Office (APO)/Fleet Post Office (FPO) is not
+ *  considered international mail and will not have the city or country name
+ *  placed in the address. Identifying classified overseas units could lead to
+ *  a breach of security." - para 5-10
+ */
+export const OVERSEAS_CODES = {AE: "Europe, Middle East, Africa, and Canada",
+    AP: "Pacific", AA: "Americas, excluding Canada"};
+export const OVERSEAS_CITE = "AR 25-50, para 5-10a";
+
+export const VALID_STATE_CODES = new Set([
+    ...Object.values(STATE_ABBREVIATIONS), ...Object.keys(OVERSEAS_CODES),
+]);
+
+/**
+ * "The ZIP code is a nine-digit number [...] A complete address must include
+ *  the proper ZIP code. Type the ZIP code two spaces after the last letter of
+ *  the State." - para 5-10b
+ */
+export const ZIP = {
+    spacesAfterState: 2,
+    pattern: /\b\d{5}-\d{4}\b/,
+    fiveDigitOnly: /\b\d{5}(?!-\d{4})\b/,
+    cite: "AR 25-50, para 5-10b",
+};
+
+/**
+ * Put the ZIP code two spaces after the State, per para 5-10b. This is a
+ * format rule, so the renderer applies it rather than trusting the author -
+ * the same treatment sentence spacing gets under para 1-39b(9).
+ */
+export function normalizeZipSpacing(address) {
+    if (!address) return address;
+    return String(address).replace(
+        /\b([A-Z]{2}) +(\d{5}(?:-\d{4})?)\b/g,
+        (_, code, zip) => (VALID_STATE_CODES.has(code)
+            ? `${code}${" ".repeat(ZIP.spacesAfterState)}${zip}`
+            : `${code} ${zip}`),
+    );
+}
+
+/**
+ * "When addressing military correspondence to an individual by name, show the
+ *  military grade or civilian prefix, first name, middle initial (if known),
+ *  and last name in that order. For military personnel, use the following
+ *  Service designation abbreviations after the addressee's name: USA for U.S.
+ *  Army, USN for U.S. Navy, USAF for U.S. Air Force, USMC for U.S. Marine
+ *  Corps, and USCG for U.S. Coast Guard." - para 5-9b
+ *
+ * This is the form required wherever a memorandum is addressed to a person
+ * rather than an office - "Exclusive For", appreciation, and commendation
+ * (para 2-4a(5)).
+ */
+export const SERVICE_DESIGNATIONS = {
+    "U.S. Army": "USA", "U.S. Navy": "USN", "U.S. Air Force": "USAF",
+    "U.S. Marine Corps": "USMC", "U.S. Coast Guard": "USCG",
+};
+export const ADDRESSEE_NAME_CITE = "AR 25-50, para 5-9b";
+
+/** Format an individual addressee in the para 5-9b order. */
+export function formatAddresseeName({grade, prefix, first, middleInitial, last, service}) {
+    const mi = middleInitial ? `${String(middleInitial).replace(/\.$/, "")}.` : null;
+    const name = [grade ?? prefix, first, mi, last].filter(Boolean).join(" ");
+    return service ? `${name}, ${service}` : name;
+}
+
+/**
+ * Protocol sequence for multiple-addressee correspondence to HQDA principal
+ * officials - figure B-2, in the order printed. "The term 'HQDA principal
+ * officials' [...] includes all the positions listed in figure B-2." - para B-2
+ */
+export const PROTOCOL_HQDA = [
+    "Secretary of the Army",
+    "Chief of Staff of the Army",
+    "Under Secretary of the Army",
+    "Vice Chief of Staff of the Army",
+    "Assistant Secretary of the Army (Acquisition, Logistics and Technology)",
+    "Assistant Secretary of the Army (Civil Works)",
+    "Assistant Secretary of the Army (Financial Management and Comptroller)",
+    "Assistant Secretary of the Army (Installations, Energy and Environment)",
+    "Assistant Secretary of the Army (Manpower and Reserve Affairs)",
+    "General Counsel",
+    "Deputy Under Secretary of the Army",
+    "Administrative Assistant to the Secretary of the Army",
+    "The Inspector General",
+    "The Army Auditor General",
+    "Executive Director, Office of Army Cemeteries",
+    "Chief Information Officer",
+    "Chief of Legislative Liaison",
+    "Director of Small Business Programs",
+    "Director, U.S. Army Criminal Investigation Division",
+    "Chief of Public Affairs",
+    "Director of the Army Staff",
+    "Sergeant Major of the Army",
+    "Deputy Chief of Staff, G-1",
+    "Deputy Chief of Staff, G-2",
+    "Deputy Chief of Staff, G-3/5/7",
+    "Deputy Chief of Staff, G-4",
+    "Deputy Chief of Staff, G-6",
+    "Deputy Chief of Staff, G-8",
+    "Deputy Chief of Staff, G-9",
+    "Director, Army National Guard",
+    "Chief of Army Reserve",
+    "Chief of Engineers",
+    "The Surgeon General",
+    "The Judge Advocate General",
+    "Chief of Chaplains",
+    "Provost Marshal General",
+];
+
+/**
+ * The one place AR 25-50 hands its own format off to another publication.
+ *
+ * Para 1-6 asserts primacy - "The formats for correspondence outlined in this
+ * regulation take precedence over format instructions outlined in other
+ * regulations or directives" - and then carves out a single exception, by
+ * *signature authority* rather than by document type:
+ *
+ *   "When preparing correspondence for signature by the Secretary of Defense;
+ *    Secretary of the Army; Chief of Staff of the Army; Under Secretary of the
+ *    Army; Vice Chief of Staff of the Army; Assistant Secretaries of the Army;
+ *    AASA; and other HQDA principal officials, follow the guidance in
+ *    Department of Defense (DoD) 5110.04, Volume 1 and HQDA Writing and
+ *    Product SOP." - para 1-6, Note
+ *
+ * Para 2-2 adds origination as a second trigger: "Refer to HQDA Writing and
+ * Product SOP for correspondence originating within Army Secretariat or Army
+ * Staff organizations."
+ *
+ * Neither publication is implemented here, and neither is public. So this is
+ * detected and reported, never silently formatted to AR 25-50 anyway.
+ */
+export const SUPERSEDING_AUTHORITY = {
+    signers: [
+        "Secretary of Defense",
+        "Secretary of the Army",
+        "Chief of Staff of the Army",
+        "Under Secretary of the Army",
+        "Vice Chief of Staff of the Army",
+        "Assistant Secretary of the Army",
+        "Administrative Assistant to the Secretary of the Army",
+    ],
+    publications: ["DoDM 5110.04, Volume 1", "HQDA Writing and Product SOP"],
+    cite: "AR 25-50, para 1-6 (Note) and para 2-2 (Note)",
+    sopUrl: "https://csa.army.pentagon.mil/ecc/SitePages/Correspondence Formats And Letterheads.aspx",
+};
+
+/**
+ * Whether AR 25-50's formats are superseded for this memorandum, by signature
+ * authority (para 1-6 Note) or by originating organization (para 2-2 Note).
+ * `PROTOCOL_HQDA` is the definition of "HQDA principal officials" - para B-2
+ * says the term "includes all the positions listed in figure B-2".
+ */
+export function supersedingAuthority({signerTitle = "", originatingOrganization = ""} = {}) {
+    const title = String(signerTitle);
+    const named = SUPERSEDING_AUTHORITY.signers.find((s) =>
+        title.toUpperCase().includes(s.toUpperCase()));
+    if (named) return {superseded: true, reason: `signature by the ${named}`};
+
+    const principal = PROTOCOL_HQDA.find((p) => title.toUpperCase().includes(p.toUpperCase()));
+    if (principal) return {superseded: true, reason: `signature by an HQDA principal official (${principal})`};
+
+    const org = String(originatingOrganization);
+    if (/\b(Army Secretariat|Army Staff|HQDA)\b/i.test(org)) {
+        return {superseded: true, reason: `origination within ${org}`};
+    }
+    return {superseded: false};
+}
+
+/**
+ * "This appendix prescribes special requirements for mass mailings, which are
+ *  defined as similar correspondence [...] sent to 20 or more recipients."
+ *  - para E-1
+ *
+ * Appendix E adds no format element. It attaches governance obligations to the
+ * organization: named release authority, error-free review, written procedures
+ * (para E-2a), a prohibition on splitting a mailing to duck the threshold
+ * (E-2b), and a flat prohibition on using mass mailings to communicate with
+ * the Families of deceased Soldiers (E-2c).
+ */
+export const MASS_MAILING = {
+    threshold: 20,
+    cite: "AR 25-50, paras E-1 and E-2",
+    prohibitions: [
+        "Do not split a mass mailing into smaller communications to avoid the threshold.",
+        "Mass mailings will not be used to communicate with the Families (next of kin) of deceased Soldiers.",
+    ],
+};
+
+/** Protocol sequence for the Office of the Secretary of Defense - figure B-1. */
+export const PROTOCOL_OSD = [
+    "Secretary of Defense",
+    "Deputy Secretary of Defense",
+    "Secretaries of the Military Departments",
+    "Chairman of the Joint Chiefs of Staff",
+    "Under Secretaries of Defense",
+    "Chief of the National Guard Bureau",
+    "General Counsel of the Department of Defense",
+    "Director of Cost Assessment and Program Evaluation",
+    "Inspector General of the Department of Defense",
+    "Director of Operational Test and Evaluation",
+    "Chief Information Officer of the Department of Defense",
+    "Assistant Secretary of Defense for Legislative Affairs",
+    "Assistant to the Secretary of Defense for Public Affairs",
+    "Director of Net Assessment",
+    "Directors of Defense Agencies",
+    "Directors of DoD Field Activities",
+];
+
+export const PROTOCOL_CITE = "AR 25-50, appendix B, figs B-1 and B-2";
+
+/**
+ * Where an addressee sits in a protocol sequence, or -1 if it is not one of
+ * the listed positions. Matching is loose because a memorandum writes the
+ * title alongside an office symbol and address.
+ */
+export function protocolRank(addressee, sequence = PROTOCOL_HQDA) {
+    const text = String(addressee).toUpperCase();
+    let best = -1;
+    let bestLength = 0;
+    sequence.forEach((title, i) => {
+        const t = title.toUpperCase();
+        if (text.includes(t) && t.length > bestLength) {
+            best = i;
+            bestLength = t.length;
+        }
+    });
+    return best;
+}
+
+/**
+ * Whether a list of addressees is in protocol order. Addressees that are not
+ * listed positions are ignored - AR 25-50 states no protocol rule for
+ * arbitrary offices, only for the OSD and HQDA populations in appendix B.
+ */
+export function checkProtocolOrder(addressees = [], sequence = PROTOCOL_HQDA) {
+    const ranked = addressees
+        .map((a, index) => ({index, rank: protocolRank(a, sequence), addressee: a}))
+        .filter((r) => r.rank >= 0);
+
+    for (let i = 1; i < ranked.length; i++) {
+        if (ranked[i].rank < ranked[i - 1].rank) {
+            return {inOrder: false, offender: ranked[i], previous: ranked[i - 1]};
+        }
+    }
+    return {inOrder: true, matched: ranked.length};
+}
+
+/**
  * Paragraph label formats by subdivision depth, read from figure 2-1.
  * Depth 0 is a numbered main paragraph; depth 3 is the deepest permitted.
  */
@@ -324,7 +603,7 @@ export function normalizePunctuationSpacing(text) {
 
     // Single-letter initials ("J. R. Smith") and listed abbreviations keep one
     // space. Protect them, normalize everything else, then restore.
-    const guard = " ";
+    const guard = "\u0000";
     const abbrev = new RegExp(`\\b(${NON_TERMINAL_ABBREVIATIONS.join("|")})\\.\\s+`, "g");
     out = out.replace(abbrev, (_, w) => `${w}.${guard}`);
     out = out.replace(/\b([A-Z])\.\s+(?=[A-Z]\.)/g, (_, c) => `${c}.${guard}`);
@@ -455,6 +734,140 @@ export function enclosureLabel(count) {
 export const ENCLOSURE_CITE = "AR 25-50, para 2-4c(3)";
 
 /**
+ * Build the enclosure listing - AR 25-50, chapter 4.
+ *
+ * The governing sentence is the lead-in to para 4-2, and it turns on a fact
+ * about the *body*, not about the enclosures:
+ *
+ *   "Enclosures should be listed only when they have not been identified in
+ *    the body of the correspondence."
+ *
+ * That produces four different listings, and only one of them is the familiar
+ * numbered list:
+ *
+ *   4-2c(4), tbl 4-4  all identified in the body -> the bare word alone,
+ *                     "Encl" or "Encls", with no count and no descriptions
+ *   4-2c(3), tbl 4-3  one, not identified        -> "Encl" with no number,
+ *                     the description on the line below
+ *   4-2c(2), tbl 4-2  two or more, not identified-> "N Encls" and a numbered
+ *                     description of each
+ *   4-2c(6), tbl 4-6  mixed                      -> "N Encls" where N counts
+ *                     them all, with each run of identified enclosures
+ *                     collapsed to "1-3. as"
+ *
+ * `enclosures` accepts plain strings (treated as not identified in the body)
+ * or objects {title, identifiedInBody}.
+ *
+ * Returns {label, entries: [{text}], cite}.
+ */
+export function buildEnclosureListing(enclosures = []) {
+    const items = enclosures.map((e) => (typeof e === "string"
+        ? {title: e, identifiedInBody: false}
+        : {title: e.title ?? "", identifiedInBody: !!e.identifiedInBody}));
+
+    if (items.length === 0) return {label: null, entries: [], cite: null};
+
+    const total = items.length;
+    const identified = items.filter((i) => i.identifiedInBody).length;
+
+    // "Account for enclosures identified in the body of the correspondence
+    //  without a number preceding 'Encl/Encls.' The enclosure listing will
+    //  simply state 'Encl/Encls'." - para 4-2c(4)
+    if (identified === total) {
+        return {
+            label: total === 1 ? "Encl" : "Encls",
+            entries: [],
+            cite: "AR 25-50, para 4-2c(4)",
+        };
+    }
+
+    // "Account for one enclosure not identified in the body of the
+    //  correspondence without a number." - para 4-2c(3). Table 4-3 still
+    //  prints the description, on the line below.
+    if (identified === 0 && total === 1) {
+        return {
+            label: "Encl",
+            entries: [{text: capitalizeFirstWord(items[0].title)}],
+            cite: "AR 25-50, para 4-2c(3)",
+        };
+    }
+
+    // "indicating the total number. List each enclosure by number when you
+    //  have two or more and describe each briefly." - para 4-2c(2)
+    if (identified === 0) {
+        return {
+            label: `${total} Encls`,
+            entries: items.map((it, i) => ({text: `${i + 1}. ${capitalizeFirstWord(it.title)}`})),
+            cite: "AR 25-50, para 4-2c(2)",
+        };
+    }
+
+    // "Use 'as' (as stated) when identifying some enclosures but not others."
+    // - para 4-2c(6). Table 4-6 collapses the identified run: "1-3. as".
+    const entries = [];
+    let i = 0;
+    while (i < total) {
+        if (items[i].identifiedInBody) {
+            let j = i;
+            while (j + 1 < total && items[j + 1].identifiedInBody) j++;
+            entries.push({text: i === j ? `${i + 1}. as` : `${i + 1}\u2013${j + 1}. as`});
+            i = j + 1;
+        } else {
+            entries.push({text: `${i + 1}. ${capitalizeFirstWord(items[i].title)}`});
+            i++;
+        }
+    }
+    return {label: `${total} Encls`, entries, cite: "AR 25-50, para 4-2c(6)"};
+}
+
+/**
+ * "For memorandums, capitalize the first letter in the first word of a listed
+ *  enclosure." - para 4-2c(1)
+ */
+export function capitalizeFirstWord(text) {
+    const t = String(text ?? "").trim();
+    return t ? t[0].toUpperCase() + t.slice(1) : t;
+}
+
+export const ENCLOSURE_LISTING_CITE = "AR 25-50, paras 4-2b and 4-2c";
+
+/**
+ * "For memorandums, begin listing enclosures at the left margin on the same
+ *  line as the signature block. For letters, type 'Enclosure' two lines below
+ *  the signature block flush with the left margin." - para 4-2b
+ *
+ * "Abbreviate the word 'Enclosure' with 'Encl' in memorandums. Enclosures will
+ *  be spelled out in letters." - para 4-2c(5), and "Do not list enclosures on
+ *  letters." - para 4-2c(1)
+ */
+export const ENCLOSURE_PLACEMENT = {
+    memorandum: {abbreviate: true, sameLineAsSignature: true, itemized: true},
+    letter: {abbreviate: false, linesBelowSignature: 2, itemized: false},
+    cite: "AR 25-50, paras 4-2b, 4-2c(1), and 4-2c(5)",
+};
+
+/**
+ * "If the correspondence has three or more enclosures, tab each one." - para
+ * 4-3. Physical assembly, but the threshold is worth surfacing to the author.
+ */
+export const TABBING = {
+    tabWhenEnclosuresAtLeast: 3,
+    firstTabFromTopIn: [0.25, 0.5],
+    subsequentTabSpacingIn: 0.25,
+    cite: "AR 25-50, para 4-3 and fig 4-1",
+
+    // "To tab a correspondence package forwarded for signature or approval,
+    //  identify the tabs in the document. (Tabs may be any letter or number as
+    //  long as they are consecutive and fully identified in the text.)" - 4-4a
+    packageOrder: [
+        "correspondence to be signed or material to be approved",
+        "document that started the action",
+        "backup information and staff coordination comments",
+    ],
+    packageCite: "AR 25-50, para 4-4a",
+};
+
+/**
  * Distribution and copy-furnished listings are *blocked* flush with the left
  * margin, not hung like an address:
  *
@@ -522,6 +935,118 @@ export const MEMO_TYPES = {
     decision: {title: "Decision Memorandum", cite: "AR 25-50, para 2-8"},
     mou: {title: "Memorandum of Understanding", cite: "AR 25-50, para 2-6a"},
     moa: {title: "Memorandum of Agreement", cite: "AR 25-50, para 2-6b"},
+    exclusiveFor: {title: "Exclusive For Memorandum", cite: "AR 25-50, para 1-12"},
+    appreciation: {title: "Memorandum of Appreciation", cite: "AR 25-50, paras 2-2 and 2-4a(5)"},
+    commendation: {title: "Memorandum of Commendation", cite: "AR 25-50, paras 2-2 and 2-4a(5)"},
+};
+
+/**
+ * "Exclusive For" correspondence - para 1-12.
+ *
+ *   "Use 'Exclusive For' correspondence for matters of a sensitive or
+ *    privileged nature directed to a specific party or parties. Minimize its
+ *    use to avoid delay of action if the named addressee is absent or
+ *    unavailable [...] Address 'Exclusive For' correspondence to the name and
+ *    title of the addressee." - paras 1-12a and 1-12b
+ *
+ * The memorandum form is not the usual uppercase "MEMORANDUM FOR". Para
+ * 1-12b(1) prints it as:
+ *
+ *   Memorandum Exclusive For [Full Name], [Title], [Mailing Address]
+ *   Memorandum Exclusive For Commander of [Name], [Title], [Mailing Address]
+ */
+export const EXCLUSIVE_FOR = {
+    keyword: "Memorandum Exclusive For",
+    commanderKeyword: "Memorandum Exclusive For Commander of",
+    letterKeyword: "Exclusive For",
+    cite: "AR 25-50, para 1-12b(1)",
+
+    // "When preparing 'Exclusive For' correspondence, place it in a sealed
+    //  envelope. Print and underline the words 'Exclusive For' on the
+    //  envelope." - para 1-12c. This is a handling instruction, not a
+    //  rendering one, so it is surfaced as a note rather than drawn.
+    envelopeNote: "Place in a sealed envelope. Print and underline \"Exclusive For\" on the envelope.",
+    envelopeCite: "AR 25-50, para 1-12c",
+};
+
+/**
+ * Memorandum forms addressed to a person rather than to an office.
+ *
+ *   "Exception: When used for 'Exclusive For' correspondence, appreciation,
+ *    and commendation, address the memorandum to the name and title of the
+ *    addressee." - para 2-4a(5)
+ *
+ * Para 2-2 lists the same two among the uses of a memorandum: "for showing
+ * appreciation or commendation to DA Civilians and Soldiers".
+ */
+export const PERSONAL_ADDRESS_TYPES = ["exclusiveFor", "appreciation", "commendation"];
+export const PERSONAL_ADDRESS_CITE = "AR 25-50, paras 2-2 and 2-4a(5)";
+
+/**
+ * Chapter 3 defines a second vehicle - the letter - and para 3-2 assigns it a
+ * fixed audience:
+ *
+ *   "The letter is used for correspondence addressed to the President or Vice
+ *    President of the United States, members of the White House staff, Members
+ *    of Congress, Justices of the Supreme Court, heads of departments and
+ *    agencies, State Governors, mayors, foreign government officials, and the
+ *    public."
+ *
+ * This module builds memorandums, not letters, and a letter is a different
+ * document in every part: centered civilian date, inside address, salutation,
+ * indented unnumbered paragraphs, complimentary close, no authority line, page
+ * numbers at the top. Producing a memorandum for one of these addressees is
+ * therefore not a formatting error to be corrected - it is the wrong vehicle,
+ * and the only honest response is to say so rather than format it anyway.
+ */
+export const LETTER_AUDIENCES = {
+    cite: "AR 25-50, para 3-2",
+    tests: [
+        {who: "the President or Vice President of the United States",
+         pattern: /\b(the\s+)?(president|vice[-\s]president)\b(?!.*\b(university|college|company|corporation|association|bank)\b)/i},
+        {who: "members of the White House staff", pattern: /\bwhite house\b/i},
+        {who: "Members of Congress",
+         pattern: /\b(congress(man|woman|person)?|senator|representative\s+[A-Z]|u\.?s\.?\s+house of representatives|united states senate)\b/i},
+        {who: "Justices of the Supreme Court", pattern: /\b(supreme court|chief justice|associate justice)\b/i},
+        {who: "State Governors", pattern: /\bgovernor\b/i},
+        {who: "mayors", pattern: /\bmayor\b/i},
+        {who: "foreign government officials", pattern: /\b(ambassador|embassy|consul(ate|\s+general)?|ministry of|minister of)\b/i},
+        {who: "the public", pattern: /\b(mr\.|mrs\.|ms\.|dr\.)\s+\S+/i},
+    ],
+    // Differences a caller has to honor if they switch to a letter. Chapter 3.
+    deltas: [
+        "Date is civilian style and centered two lines below the letterhead - para 3-6a(1).",
+        "There is no office symbol, no ARIMS record number, and no suspense date - paras 1-24, 3-5d, 1-27b.",
+        "An inside address and a salutation replace the MEMORANDUM FOR line - paras 3-6a(3) and 3-6a(4).",
+        "Paragraphs are indented 1/4 inch and are never numbered or lettered - para 3-6b(5).",
+        "A complimentary close precedes the signature block, and the authority line is omitted - paras 3-6c(1) and 6-2b.",
+        "The signature block is uppercase and lowercase, with the grade spelled out and \"U.S. Army\" for the branch - paras 6-4a(1), 6-4f(1), 6-5c(3).",
+        "Enclosures are spelled out, uncounted, and unlisted, two lines below the signature block - paras 3-6c(3) and 4-2c(1).",
+        "Courtesy copies use \"cc:\", not \"CF:\" - para 3-6c(4).",
+        "Page numbers are centered 1 inch from the top edge with a hyphen each side - para 3-6b(3).",
+    ],
+};
+
+/** Which para 3-2 audiences an addressee list reaches, if any. */
+export function letterAudiences(addressees = []) {
+    const hits = new Map();
+    for (const raw of addressees) {
+        const text = String(typeof raw === "string" ? raw : (raw?.text ?? raw?.name ?? ""));
+        for (const t of LETTER_AUDIENCES.tests) {
+            if (t.pattern.test(text) && !hits.has(t.who)) hits.set(t.who, text);
+        }
+    }
+    return [...hits].map(([who, addressee]) => ({who, addressee}));
+}
+
+/**
+ * "Use the acronym ALARACT (all Army activities) only in electronically
+ *  transmitted messages [...] Do not use it when addressing Army
+ *  correspondence." - para 1-13
+ */
+export const ALARACT = {
+    pattern: /\bALARACT\b/i,
+    cite: "AR 25-50, para 1-13",
 };
 
 /**
