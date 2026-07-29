@@ -53,7 +53,14 @@ import {
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
 import {findPlaceholders} from "./templates.js";
-import {buildSignature, authorityLineNeeded, normalizeGrade, GRADE_TABLE_CITE} from "./signature-blocks.js";
+import {
+    buildSignature,
+    resolveSignature,
+    authorityLineNeeded,
+    normalizeGrade,
+    isEnlisted,
+    GRADE_TABLE_CITE,
+} from "./signature-blocks.js";
 
 function finding(severity, klass, rule, message, cite, extra = {}) {
     return {severity, class: klass, rule, message, cite, ...extra};
@@ -568,8 +575,14 @@ function checkTime(text, path, out) {
 // ---------------------------------------------------------------------------
 
 function checkClosing(memo, out) {
-    const sig = memo.signature ?? {};
-    if (!sig.name) {
+    // The block as it will actually be rendered - resolveSignature() accepts
+    // either the structured signer or the finished elements, so this checks
+    // what reaches the page rather than which form the caller happened to use.
+    const raw = memo.signature ?? {};
+    const sig = resolveSignature(raw);
+    const suppliedName = raw.signer ? raw.signer.name : raw.name;
+
+    if (!suppliedName) {
         out.push(error("content", "signature-missing",
             "The closing has no signature block.",
             "AR 25-50, paras 2-4c(2) and 6-4"));
@@ -579,7 +592,10 @@ function checkClosing(memo, out) {
             "AR 25-50, figs 2-1 through 2-5"));
     }
 
-    if (!sig.title) {
+    // Figure D-14 shows four noncommissioned officer blocks with no title at
+    // all, so the title is only expected where the block is not a bare
+    // name-and-grade pair.
+    if (sig.titleSegments.length === 0 && !isEnlisted(raw.signer?.grade)) {
         out.push(warn("content", "signature-title-missing",
             "The signature block gives no title.",
             "AR 25-50, para 6-4"));

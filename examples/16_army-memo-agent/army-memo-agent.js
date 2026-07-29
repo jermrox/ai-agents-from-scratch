@@ -284,10 +284,17 @@ const OFFLINE_CONTEXT = {
     date: "17 July 2026",
     suspenseDate: "25 July 2026",
     authorityLine: "FOR THE COMMANDER:",
+    // Stating the facts about the signer and letting chapter 6 build the grade
+    // line, rather than typing "LTC, IN" and hoping. The rules that depend on
+    // those facts - general staff, reserve component, retired, acting - are
+    // not ones a drafter should have to remember.
     signature: {
-        name: "MARCUS T. HALE",
-        gradeAndBranch: "LTC, IN",
-        title: "Director, Plans and Operations",
+        signer: {
+            name: "Marcus T. Hale",
+            grade: "LTC",
+            branch: "IN",
+            title: "Director, Plans and Operations",
+        },
     },
     enclosures: ["Range 14 Maintenance Schedule"],
     copiesFurnished: ["Garrison Safety Office"],

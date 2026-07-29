@@ -1805,6 +1805,34 @@ const FIELD_TEMPLATE = {
         }
     }
 
+    // The validator has to see through both forms too, or a memorandum built
+    // the right way reports as having no signature block at all.
+    {
+        const structured = validateMemo({...FIG_2_1, signature: {signer: {
+            name: "Marcus T. Hale", grade: "LTC", branch: "IN", title: "Director, Plans and Operations"}}});
+        checkTrue("a structured signer is not reported as a missing signature",
+            structured.findings.every((f) => f.rule !== "signature-missing"),
+            "AR 25-50, para 6-4");
+        checkTrue("a structured signer's lowercase name is not a casing error",
+            structured.findings.every((f) => f.rule !== "signature-case"),
+            "AR 25-50, figs 2-1 through 2-5");
+
+        checkTrue("a signature with no name at all is still reported",
+            validateMemo({...FIG_2_1, signature: {}})
+                .errors.some((f) => f.rule === "signature-missing"),
+            "AR 25-50, paras 2-4c(2) and 6-4");
+
+        // fig D-14: four of the seven blocks are a name and grade, no title.
+        checkTrue("fig D-14: an NCO block with no title is not reported",
+            validateMemo({...FIG_2_1, signature: {signer: {name: "William H. Sargent", grade: "CSM"}}})
+                .findings.every((f) => f.rule !== "signature-title-missing"),
+            "AR 25-50, fig D-14");
+        checkTrue("an officer block with no title is still reported",
+            validateMemo({...FIG_2_1, signature: {signer: {name: "N", grade: "LTC", branch: "IN"}}})
+                .warnings.some((f) => f.rule === "signature-title-missing"),
+            "AR 25-50, para 6-4");
+    }
+
     // Para 6-3c: signing for another person is a handwritten act, so the typed
     // block must NOT change - the rule is reported instead.
     {
