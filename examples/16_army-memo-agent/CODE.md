@@ -269,11 +269,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-61 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, enclosure labels, sentence-spacing normalization, paragraph-depth clamping, and the validator's own catch rate.
+379 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+
+Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 61/61 checks passed.
+# AR 25-50 layout verification: 379/379 checks passed.
 ```
 
 ---
@@ -506,9 +508,15 @@ Other memo types set `type`: `"thru"` (para 2-4a(5)(d), with a `thru` array), `"
 
 ## Scope
 
-This example implements **chapter 2** of AR 25-50 (memorandums), the chapter 1 rules that govern them, and the chapter 6 signature-block and authority-line rules. All six memorandum forms are covered: standard, THRU, memorandum for record, decision memorandum, MOU, and MOA.
+This example implements **chapter 2** of AR 25-50 (memorandums), the chapter 1 rules that govern them, the chapter 4 enclosure and tabbing rules, the chapter 5 addressing rules that reach inside the correspondence, the chapter 6 signature blocks and authority lines, and appendices B, D, E and F. All six memorandum forms are covered: standard, THRU, memorandum for record, decision memorandum, MOU, and MOA.
 
-Letters (chapter 3) are **not** implemented - they use a different date format, `cc:` instead of `CF:`, no digital signatures (para 3-6c(2)(b)), and spelled-out grades. `signature-blocks.js` already handles the letter form of a signature block, so that is the piece in place. Forms of address are in appendix C of the regulation.
+Letters (chapter 3) are **not** built - they differ in every part, not just a few fields: a centered civilian date, an inside address and salutation, indented unnumbered paragraphs, a complimentary close, no authority line, and page numbers at the top. What *is* implemented is the boundary. Para 3-2 reserves a fixed audience to the letter - the President, Congress, the Supreme Court, Governors, mayors, foreign officials, and the public - and addressing a memorandum to any of them raises a `wrong-vehicle` finding rather than a formatted document. `LETTER_AUDIENCES.deltas` carries the chapter 3 differences, and `buildSignature(signer, "letter")` produces the letter form of a signature block. Forms of address are in appendix C, which para C-2a scopes to letters only.
+
+Three places hand formatting authority to something outside this module, and each is reported rather than papered over:
+
+- **Para 1-6 Note and para 2-2 Note.** Memorandums signed by HQDA principal officials, or originating in the Army Secretariat or Army Staff, are governed by DoDM 5110.04 Vol 1 and the HQDA Writing and Product SOP. Neither is public. `supersedingAuthority()` detects both triggers.
+- **Appendix F.** Every box it describes is an Acrobat form field created *after* the Word file exists, so a `.docx` cannot be signature-ready. The requirements it adds - a signature and comment box per THRU addressee, one box per signer - are reported with the count the memorandum implies.
+- **Chapter 8.** AR 25-50 states no classification marking rule at all; it defers entirely to DoDM 5200.01. Nothing is invented here.
 
 Two judgement calls are flagged in the code rather than hidden:
 
