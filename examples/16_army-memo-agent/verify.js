@@ -491,6 +491,89 @@ const FIG_2_1 = {
 }
 
 // ---------------------------------------------------------------------------
+// Type: 12 pt Arial, never higher
+// ---------------------------------------------------------------------------
+
+/**
+ * Para 1-19a recommends a 12 point font, and nothing in AR 25-50 sets anything
+ * larger. A field memorandum measured for this example uses 12 pt for every
+ * line of text and smaller sizes only inside the letterhead - 10 pt for
+ * "DEPARTMENT OF THE ARMY", 8 pt for the organization block, 6 pt for the
+ * "REPLY TO / ATTENTION OF" block that para 1-16b(1) says is not required. Its
+ * largest run anywhere is 12 pt.
+ *
+ * So 12 pt is a ceiling. The check below scans *every part* of the .docx, not
+ * just the body: docx-js ships Title at 28 pt and Heading 1/2 at 16/13 pt in
+ * every document it writes, and a latent style is still oversized type sitting
+ * in the file one click away in Word's style gallery.
+ */
+{
+    const {renderDocx} = await import("./memo-docx.js");
+    const {createTemplate} = await import("./templates.js");
+    const {TYPE: T} = await import("./ar25-50.js");
+    const JSZip = (await import("jszip")).default;
+
+    const ceiling = T.maxSizePt * 2;   // half-points
+    const inventory = {};
+
+    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+        const zip = await JSZip.loadAsync(await renderDocx(createTemplate(type)));
+        const parts = Object.keys(zip.files).filter((n) => n.endsWith(".xml") && !zip.files[n].dir);
+
+        const sizes = new Set();
+        const faces = new Set();
+        for (const name of parts) {
+            const xml = await zip.file(name).async("string");
+            for (const m of xml.matchAll(/<w:sz w:val="(\d+)"\/>/g)) sizes.add(Number(m[1]));
+            for (const m of xml.matchAll(/w:ascii="([^"]+)"/g)) faces.add(m[1]);
+        }
+
+        const oversized = [...sizes].filter((v) => v > ceiling);
+        check(`type: ${type} carries no run above ${T.maxSizePt} pt, anywhere in the file`,
+            oversized.map((v) => v / 2), [], T.maxSizeCite);
+
+        check(`type: ${type} sets every text face to ${T.fontFamily}`,
+            [...faces], [T.fontFamily], T.cite);
+
+        inventory[type] = [...sizes].map((v) => v / 2).sort((a, b) => b - a);
+    }
+
+    // The sizes present differ by memorandum type, and the difference is the
+    // letterhead: a plain-paper memorandum has no 8 pt organization block.
+    // "Type the MFR on plain white paper" - fig 2-17; "Prepare the MOU/MOA on
+    // plain white paper" - para 2-6c(1).
+    checkTrue("type: a letterhead memorandum carries the 10 pt and 8 pt letterhead sizes",
+        inventory.standard.includes(10) && inventory.standard.includes(8),
+        LETTERHEAD.letterheadSizeCite);
+    checkTrue("type: a plain-paper MFR carries no 8 pt letterhead block",
+        !inventory.record.includes(8), "AR 25-50, fig 2-17");
+    checkTrue("type: a plain-paper MOU carries no 8 pt letterhead block",
+        !inventory.mou.includes(8), "AR 25-50, para 2-6c(1)");
+    checkTrue("type: every memorandum type tops out at exactly 12 pt",
+        Object.values(inventory).every((sizes) => Math.max(...sizes) === T.maxSizePt),
+        T.maxSizeCite);
+
+    // The measured letterhead sizes themselves.
+    check("type: DEPARTMENT OF THE ARMY is set at 10 pt",
+        LETTERHEAD.titleSizePt, 10, LETTERHEAD.letterheadSizeCite);
+    check("type: the organization block is set at 8 pt",
+        LETTERHEAD.addressSizePt, 8, LETTERHEAD.letterheadSizeCite);
+    checkTrue("type: both letterhead sizes sit below the body ceiling",
+        LETTERHEAD.titleSizePt < T.maxSizePt && LETTERHEAD.addressSizePt < T.maxSizePt,
+        T.maxSizeCite);
+
+    // Asking for larger type is an error, not an advisory.
+    checkTrue("type: a request for type above the ceiling is rejected",
+        validateMemo({...FIG_2_1, font: {sizePt: 14}})
+            .errors.some((f) => f.rule === "font-too-large"),
+        T.maxSizeCite);
+    checkTrue("type: a decorative face is rejected",
+        validateMemo({...FIG_2_1, font: {family: "Brush Script MT"}})
+            .errors.some((f) => f.rule === "font-style"),
+        "AR 25-50, para 1-19b");
+}
+
+// ---------------------------------------------------------------------------
 // An independent field template, measured
 // ---------------------------------------------------------------------------
 

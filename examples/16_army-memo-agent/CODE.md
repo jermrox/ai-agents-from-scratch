@@ -424,6 +424,43 @@ The signature column landing on 4.25 in independently is the one worth noting: p
 
 ---
 
+## 16) Type: 12 pt Arial, never higher
+
+Para 1-19a *"A font with a point size of 12 is recommended"* — and nothing in AR 25-50 sets anything larger. The field template confirms it from the other direction; here is every size it actually uses:
+
+| Size | Where |
+| --- | --- |
+| **12 pt** | every line of body text — the largest run in the file |
+| 10 pt | `DEPARTMENT OF THE ARMY` |
+| 8 pt | organization, street, city/state/ZIP |
+| 6 pt | `REPLY TO / ATTENTION OF` — the block para 1-16b(1) says is not required |
+
+So 12 pt is a **ceiling**, and the letterhead sits below it. That also promotes the letterhead sizes from "APD template defaults" to measured values from an Army memorandum.
+
+**The trap is latent styles.** Auditing the generated `.docx` turned up runs at **28, 16 and 13 pt** in every file — `docx-js` ships `Title` and `Heading 1`/`Heading 2` styles by default. Nothing in the memo applied them, so the rendered page was fine, but the oversized type was sitting in the file one click away in Word's style gallery. Under a formatting lock that permits text editing, that is a live route to a non-compliant document. They are now overridden to Arial 12:
+
+```javascript
+title:    {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+heading1: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+// ... heading2 through heading6
+```
+
+`verify.js` scans **every XML part** of every memorandum type — not just the body — and fails on any `w:sz` above 24 half-points.
+
+**The sizes present differ by memorandum type**, and the difference is exactly the letterhead:
+
+| Type | Sizes in the file | Why |
+| --- | --- | --- |
+| standard, THRU, decision | 12, 10, 8 | letterhead: 10 pt title, 8 pt organization block |
+| MFR | 12, 10 | plain white paper (fig 2-17) — no organization block |
+| MOU, MOA | 12, 10 | plain white paper (para 2-6c(1)) — no organization block |
+
+The stray 10 pt on the plain-paper types is Word's latent footnote/endnote style; it is below the ceiling and no footnotes exist. The only non-Arial run in any document is the decision memorandum's checkbox glyph, which Word implements in `MS Gothic`.
+
+Asking for larger type is now an **error**, not an advisory.
+
+---
+
 ## Writing your own memo
 
 ```javascript

@@ -498,7 +498,11 @@ function checkPresentation(memo, doc, out) {
     }
 
     const font = memo.font ?? {};
-    if (font.sizePt && font.sizePt !== TYPE.recommendedSizePt) {
+    if (font.sizePt > TYPE.maxSizePt) {
+        out.push(error("format", "font-too-large",
+            `Font size ${font.sizePt} pt exceeds the ${TYPE.maxSizePt} pt ceiling for body type.`,
+            TYPE.maxSizeCite));
+    } else if (font.sizePt && font.sizePt !== TYPE.recommendedSizePt) {
         out.push(warn("format", "font-size",
             `Font size ${font.sizePt} pt. A font with a point size of ${TYPE.recommendedSizePt} is recommended; the choice rests with the organization's senior leader.`,
             TYPE.cite));

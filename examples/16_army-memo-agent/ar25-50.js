@@ -136,6 +136,20 @@ export const TYPE = {
     fontFamily: "Arial",
     fontSizePt: 12,
     recommendedSizePt: 12,
+
+    // Twelve point is the ceiling for body type, never a floor to exceed.
+    // Para 1-19a recommends 12; nothing in AR 25-50 sets anything larger, and
+    // a real unit memorandum measured for this example uses 12 pt for every
+    // line of text and smaller sizes only inside the letterhead - 10 pt for
+    // "DEPARTMENT OF THE ARMY", 8 pt for the organization block. Its largest
+    // run anywhere is 12 pt.
+    //
+    // This is enforced, not advised: the Word renderer overrides every latent
+    // heading style so the document cannot produce type above 12 pt by any
+    // route, and verify.js scans every part of the .docx for a violation.
+    maxSizePt: 12,
+    maxSizeCite: "AR 25-50, para 1-19a; measured against a field memorandum whose largest run is 12 pt",
+
     forbiddenStyles: ["script", "cursive", "decorative"],
     cite: "AR 25-50, para 1-19",
 };
@@ -211,10 +225,21 @@ export const LETTERHEAD = {
     officeSymbolTopIn: 1.79,
     officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2; measured from figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
 
-    // Point sizes remain APD template defaults - the figures are too coarse to
-    // measure type size reliably, and the regulation does not publish them.
+    // Letterhead point sizes, measured from a field memorandum's PDF text
+    // placement rather than assumed: "DEPARTMENT OF THE ARMY" at 10 pt, and
+    // the organization, street, and city/state/ZIP lines at 8 pt. AR 25-50
+    // does not publish them, but these are what an Army office actually set.
+    //
+    // Both sit below the 12 pt ceiling, which is the direction the rule runs -
+    // letterhead is smaller than body type, never larger.
     titleSizePt: 10,
     addressSizePt: 8,
+    letterheadSizeCite: "measured from an Army unit memorandum template (HHC/ESB, 9 December 2009)",
+
+    // The template also carries "REPLY TO / ATTENTION OF" at 6 pt. Para
+    // 1-16b(1) says that block is not required, so it is not rendered.
+    replyToBlockSizePt: 6,
+    replyToNotRequiredCite: "AR 25-50, para 1-16b(1)",
     lines: [
         "DEPARTMENT OF THE ARMY",
         "ORGANIZATIONAL NAME/TITLE",

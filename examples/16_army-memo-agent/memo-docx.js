@@ -745,6 +745,18 @@ export async function renderDocx(memo, options = {}) {
                     run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2, color: "000000"},
                     paragraph: {spacing: SINGLE},
                 },
+                // docx-js ships Title at 28 pt and Heading 1/2 at 16/13 pt in
+                // every document. Nothing here applies them, but a latent
+                // style is still type above the ceiling sitting in the file,
+                // one click away in Word's style gallery. Para 1-19a caps body
+                // type at 12 pt, so they are overridden rather than left.
+                title: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading1: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading2: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading3: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading4: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading5: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                heading6: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
             },
         },
         sections: [section],
