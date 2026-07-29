@@ -387,6 +387,43 @@ The Word checkbox is the one place a run is not Arial: Word implements checkbox 
 
 ---
 
+## 15) An independent field template, measured
+
+Everything above is derived from AR 25-50's own figures, which risks a closed loop: the renderer agrees with the figures because both were read by the same pair of eyes. So a real unit memorandum template (HHC/ESB, 9 December 2009) was measured too — from its PDF text-placement coordinates, not from a picture of it.
+
+It agrees on every structural measurement:
+
+| | Template (measured) | In lines | This renderer |
+| --- | --- | --- | --- |
+| Office symbol → MEMORANDUM FOR | 0.575 in | 3.00 | 3 |
+| MEMORANDUM FOR → SUBJECT | 0.384 in | 2.00 | 2 |
+| SUBJECT → body | 0.550 in | 2.87 | 3 |
+| Between paragraphs | 0.358 in | 1.87 | 2 |
+| Within a paragraph | 0.192 in | 1.00 | 1 (13.8 pt) |
+| Text → authority line | 0.383 in | 2.00 | 2 |
+| Authority line → signature | 0.959 in | 5.00 | 5 |
+| Signature → DISTRIBUTION | 0.383 in | 2.00 | 2 |
+| **Signature column** | **4.251 in absolute** | | **1.0 + 3.25 = 4.25 in** |
+| Subparagraph indent | 1.251 in absolute | | 1.0 + 0.25 |
+| Distribution entries | 1.001 in — flush left | | flush left |
+| Page number | 1.036 in from the foot | | ~1 in |
+
+The signature column landing on 4.25 in independently is the one worth noting: para 2-4c(2)(a) only says *"the center of the page"*, and this confirms that reading to a hundredth of an inch.
+
+**Where it differs, the regulation wins** — the template predates the 2020 revision by eleven years, and its body face is a serif substitute rather than the sans of the figures:
+
+| Template | Regulation | Kept |
+| --- | --- | --- |
+| Office symbol at 1.915 in | 1.792 in measured from the figures | The figures. The template carries a `REPLY TO / ATTENTION OF` block at 1.403–1.511 in, which para 1-16b(1) says **is not required**; removing it accounts for the whole difference. |
+| Continuation page repeats **office symbol and date** | Paras 2-5a and 2-5b say office symbol and subject; fig 2-2's continuation shows no date | Office symbol and subject. |
+| `MSG, US Army` | Fig D-14 shows `MSG, USA` on a memorandum; `U.S. Army` is the letters form (para 6-4f(1)) | `USA`. |
+| `John Doe` in mixed case | Para 6-4a(1): capital letters on memorandums | Capitals. |
+| Label-to-text gap 0.167 in | Para 1-39b(10) quarter inch; figs 2-1 and 2-6 measure 0.254 and 0.257 in | The quarter-inch grid. |
+
+`verify.js` carries the template's measured coordinates as a fixture and asserts the renderer reproduces every one of its line counts. It is the only test in the suite whose oracle came from outside the regulation.
+
+---
+
 ## Writing your own memo
 
 ```javascript

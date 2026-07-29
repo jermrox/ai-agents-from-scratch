@@ -25,6 +25,8 @@ import {measureTextIn, breakLines} from "./text-metrics.js";
 import {TYPE} from "./ar25-50.js";
 const TYPE_CITE = TYPE.cite;
 import {buildParagraphTree} from "./army-memo-agent.js";
+import {LAYOUT, LETTERHEAD} from "./ar25-50.js";
+const LETTERHEAD_TOP = LETTERHEAD.officeSymbolTopIn;
 
 let passed = 0;
 const failures = [];
@@ -485,6 +487,166 @@ const FIG_2_1 = {
     checkTrue("clearing the seal is reported as an error",
         validateMemo({...memo, letterhead: {...memo.letterhead, seal: null}})
             .errors.some((f) => f.rule === "seal-missing"),
+        "AR 25-50, para 1-16b(1)");
+}
+
+// ---------------------------------------------------------------------------
+// An independent field template, measured
+// ---------------------------------------------------------------------------
+
+/**
+ * A real unit memorandum template (HHC/ESB, 9 December 2009), measured from
+ * its PDF text-placement coordinates rather than from a picture of it. Every
+ * offset below is an observed position in inches from the top of the page.
+ *
+ * It is not authoritative - it predates the 2020 regulation by eleven years,
+ * its body face is a serif substitute, and it carries a "REPLY TO / ATTENTION
+ * OF" block that para 1-16b(1) says is not required. But it was produced by an
+ * Army office rather than derived from the figures, so where it agrees it is
+ * genuinely independent confirmation, and where it disagrees it is worth
+ * knowing why.
+ */
+const FIELD_TEMPLATE = {
+    lineHeightIn: 13.8 / 72,
+    // Observed y positions, inches from the page top.
+    officeSymbol: 1.915,
+    memorandumFor: 2.490,
+    subject: 2.874,
+    firstParagraph: 3.424,
+    subparagraphA: 3.782,
+    subparagraphB: 4.140,
+    secondParagraph: 4.499,
+    pocParagraph: 5.215,
+    pocWrap: 5.407,
+    authorityLine: 5.790,
+    signatureName: 6.749,
+    signatureGrade: 6.940,
+    signatureTitle: 7.132,
+    distributionLabel: 7.515,
+    distributionFirst: 7.707,
+    // Observed x positions, inches from the page left edge.
+    leftMargin: 1.001,
+    subparagraphIndent: 1.251,
+    signatureColumn: 4.251,
+    // Continuation page.
+    contOfficeSymbol: 1.156,
+    contSubject: 1.347,
+    contPageNumber: 9.964,
+};
+
+{
+    const T = FIELD_TEMPLATE;
+    const lines = (fromIn, toIn) => Math.round((toIn - fromIn) / T.lineHeightIn);
+
+    // The template's own vertical rhythm, expressed in lines. These are what
+    // the layout engine has to reproduce.
+    check("field template: MEMORANDUM FOR is 3 lines below the office symbol",
+        lines(T.officeSymbol, T.memorandumFor), 3, "AR 25-50, para 2-4a(5)");
+    check("field template: SUBJECT is 2 lines below MEMORANDUM FOR",
+        lines(T.memorandumFor, T.subject), 2, "AR 25-50, para 2-4a(6)");
+    check("field template: the body begins 3 lines below the subject",
+        lines(T.subject, T.firstParagraph), 3, "AR 25-50, para 2-4b(1)");
+    check("field template: paragraphs are double spaced",
+        lines(T.firstParagraph, T.subparagraphA), 2, "AR 25-50, para 2-4b(2)");
+    check("field template: subparagraphs are double spaced too",
+        lines(T.subparagraphA, T.subparagraphB), 2, "AR 25-50, para 2-4b(2)");
+    check("field template: a wrapped line is single spaced",
+        lines(T.pocParagraph, T.pocWrap), 1, "AR 25-50, para 2-4b(2)");
+    check("field template: the authority line is 2 lines below the text",
+        lines(T.pocWrap, T.authorityLine), 2, "AR 25-50, para 2-4c(1)");
+    check("field template: the signature block is 5 lines below the authority line",
+        lines(T.authorityLine, T.signatureName), 5, "AR 25-50, para 2-4c(2)(a)");
+    check("field template: the signature block is single spaced",
+        lines(T.signatureName, T.signatureGrade), 1, "AR 25-50, para 6-4c");
+    check("field template: DISTRIBUTION is 2 lines below the signature block",
+        lines(T.signatureTitle, T.distributionLabel), 2, "AR 25-50, para 2-4a(5)(c)");
+    check("field template: distribution entries are single spaced",
+        lines(T.distributionLabel, T.distributionFirst), 1, "AR 25-50, para 2-4a(5)(c)");
+    check("field template: the continuation subject is 1 line below the office symbol",
+        lines(T.contOfficeSymbol, T.contSubject), 1, "AR 25-50, para 2-5b");
+
+    // Horizontal positions, in inches from the left margin.
+    check("field template: the left margin is 1 inch",
+        Number(T.leftMargin.toFixed(1)), LAYOUT.marginLeftIn, "AR 25-50, para 2-3c");
+    check("field template: a first subdivision indents 1/4 inch",
+        Number((T.subparagraphIndent - T.leftMargin).toFixed(2)), 0.25, "AR 25-50, fig 2-1");
+    check("field template: the signature block begins at the centre of the page",
+        Number((T.signatureColumn - T.leftMargin).toFixed(2)),
+        LAYOUT.signatureBlockIndentIn, "AR 25-50, para 2-4c(2)(a)");
+    checkTrue("field template: the page number sits about 1 inch from the bottom",
+        Math.abs((LAYOUT.pageHeightIn - T.contPageNumber) - LAYOUT.marginBottomIn) < 0.1,
+        "AR 25-50, para 2-5d");
+
+    // The same memorandum through the layout engine, asserted against those
+    // line counts. Distances are index deltas in the pre-pagination flow,
+    // which is one entry per line.
+    const memo = {
+        letterhead: {
+            organization: "Headquarters, Unit Name",
+            streetAddress: "Number Street Name",
+            cityStateZip: "Installation, State 12345-0000",
+        },
+        officeSymbol: "AFFH-SGF-OP",
+        date: "9 December 2009",
+        seeDistribution: true,
+        addressees: [],
+        subject: "Memorandum Template",
+        paragraphs: [
+            {text: "References:", children: [{text: "Reference 1."}, {text: "Reference 2."}]},
+            {text: "Second paragraph of the memorandum."},
+            {text: "Third paragraph of the memorandum."},
+            {text: "The point of contact is Name at DSN 555-0000, commercial (555) 555-0000 or name@army.mil."},
+        ],
+        authorityLine: "FOR THE COMMANDER:",
+        signature: {name: "John Doe", gradeAndBranch: "MSG, USA", title: "Operations NCO"},
+        digitalSignature: false,
+        distribution: ["1-Cdr/1SG, HHC, ESB", "1-Cdr/1SG, A Co., ESB", "1-Cdr, ESB, ATTN: Bn XO"],
+    };
+    const doc = layoutMemo(memo);
+    const at = (role) => doc.flow.findIndex((l) => l.role === role);
+    const paragraphIdx = doc.flow
+        .map((l, i) => (l.role === "paragraph" && l.prefix ? i : -1)).filter((i) => i >= 0);
+
+    check("rendered: MEMORANDUM FOR matches the template's 3 lines",
+        at("memorandum-for") - at("office-symbol"), lines(T.officeSymbol, T.memorandumFor),
+        "AR 25-50, para 2-4a(5)");
+    check("rendered: SUBJECT matches the template's 2 lines",
+        at("subject") - at("memorandum-for"), lines(T.memorandumFor, T.subject),
+        "AR 25-50, para 2-4a(6)");
+    check("rendered: the body matches the template's 3 lines",
+        paragraphIdx[0] - at("subject"), lines(T.subject, T.firstParagraph),
+        "AR 25-50, para 2-4b(1)");
+    check("rendered: paragraph 1 to subparagraph a matches the template's 2 lines",
+        paragraphIdx[1] - paragraphIdx[0], lines(T.firstParagraph, T.subparagraphA),
+        "AR 25-50, para 2-4b(2)");
+    check("rendered: subparagraph a to b matches the template's 2 lines",
+        paragraphIdx[2] - paragraphIdx[1], lines(T.subparagraphA, T.subparagraphB),
+        "AR 25-50, para 2-4b(2)");
+
+    const sigRow = doc.flow.findIndex((l) => l.role === "signature");
+    check("rendered: the signature block matches the template's 5 lines",
+        sigRow - at("authority-line"), lines(T.authorityLine, T.signatureName),
+        "AR 25-50, para 2-4c(2)(a)");
+    check("rendered: the signature column matches the template",
+        doc.flow[sigRow].indentIn, Number((T.signatureColumn - T.leftMargin).toFixed(2)),
+        "AR 25-50, para 2-4c(2)(a)");
+    check("rendered: DISTRIBUTION matches the template's 2 lines",
+        at("distribution") - doc.flow.map((l, i) => (l.role === "signature" ? i : -1))
+            .filter((i) => i >= 0).at(-1),
+        lines(T.signatureTitle, T.distributionLabel), "AR 25-50, para 2-4a(5)(c)");
+    check("rendered: distribution entries sit at the left margin like the template",
+        doc.flow.filter((l) => l.role === "distribution").at(-1).indentIn, 0,
+        "AR 25-50, para 2-4a(5)(c)");
+
+    // Where the template departs from the 2020 regulation, the regulation wins
+    // and the difference is explained rather than followed.
+    //
+    // Its office symbol sits at 1.915 in rather than 1.792 in because its
+    // letterhead carries a "REPLY TO / ATTENTION OF" block at 1.403-1.511 in
+    // that para 1-16b(1) says is not required. Removing that block accounts
+    // for the difference.
+    checkTrue("the template's lower office symbol is explained by its extra letterhead block",
+        T.officeSymbol > LETTERHEAD_TOP && T.officeSymbol - LETTERHEAD_TOP < 0.2,
         "AR 25-50, para 1-16b(1)");
 }
 
