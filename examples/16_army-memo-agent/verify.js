@@ -2061,6 +2061,39 @@ const FIELD_TEMPLATE = {
             "Deputy Chief of Staff, G-1", "Deputy Chief of Staff, G-3/5/7", "Deputy Chief of Staff, G-4",
         ]}).warnings.some((f) => f.rule === "hqda-principals-collective"),
         HQDA_PRINCIPALS_COLLECTIVE.cite);
+    /*
+     * "When sending an enclosure separately from the correspondence, write it
+     * in the body of the correspondence and add a short note to the enclosure
+     * when forwarded." - para 4-2d(2). The first half is checkable here; the
+     * second travels with the enclosure and can only be reported.
+     */
+    {
+        const {bodyMentionsEnclosure, SEPARATE_COVER} = await import("./ar25-50.js");
+        const encl = {title: "Range 14 Maintenance Schedule", forwardedSeparately: true};
+
+        checkTrue("a paraphrase in the body counts as writing it in",
+            bodyMentionsEnclosure(encl.title, "The range 14 maintenance schedule follows under separate cover."),
+            SEPARATE_COVER.cite);
+        checkTrue("one incidental word does not",
+            !bodyMentionsEnclosure(encl.title, "The schedule is unchanged."),
+            SEPARATE_COVER.cite);
+
+        checkTrue("an enclosure sent separately and never mentioned is reported",
+            validateMemo({...FIG_2_1, enclosures: [encl],
+                          paragraphs: [{text: "This memorandum announces nothing in particular."}]})
+                .errors.some((f) => f.rule === "separate-cover-not-in-body"),
+            SEPARATE_COVER.cite);
+        checkTrue("the note that travels with it is always raised",
+            validateMemo({...FIG_2_1, enclosures: [encl],
+                          paragraphs: [{text: "The Range 14 maintenance schedule follows under separate cover."}]})
+                .warnings.some((f) => f.rule === "separate-cover-note"),
+            SEPARATE_COVER.cite);
+        checkTrue("an ordinary enclosure raises neither",
+            validateMemo({...FIG_2_1, enclosures: ["Range 14 Maintenance Schedule"]})
+                .findings.every((f) => !f.rule.startsWith("separate-cover")),
+            SEPARATE_COVER.cite);
+    }
+
     checkTrue("ordinary commands do not",
         validateMemo({...FIG_2_1, addressees: [
             "Commander, 1st Cavalry Division", "Commander, 4th Infantry Division",

@@ -881,6 +881,39 @@ export const TABBING = {
 };
 
 /**
+ * "When sending an enclosure separately from the correspondence, write it in
+ *  the body of the correspondence and add a short note to the enclosure when
+ *  forwarded." - para 4-2d(2)
+ *
+ * Two obligations. The first is checkable against the memorandum: the body has
+ * to say so. The second travels with the enclosure, so it can only be
+ * reported.
+ */
+export const SEPARATE_COVER = {
+    cite: "AR 25-50, para 4-2d(2)",
+    note: "Attach a short note to the enclosure saying it belongs to this memorandum when it is forwarded.",
+};
+
+/**
+ * Whether the body mentions an enclosure well enough to satisfy para 4-2d(2).
+ * Matched on the title's distinctive words rather than the whole string, since
+ * the body will paraphrase - "the maintenance schedule at enclosure 1" refers
+ * to "Range 14 Maintenance Schedule" without repeating it.
+ */
+export function bodyMentionsEnclosure(title, bodyText) {
+    const stop = new Set(["the", "a", "an", "of", "and", "for", "to", "in", "on", "at", "by", "with"]);
+    const words = String(title).toLowerCase().match(/[a-z0-9]{3,}/g) ?? [];
+    const distinctive = words.filter((w) => !stop.has(w));
+    if (distinctive.length === 0) return false;
+
+    const text = String(bodyText).toLowerCase();
+    const hits = distinctive.filter((w) => text.includes(w)).length;
+    // Most of the distinctive words, so a passing use of one common noun is
+    // not mistaken for identifying the enclosure.
+    return hits / distinctive.length >= 0.5;
+}
+
+/**
  * Whether a set of tab labels satisfies para 4-4a: "Tabs may be any letter or
  * number as long as they are consecutive and fully identified in the text."
  *

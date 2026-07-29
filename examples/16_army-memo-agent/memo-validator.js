@@ -56,6 +56,8 @@ import {
     hasGeographicAddress,
     HQDA_PRINCIPALS_COLLECTIVE,
     countHqdaPrincipals,
+    SEPARATE_COVER,
+    bodyMentionsEnclosure,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -592,6 +594,22 @@ function checkTabbing(memo, out) {
                 `The body never identifies ${seq.unmentioned.length === 1 ? "tab" : "tabs"} ${seq.unmentioned.join(", ")}. Every tab is fully identified in the text.`,
                 TABBING.packageCite));
         }
+    }
+
+    // "When sending an enclosure separately from the correspondence, write it
+    //  in the body of the correspondence and add a short note to the enclosure
+    //  when forwarded." - para 4-2d(2)
+    for (const e of memo.enclosures ?? []) {
+        if (typeof e === "string" || !e.forwardedSeparately) continue;
+        const title = e.title ?? "";
+        if (!bodyMentionsEnclosure(title, bodyText)) {
+            out.push(error("content", "separate-cover-not-in-body",
+                `"${title}" is forwarded separately, so the body has to say so. Nothing in the text mentions it.`,
+                SEPARATE_COVER.cite));
+        }
+        out.push(warn("content", "separate-cover-note",
+            `"${title}" is forwarded separately. ${SEPARATE_COVER.note}`,
+            SEPARATE_COVER.cite));
     }
 
     // "If the correspondence has three or more enclosures, tab each one." - 4-3
