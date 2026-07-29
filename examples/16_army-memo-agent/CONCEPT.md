@@ -155,7 +155,8 @@ Two details that matter more than they look:
 3. **Pagination is an estimate.** Lines per page derive from a 13.8 pt line height (Word's single spacing for 12 pt Arial) and an assumed letterhead height. A different letterhead template moves the first page's capacity, which is why it is an option rather than a constant.
 4. **The seal is never drawn.** Para 1-16b(1) requires the DoD seal and para 1-16b(2) forbids substituting any other device, so the renderer uses the official image from the APD letterhead template or none at all, and the validator raises `seal-missing` until you supply it. The seal does not change, so this is a one-time setup - see `assets/README.md`. Drawing an approximation would produce a document that looks official and is not.
 5. **Intent detection is shallow on purpose.** `detectMemoType()` matches the phrases that name a type in AR 25-50 and prints back what it chose. A wrong guess is cheap to correct with `--template`; a wrong guess made silently would not be.
-6. **Word decides the real page breaks.** The layout engine's pagination drives the previews and the decision to number pages; `keepLines` and `widowControl` carry the para 2-5c rules into Word. On a page that is close to full, Word's break and the engine's can differ by a line.
+6. **Check the regulation before calling something a judgement call.** The office symbol's position on page 1 was written up as a derived measurement when para 2-4a(1) states it outright - *"the second line below the seal"* - and ten figures measure it. Codifying a standard means the standard usually has the answer; reaching for a default is the reflex to distrust.
+7. **Word decides the real page breaks.** The layout engine's pagination drives the previews and the decision to number pages; `keepLines` and `widowControl` carry the para 2-5c rules into Word. On a page that is close to full, Word's break and the engine's can differ by a line.
 
 ---
 

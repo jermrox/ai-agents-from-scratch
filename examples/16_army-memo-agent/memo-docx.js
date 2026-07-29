@@ -697,9 +697,13 @@ export async function renderDocx(memo, options = {}) {
                     left: IN(LAYOUT.marginLeftIn),
                     right: IN(LAYOUT.marginRightIn),
                     bottom: IN(LAYOUT.marginBottomIn),
-                    // The top margin clears the tallest running head. A
-                    // plain-paper memorandum has none. - paras 2-3a(1), 2-5a
-                    top: IN(hasLetterhead ? options.letterheadHeightIn ?? 1.75 : 1.0),
+                    // Page 1 begins where the office symbol belongs: "the
+                    // second line below the seal" (para 2-4a(1)). A
+                    // plain-paper memorandum starts at the 1-inch top margin
+                    // instead (para 2-5a).
+                    top: IN(hasLetterhead
+                        ? (options.letterheadHeightIn ?? LETTERHEAD.officeSymbolTopIn)
+                        : 1.0),
                     header: IN(LETTERHEAD.sealTopIn),
                     footer: IN(LAYOUT.marginBottomIn - LINE_HEIGHT_IN),
                 },

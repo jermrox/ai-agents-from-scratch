@@ -587,6 +587,24 @@ const FIG_2_1 = {
 
     checkTrue("docx: a letterhead memorandum carries a first-page header",
         docx.names.includes("word/header1.xml"), "AR 25-50, para 2-3a(1)");
+
+    // "Type the office symbol on the second line below the seal." - para
+    // 2-4a(1). Page 1's body therefore starts where the figures put it.
+    const {LETTERHEAD: LH} = await import("./ar25-50.js");
+    const {convertInchesToTwip} = await import("docx");
+    // Asserted through the same conversion the renderer uses, so this pins the
+    // measurement rather than a rounding convention.
+    check("docx: page 1 begins where the office symbol belongs",
+        Number(/<w:pgMar w:top="(\d+)"/.exec(docx.document)?.[1]),
+        convertInchesToTwip(LH.officeSymbolTopIn), LH.officeSymbolTopCite);
+
+    // That position must also clear the continuation running head: the office
+    // symbol 1 inch down (2-5a), the subject on the next line (2-5b), and text
+    // on the third line below it (2-5c).
+    const headHeightIn = 1.0 + 4 * (13.8 / 72);
+    checkTrue("docx: the top margin clears the continuation running head",
+        LH.officeSymbolTopIn >= headHeightIn,
+        "AR 25-50, paras 2-5a through 2-5c");
 }
 
 {

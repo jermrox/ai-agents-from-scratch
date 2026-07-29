@@ -182,6 +182,12 @@ One unit trap is worth naming: `docx-js` takes `transformation.width` in **pixel
 
 The seal is anchored absolutely so the header text centres on the **page**, not on the space beside it - as the figures show.
 
+**Where page 1's body starts** is stated too, and was briefly treated as a judgement call it never was. Para 2-4a(1): *"Type the office symbol on the second line below the seal."* Figure 2-2 repeats it. The same ten figures put the seal's lower edge at 1.450 in and the office symbol at **1.792 in** (sd 0.029) from the top of the page, so that is the top margin.
+
+Deriving it instead - seal bottom plus two 13.8 pt lines - gives 1.853 in, which overshoots: the seal's edge is not a line boundary, and the measurement reads the top of the glyphs rather than the line box. The figures win.
+
+It has to clear the continuation running head as well - office symbol 1 inch down (para 2-5a), subject on the next line (2-5b), text on the third line below (2-5c), so 1.767 in. The two agree to within four hundredths of an inch, because the regulation means text to resume at the same height on every page. There was never a conflict to compromise between.
+
 ---
 
 ## 6) Pagination

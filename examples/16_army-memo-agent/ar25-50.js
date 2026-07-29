@@ -190,6 +190,27 @@ export const LETTERHEAD = {
     sealLeftIn: 0.52,
     sealGeometryCite: "measured from AR 25-50, figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
 
+    // Where the body starts on page 1.
+    //
+    // "Type the office symbol on the second line below the seal." - para
+    // 2-4a(1), and "Type the OFFICE SYMBOL at the left margin, two lines below
+    // the seal" - fig 2-2. So this is stated, not a matter of taste.
+    //
+    // The same ten figures put the seal's lower edge at 1.450 in and the office
+    // symbol at 1.792 in (sd 0.029) from the top of the page. Deriving it
+    // instead - seal bottom plus two 13.8 pt lines - gives 1.853 in, which
+    // overshoots because the seal's edge is not a line boundary and the
+    // measurement reads the top of the glyphs rather than the line box. The
+    // figures win.
+    //
+    // It also has to clear the continuation-page running head, which is the
+    // office symbol 1 inch from the top (para 2-5a), the subject on the next
+    // line (2-5b), and text on the third line below that (2-5c): 1.0 + 4 lines
+    // = 1.767 in. The two agree to within four hundredths of an inch, because
+    // the regulation means text to resume at the same height on every page.
+    officeSymbolTopIn: 1.79,
+    officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2; measured from figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
+
     // Point sizes remain APD template defaults - the figures are too coarse to
     // measure type size reliably, and the regulation does not publish them.
     titleSizePt: 10,

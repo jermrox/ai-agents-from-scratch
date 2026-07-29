@@ -50,7 +50,9 @@ export const DEFAULT_OPTIONS = {
     fontSizePt: TYPE.fontSizePt,
     charsPerInch: 12,       // plain-text preview grid only
     lineHeightPt: 13.8,     // Word single spacing for 12 pt Arial
-    letterheadHeightIn: 1.75,
+    // Where the office symbol sits on page 1 - para 2-4a(1), measured from the
+    // figures. See LETTERHEAD.officeSymbolTopIn.
+    letterheadHeightIn: LETTERHEAD.officeSymbolTopIn,
     firstPageLines: null,   // computed when null
     continuationPageLines: null,
     digitalSignaturePlaceholder: "[place digital signature block here]",
