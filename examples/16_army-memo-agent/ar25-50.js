@@ -983,6 +983,65 @@ export const PERSONAL_ADDRESS_TYPES = ["exclusiveFor", "appreciation", "commenda
 export const PERSONAL_ADDRESS_CITE = "AR 25-50, paras 2-2 and 2-4a(5)";
 
 /**
+ * Appendix F - the digital signature.
+ *
+ * Everything appendix F describes is an Acrobat form field, created in the PDF
+ * *after* the Word file exists: "a. Create document in MS Word. b. Create a
+ * Portable Document Format (PDF) version of the Word document", and every step
+ * from F-2c on is Acrobat. AR 25-50 prescribes no Word-native artifact for a
+ * digital signature at all.
+ *
+ * So a .docx cannot be signature-ready, and this module does not pretend
+ * otherwise. What it can do is leave the page correct for the Acrobat step and
+ * say what that step is. The two placement rules are quotable:
+ *
+ *   date box      "at the top of the document, across from the office symbol
+ *                  on the same line [...] Align the right edge of the date text
+ *                  box with the right margin", alignment "Right" - F-2e
+ *   signature box "directly above and left-aligned with the signer's name"
+ *                  - F-2f
+ *
+ * No dimension and no font are specified anywhere in the appendix - "place and
+ * size the box to allow room for 'dd month yyyy' format", "in whatever font
+ * that was selected". Any figure this module invented would be its own, so it
+ * invents none.
+ */
+export const APPENDIX_F = {
+    cite: "AR 25-50, appendix F",
+    dateBox: {
+        placement: "Top of the document, on the office symbol line, right edge aligned with the right margin.",
+        alignment: "Right",
+        sizing: "Sized only to allow room for \"dd month yyyy\". No dimension is specified.",
+        cite: "AR 25-50, para F-2e",
+    },
+    signatureBox: {
+        placement: "Directly above and left-aligned with the signer's name.",
+        cite: "AR 25-50, para F-2f",
+    },
+    // "THRU memorandums require placement of a digital signature box at the end
+    //  of each addressee line. Directly to the left of the digital signature
+    //  box, place a text box for short comments by each THRU addressee." - F-2i
+    thru: {
+        perAddressee: "A digital signature box at the end of each THRU addressee line, with a comment text box directly to its left.",
+        cite: "AR 25-50, paras F-2i and 2-4a(5)(d)",
+    },
+    // "For a memorandum with more than one signature, place digital signature
+    //  boxes for all signers." - F-2h
+    multipleSigners: {
+        rule: "One signature box per signer. The date box carries the date of the last signature and stays blank until the final official signs.",
+        cite: "AR 25-50, para F-2h",
+    },
+    readOnly: "Mark each signature box \"Mark as read-only\" for its date and comment boxes, or their text stays editable after signature. Otherwise print the document as an Adobe .pdf to lock it.",
+    readOnlyCite: "AR 25-50, para F-2 (Note)",
+};
+
+/**
+ * "Place the date on the same line as the office symbol flush with the right
+ *  margin after the memorandum has been signed." - para 2-4a(3)(b)
+ */
+export const DATE_AFTER_SIGNATURE_CITE = "AR 25-50, para 2-4a(3)(b)";
+
+/**
  * Chapter 3 defines a second vehicle - the letter - and para 3-2 assigns it a
  * fixed audience:
  *

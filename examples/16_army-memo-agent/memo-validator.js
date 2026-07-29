@@ -49,6 +49,7 @@ import {
     MASS_MAILING,
     letterAudiences,
     LETTER_AUDIENCES,
+    APPENDIX_F,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -534,6 +535,28 @@ function checkCorrespondenceVehicle(memo, out) {
     }
 }
 
+/**
+ * Appendix F is an Acrobat workflow, not a Word one, so the .docx can never
+ * carry the boxes it describes. Two of its requirements change what has to
+ * happen after conversion, and neither is visible in the file itself - so they
+ * are reported rather than silently left undone.
+ */
+function checkDigitalSignature(memo, out) {
+    if (memo.digitalSignature === false) return;
+
+    if (memo.thru?.length) {
+        out.push(warn("content", "thru-signature-boxes",
+            `${APPENDIX_F.thru.perAddressee} There ${memo.thru.length === 1 ? "is 1 THRU addressee" : `are ${memo.thru.length} THRU addressees`}, so that many box pairs are needed. ` +
+            `They are Acrobat form fields added after the Word file is converted, so this .docx cannot carry them.`,
+            APPENDIX_F.thru.cite));
+    }
+
+    if ((memo.signatories?.length ?? 0) > 1) {
+        out.push(warn("content", "multiple-signature-boxes",
+            APPENDIX_F.multipleSigners.rule, APPENDIX_F.multipleSigners.cite));
+    }
+}
+
 function checkPostscript(paragraphs, out) {
     for (const text of collectText(paragraphs)) {
         if (POSTSCRIPTS.pattern.test(text)) {
@@ -918,6 +941,7 @@ export function validateMemo(memo, options = {}) {
     checkSupersedingAuthority(memo, out);
     checkMassMailing(memo, out);
     checkCorrespondenceVehicle(memo, out);
+    checkDigitalSignature(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

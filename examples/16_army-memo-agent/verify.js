@@ -1955,6 +1955,41 @@ const FIELD_TEMPLATE = {
         validateMemo(FIG_2_1).findings.every(
             (f) => !["superseded-format", "mass-mailing", "wrong-vehicle"].includes(f.rule)),
         "AR 25-50, fig 2-1");
+
+    /*
+     * Appendix F is an Acrobat workflow. Everything it describes is a form
+     * field created in the PDF after conversion, so the .docx cannot carry any
+     * of it - which makes reporting the requirement the only way it can be met.
+     */
+    const {APPENDIX_F} = await import("./ar25-50.js");
+
+    checkTrue("a THRU memorandum needs a signature box per addressee",
+        validateMemo({...FIG_2_1, thru: ["Commander, 1st Cavalry Division"], digitalSignature: true})
+            .warnings.some((f) => f.rule === "thru-signature-boxes"),
+        APPENDIX_F.thru.cite);
+
+    checkTrue("a memorandum with no THRU line does not raise it",
+        validateMemo({...FIG_2_1, digitalSignature: true})
+            .warnings.every((f) => f.rule !== "thru-signature-boxes"),
+        APPENDIX_F.thru.cite);
+
+    checkTrue("a wet-signed THRU memorandum does not raise it either",
+        validateMemo({...FIG_2_1, thru: ["Commander, 1st Cavalry Division"], digitalSignature: false})
+            .warnings.every((f) => f.rule !== "thru-signature-boxes"),
+        APPENDIX_F.cite);
+
+    checkTrue("more than one signer needs a box each",
+        validateMemo({...FIG_2_1, digitalSignature: true, signatories: ["A", "B"]})
+            .warnings.some((f) => f.rule === "multiple-signature-boxes"),
+        APPENDIX_F.multipleSigners.cite);
+
+    // No dimension and no font appear anywhere in appendix F, so none is
+    // stored - a number here would be this module's invention, not a rule.
+    checkTrue("no box dimension is invented for the date box",
+        !/\d/.test(APPENDIX_F.dateBox.sizing.replace("dd month yyyy", "")),
+        "AR 25-50, para F-2e");
+    check("the date box alignment is the one thing F-2e does mandate",
+        APPENDIX_F.dateBox.alignment, "Right", "AR 25-50, para F-2e");
 }
 
 // ---------------------------------------------------------------------------
