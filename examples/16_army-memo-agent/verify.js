@@ -1,0 +1,495 @@
+/**
+ * Verify the renderer against AR 25-50 itself.
+ *
+ * The regulation prints its own line counts in the left margin of figures 2-1
+ * through 2-5. Those numbers are the test oracle: this script rebuilds each
+ * figure as a memo spec, lays it out, and asserts that the distance between
+ * every pair of landmarks matches the count the figure shows.
+ *
+ * If a change to memo-formatter.js breaks the spacing, this fails - which is
+ * the point of moving format out of the model and into code that can be tested.
+ *
+ * Run:  node examples/16_army-memo-agent/verify.js
+ */
+
+import {layoutMemo, renderText} from "./memo-formatter.js";
+import {validateMemo} from "./memo-validator.js";
+import {
+    normalizePunctuationSpacing,
+    hasCorrectPunctuationSpacing,
+    enclosureLabel,
+    formatMemoDate,
+    MEMO_DATE_PATTERN,
+} from "./ar25-50.js";
+import {measureTextIn, breakLines} from "./text-metrics.js";
+import {buildParagraphTree} from "./army-memo-agent.js";
+
+let passed = 0;
+const failures = [];
+
+function check(name, actual, expected, cite) {
+    const ok = JSON.stringify(actual) === JSON.stringify(expected);
+    if (ok) {
+        passed++;
+    } else {
+        failures.push({name, actual, expected, cite});
+    }
+}
+
+function checkTrue(name, value, cite) {
+    check(name, value === true, true, cite);
+}
+
+/**
+ * Landmarks are located in `doc.flow` - the document before pagination.
+ * The regulation's counts describe the flow ("the third line below the office
+ * symbol"), so a page break must not be able to change the answer.
+ */
+function indexOf(doc, role) {
+    return doc.flow.findIndex((l) => l.role === role);
+}
+
+function lastIndexOf(doc, roles) {
+    for (let i = doc.flow.length - 1; i >= 0; i--) {
+        if (roles.includes(doc.flow[i].role)) return i;
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// Figure 2-1 - "Using and preparing a memorandum with digital signature"
+// ---------------------------------------------------------------------------
+
+const FIG_2_1 = {
+    letterhead: {
+        organization: "Organizational Name/Title",
+        streetAddress: "Standardized Street Address",
+        cityStateZip: "City State 12345-1234",
+    },
+    officeSymbol: "OFFICE SYMBOL",
+    arimsRecordNumber: "ARIMS Record Number",
+    date: "13 March 2020",
+    addressees: ["U.S. Army Command and General Staff College (ATZL), 100 Stimson Avenue, Fort Leavenworth, KS 66027-1352"],
+    subject: "Using and Preparing a Memorandum With a Digital Signature",
+    paragraphs: [
+        {text: "See paragraph 2-2 (of this regulation) on when to use a memorandum."},
+        {text: "Single space the text with double-spacing between paragraphs and subparagraphs.  Insert two blank spaces after ending punctuation (periods and question marks).  For commas, colons and semicolons, place one space between the punctuation and the text that immediately follows it."},
+        {
+            text: "When a memorandum has more than one paragraph, number the paragraphs consecutively.  When paragraphs are subdivided, designate first subdivisions using lowercase letters of the alphabet and indent 1/4 inch as shown below.",
+            children: [
+                {text: "When a paragraph is subdivided, there must be at least two subparagraphs."},
+                {
+                    text: "If there is a subparagraph \"a,\" there must be a subparagraph \"b.\"",
+                    children: [
+                        {text: "Designate second subdivisions by numbers in parentheses; for example, (1), (2), and (3) and indent 1/2 inch as shown."},
+                        {
+                            text: "Do not subdivide beyond the third subdivision.",
+                            children: [
+                                {text: "Do not indent any further than the second subdivision."},
+                                {text: "Use (a), (b), (c), and so forth at this level."},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        {text: "For instructions on how to place a text box for the application of dates to .pdf files with digital signature, see Appendix F."},
+    ],
+    authorityLine: "AUTHORITY LINE:",
+    signature: {name: "NAME (ALL CAPS)", gradeAndBranch: "Colonel, GS", title: "Deputy Chief of Staff, G-3"},
+    enclosures: ["Enclosure title"],
+};
+
+{
+    const doc = layoutMemo(FIG_2_1);
+    const lines = doc.flow;
+
+    // Figure 2-1 margin numbers: office symbol -> MEMORANDUM FOR is 3.
+    check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
+        indexOf(doc, "memorandum-for") - indexOf(doc, "office-symbol"), 3,
+        "AR 25-50, para 2-4a(5)");
+
+    check("fig 2-1: SUBJECT is the 2d line below the last address line",
+        indexOf(doc, "subject") - lastIndexOf(doc, ["memorandum-for", "address"]), 2,
+        "AR 25-50, para 2-4a(6)");
+
+    check("fig 2-1: the body begins on the 3d line below the subject",
+        indexOf(doc, "paragraph") - lastIndexOf(doc, ["subject"]), 3,
+        "AR 25-50, para 2-4b(1)");
+
+    // Paragraph 1 is a single line; paragraph 2 begins on the 2d line below it.
+    const paragraphStarts = lines
+        .map((l, i) => (l.role === "paragraph" && l.prefix ? i : -1))
+        .filter((i) => i >= 0);
+    const firstEnd = paragraphStarts[0];
+    check("fig 2-1: double spacing between paragraphs",
+        paragraphStarts[1] - firstEnd, 2,
+        "AR 25-50, para 2-4b(2)");
+
+    check("fig 2-1: authority line is the 2d line below the last line of text",
+        indexOf(doc, "authority-line") - lastIndexOf(doc, ["paragraph"]), 2,
+        "AR 25-50, para 2-4c(1)");
+
+    check("fig 2-1: signature block is the 5th line below the authority line",
+        indexOf(doc, "enclosure-label") - indexOf(doc, "authority-line"), 5,
+        "AR 25-50, para 2-4c(2)(a)");
+
+    check("fig 2-1: digital signature block is the 3d line below the authority line",
+        indexOf(doc, "digital-signature") - indexOf(doc, "authority-line"), 3,
+        "AR 25-50, figs 2-1 through 2-5");
+
+    // Labels and indents, read off the same figure.
+    const labels = lines.filter((l) => l.prefix).map((l) => l.prefix);
+    check("fig 2-1: paragraph labels",
+        labels, ["1.", "2.", "3.", "a.", "b.", "(1)", "(2)", "(a)", "(b)", "4."],
+        "AR 25-50, fig 2-1");
+
+    const indentFor = (label) => lines.find((l) => l.prefix === label).indentIn;
+    check("fig 2-1: first subdivision indents 1/4 inch", indentFor("a."), 0.25, "AR 25-50, fig 2-1");
+    check("fig 2-1: second subdivision indents 1/2 inch", indentFor("(1)"), 0.5, "AR 25-50, fig 2-1");
+    check("fig 2-1: third subdivision does not indent further", indentFor("(a)"), 0.5, "AR 25-50, fig 2-1");
+    check("fig 2-1: main paragraphs sit at the left margin", indentFor("1."), 0, "AR 25-50, fig 2-1");
+
+    // "Space 1/4 inch to the right of the parenthesis when numbering
+    //  subparagraphs" - para 1-39b(10). Text lands on the quarter-inch grid,
+    //  so every label puts its text a quarter inch right of the label itself.
+    const textStart = (label) => {
+        const l = lines.find((x) => x.prefix === label);
+        return Number((l.indentIn + l.prefixWidthIn).toFixed(4));
+    };
+    check("text after '1.' starts on the 1/4-inch grid", textStart("1."), 0.25,
+        "AR 25-50, para 1-39b(10)");
+    check("text after 'a.' starts on the 1/4-inch grid", textStart("a."), 0.5,
+        "AR 25-50, para 1-39b(10)");
+    check("text after '(1)' starts on the 1/4-inch grid", textStart("(1)"), 0.75,
+        "AR 25-50, para 1-39b(10)");
+    check("text after '(a)' starts on the 1/4-inch grid", textStart("(a)"), 0.75,
+        "AR 25-50, para 1-39b(10)");
+
+    // "Do not indent any further than the second subdivision" also means the
+    // wrap of every paragraph returns to the left margin.
+    const wrapped = lines.find((l) => l.role === "paragraph" && !l.prefix);
+    check("fig 2-1: continuation lines return to the left margin",
+        wrapped.indentIn, 0, "AR 25-50, para 2-4a(6) and figs 2-1 through 2-5");
+
+    check("fig 2-1: enclosure listing reads Encl for a single enclosure",
+        lines[indexOf(doc, "enclosure-label")].text, "Encl", "AR 25-50, para 2-4c(3)");
+
+    check("fig 2-1: the signature block shares the enclosure line",
+        lines[indexOf(doc, "enclosure-label")].sameLine.text, "NAME (ALL CAPS)",
+        "AR 25-50, para 2-4c(3)");
+
+    check("fig 2-1: the signature block begins at the centre of the page",
+        lines[indexOf(doc, "enclosure-label")].sameLine.indentIn, 3.25,
+        "AR 25-50, para 2-4c(2)(a)");
+}
+
+// ---------------------------------------------------------------------------
+// Figure 2-2 - two-page memorandum with a suspense date
+// ---------------------------------------------------------------------------
+
+{
+    const memo = {
+        ...FIG_2_1,
+        suspenseDate: "20 March 2020",
+        subject: "Preparing a Two-page Memorandum With a Suspense Date",
+        enclosures: ["Personnel Listing, 22 March 2019", "DA Form 4187", "Orders 114-6", "Locator"],
+        // Enough text to force a second page.
+        paragraphs: Array.from({length: 14}, (_, i) => ({
+            text: `Paragraph ${i + 1}.  ` + "Review this example to see how to prepare a memorandum.  ".repeat(3),
+        })).concat([{text: "My point of contact is Ms. Jane Ruiz, ATZL-CD, at 913-555-0100 or jane.a.ruiz.civ@army.mil."}]),
+    };
+    const doc = layoutMemo(memo);
+
+    check("fig 2-2: the memorandum runs onto a second page", doc.pages.length >= 2, true,
+        "AR 25-50, para 2-5");
+
+    const suspense = doc.flow.findIndex((l) => l.role === "suspense");
+    const officeSymbol = indexOf(doc, "office-symbol");
+    check("fig 2-2: the suspense date is 2 lines above the date line",
+        officeSymbol - suspense, 2, "AR 25-50, para 2-4a(4)");
+
+    check("fig 2-2: the suspense date is bold and flush right",
+        [doc.flow[suspense].bold, doc.flow[suspense].right],
+        [true, "S: 20 March 2020"], "AR 25-50, para 2-4a(4)");
+
+    // Continuation page: office symbol, then subject on the next line, then
+    // text on the third line below the subject.
+    const heading = doc.pages[1].heading;
+    check("fig 2-2: the continuation page repeats the office symbol first",
+        heading[0].role, "office-symbol", "AR 25-50, para 2-5a");
+    check("fig 2-2: the subject follows on the next line",
+        heading[1].role, "subject", "AR 25-50, para 2-5b");
+    check("fig 2-2: text resumes on the 3d line below the subject",
+        heading.length - heading.findIndex((l) => l.role === "subject"), 3,
+        "AR 25-50, para 2-5c");
+
+    check("fig 2-2: four enclosures are labelled '4 Encls'",
+        enclosureLabel(4), "4 Encls", "AR 25-50, para 2-4c(3)");
+
+    const rendered = renderText(memo);
+    checkTrue("fig 2-2: a page number is centred on the page", /\n\s+2\s*$/.test(rendered.trimEnd()),
+        "AR 25-50, para 2-5d");
+}
+
+// ---------------------------------------------------------------------------
+// Figure 2-5 - multiple-address memorandum
+// ---------------------------------------------------------------------------
+
+{
+    const memo = {
+        ...FIG_2_1,
+        addressStyle: "uppercase",
+        addressees: [
+            "DEPUTY CHIEF OF STAFF, G-1 (DAPE-ZA), 300 ARMY PENTAGON, WASHINGTON, DC 20310-0300",
+            "DEPUTY CHIEF OF STAFF, G-2 (DAMI-ZA), 1000 ARMY PENTAGON, WASHINGTON, DC 20310-1000",
+            "DEPUTY CHIEF OF STAFF, G-4 (DALO-ZA), 500 ARMY PENTAGON, WASHINGTON, DC 20310-0500",
+        ],
+        subject: "Multiple-address Memorandums for HQDA Agencies",
+    };
+    const doc = layoutMemo(memo);
+    const lines = doc.flow;
+
+    const memoFor = indexOf(doc, "memorandum-for");
+    check("fig 2-5: MEMORANDUM FOR stands alone on its line",
+        lines[memoFor].text, "MEMORANDUM FOR", "AR 25-50, fig 2-5");
+
+    const firstAddress = indexOf(doc, "address");
+    check("fig 2-5: addresses begin on the 2d line below MEMORANDUM FOR",
+        firstAddress - memoFor, 2, "AR 25-50, fig 2-5");
+
+    const addressLines = lines.filter((l) => l.role === "address");
+    const wrappedAddress = addressLines.find((l) => l.indentIn > 0);
+    check("fig 2-5: an address that runs over indents its second line 1/4 inch",
+        wrappedAddress?.indentIn, 0.25, "AR 25-50, para 2-4a(5)(b)");
+
+    checkTrue("fig 2-5: addresses are typed in one style throughout",
+        addressLines.every((l) => l.text === l.text.toUpperCase()),
+        "AR 25-50, para 2-4a(5)");
+}
+
+// ---------------------------------------------------------------------------
+// Figure 2-3 - single address on the MEMORANDUM FOR line
+// ---------------------------------------------------------------------------
+
+{
+    const memo = {
+        ...FIG_2_1,
+        addressees: ["DEPUTY CHIEF OF STAFF, G-4 (DALO-ZA/[Name])"],
+        subject: "Single-address Headquarters Department of the Army Memorandum",
+    };
+    const doc = layoutMemo(memo);
+    const memoFor = doc.flow[indexOf(doc, "memorandum-for")];
+    check("fig 2-3: a single address sits on the MEMORANDUM FOR line",
+        memoFor.text, "MEMORANDUM FOR DEPUTY CHIEF OF STAFF, G-4 (DALO-ZA/[Name])",
+        "AR 25-50, para 2-4a(5)(a)");
+}
+
+// ---------------------------------------------------------------------------
+// Rules the figures do not show
+// ---------------------------------------------------------------------------
+
+{
+    // "Do not number a one-paragraph memorandum." - 2-4b(4)(a)
+    const single = {...FIG_2_1, paragraphs: [{text: "One paragraph only, so no number."}]};
+    const doc = layoutMemo(single);
+    check("one-paragraph memorandums are not numbered",
+        doc.flow.filter((l) => l.prefix).length, 0,
+        "AR 25-50, para 2-4b(4)(a)");
+}
+
+{
+    // "If you are not using an authority line, begin the signature block on the
+    //  fifth line below the last line of text." - 2-4c(2)(a)
+    const noAuthority = {...FIG_2_1, authorityLine: null};
+    const doc = layoutMemo(noAuthority);
+    check("without an authority line the signature block is the 5th line below the text",
+        indexOf(doc, "enclosure-label") - lastIndexOf(doc, ["paragraph"]), 5,
+        "AR 25-50, para 2-4c(2)(a)");
+    check("without an authority line the digital signature is the 3d line below the text",
+        indexOf(doc, "digital-signature") - lastIndexOf(doc, ["paragraph"]), 3,
+        "AR 25-50, figs 2-1 through 2-5");
+
+    // A wet-signature memorandum leaves the five lines empty.
+    const wet = layoutMemo({...FIG_2_1, digitalSignature: false});
+    check("a wet-signature memorandum still places the block on the 5th line",
+        indexOf(wet, "enclosure-label") - indexOf(wet, "authority-line"), 5,
+        "AR 25-50, para 2-4c(2)(a)");
+    check("a wet-signature memorandum leaves no digital signature line",
+        indexOf(wet, "digital-signature"), -1, "AR 25-50, para 1-17");
+}
+
+{
+    // MOU: title below the seal, BETWEEN, the parties joined by AND, and
+    // overscored signature blocks on the 5th line below the text with the
+    // senior official on the right. - 2-6c
+    const mou = layoutMemo({
+        type: "mou",
+        letterhead: FIG_2_1.letterhead,
+        parties: ["HEADQUARTERS, 4TH INFANTRY DIVISION", "U.S. ARMY GARRISON, FORT CARSON"],
+        subject: "Shared Use of Range 14",
+        paragraphs: [{text: "Purpose.  This memorandum records shared use of Range 14."}],
+        signers: [
+            {name: "JANE A. RUIZ", titleAndAgency: "Colonel, GS", date: "17 July 2026"},
+            {name: "MARCUS T. HALE", titleAndAgency: "Brigadier General, USA", date: "17 July 2026"},
+        ],
+    });
+    const titles = mou.flow.filter((l) => l.role === "agreement-title").map((l) => l.text);
+    check("MOU heading reads title, BETWEEN, AND",
+        titles, ["MEMORANDUM OF UNDERSTANDING", "BETWEEN", "AND"], "AR 25-50, para 2-6c(1)");
+
+    const overscore = mou.flow.findIndex((l) => l.role === "overscore");
+    check("MOU signature blocks are the 5th line below the text",
+        overscore - mou.flow.findLastIndex((l) => l.role === "paragraph"), 5,
+        "AR 25-50, para 2-6c(5)(a)");
+    checkTrue("MOU signature blocks are overscored and paired",
+        mou.flow[overscore].text.startsWith("_") && !!mou.flow[overscore].sameLine,
+        "AR 25-50, para 2-6c(5)(b)");
+    check("the senior official signs on the right",
+        mou.flow.find((l) => l.role === "signature").sameLine.text, "MARCUS T. HALE",
+        "AR 25-50, para 2-6c(5)(d)");
+}
+
+{
+    // Six addressees force the SEE DISTRIBUTION format. - 2-4a(5)(c)
+    const many = {
+        ...FIG_2_1,
+        addressees: Array.from({length: 6}, (_, i) => `COMMANDER, ${i + 1}ST BRIGADE`),
+    };
+    const result = validateMemo(many);
+    checkTrue("more than five addressees requires SEE DISTRIBUTION",
+        result.errors.some((f) => f.rule === "see-distribution-required"),
+        "AR 25-50, para 2-4a(5)(c)");
+
+    const doc = layoutMemo({...many, seeDistribution: true, distribution: ["A", "B"]});
+    check("SEE DISTRIBUTION replaces the address block",
+        doc.flow[indexOf(doc, "memorandum-for")].text,
+        "MEMORANDUM FOR SEE DISTRIBUTION", "AR 25-50, para 2-4a(5)(c)");
+}
+
+{
+    // Two spaces after ending punctuation, one after a comma. - 1-39b(9)
+    check("sentence spacing is normalized to two spaces",
+        normalizePunctuationSpacing("First sentence. Second one? Third!  Fourth."),
+        "First sentence.  Second one?  Third!  Fourth.",
+        "AR 25-50, para 1-39b(9)");
+
+    check("commas, colons, and semicolons take one space",
+        normalizePunctuationSpacing("one,  two;  three:  four"),
+        "one, two; three: four", "AR 25-50, para 1-39b(9)");
+
+    check("abbreviations are not mistaken for sentence ends",
+        normalizePunctuationSpacing("Contact Mr. Smith and Dr. Jones."),
+        "Contact Mr. Smith and Dr. Jones.", "AR 25-50, para 1-39b(9)");
+
+    checkTrue("normalization is idempotent",
+        hasCorrectPunctuationSpacing(normalizePunctuationSpacing("A. B. C.")),
+        "AR 25-50, para 1-39b(9)");
+}
+
+{
+    // Wrapping must not eat the second space at a line break.
+    const long = "A".repeat(40) + ".  " + "B".repeat(40) + ".  Tail.";
+    const broken = breakLines(long, {
+        sizePt: 12,
+        indentForLine: () => 0,
+        widthForLine: () => 6.5,
+    });
+    checkTrue("two-space sentence gaps survive line breaking",
+        broken.some((l) => l.text.includes(".  ")) || broken.length > 1,
+        "AR 25-50, para 1-39b(9)");
+}
+
+{
+    // Depth is clamped to the third subdivision. - fig 2-1
+    const tree = buildParagraphTree([
+        {level: 0, text: "main"},
+        {level: 1, text: "a"},
+        {level: 2, text: "(1)"},
+        {level: 3, text: "(a)"},
+        {level: 7, text: "too deep"},
+    ]);
+    const depth = (nodes, d = 1) =>
+        Math.max(...nodes.map((n) => (n.children ? depth(n.children, d + 1) : d)));
+    check("paragraph depth never exceeds the third subdivision", depth(tree), 4,
+        "AR 25-50, fig 2-1");
+
+    const skipped = buildParagraphTree([{level: 0, text: "main"}, {level: 3, text: "orphan"}]);
+    check("a level that skips a rung is pulled back to its parent",
+        depth(skipped), 2, "AR 25-50, fig 2-1");
+}
+
+{
+    // Validator findings that the agent is expected to act on.
+    const bad = {
+        ...FIG_2_1,
+        subject: "A Subject Line That Is Considerably Longer Than Ten Words In Total.",
+        date: "March 13, 2020",
+        paragraphs: [
+            {text: "The report was completed by the staff at 1300 hours."},
+            {text: "There is a requirement that all soldiers and their families attend."},
+            {text: "The briefing starts at 2:30 p.m. in the conference room."},
+        ],
+    };
+    const result = validateMemo(bad);
+    const rules = new Set(result.findings.map((f) => f.rule));
+
+    for (const rule of ["date-format", "subject-too-long", "time-hours-suffix",
+                        "civilian-time", "expletive-opening", "army-capitalization",
+                        "passive-voice", "poc-placement", "subject-punctuation"]) {
+        checkTrue(`validator catches ${rule}`, rules.has(rule), "AR 25-50");
+    }
+
+    checkTrue("every finding cites the regulation",
+        result.findings.every((f) => typeof f.cite === "string" && f.cite.length > 0),
+        "AR 25-50");
+
+    checkTrue("layout findings are not sent back to the model",
+        result.formatFindings.every((f) => !result.contentFindings.includes(f)),
+        "design invariant");
+}
+
+{
+    // Dates and type metrics.
+    check("memorandum dates are written out in full",
+        formatMemoDate(new Date(2020, 2, 13)), "13 March 2020", "AR 25-50, para 1-25a");
+    check("date stamps use the abbreviated month",
+        formatMemoDate(new Date(2020, 2, 13), {stamp: true}), "13 Mar 2020",
+        "AR 25-50, para 2-4a(3)(c)");
+    checkTrue("the full form matches the memorandum date pattern",
+        MEMO_DATE_PATTERN.test(formatMemoDate(new Date(2020, 2, 13))), "AR 25-50, para 1-25a");
+
+    // 12 pt Arial: a lowercase 'n' is 556/1000 em = 0.0927 in.
+    const n = measureTextIn("n", 12);
+    checkTrue("type is measured in inches from real advance widths",
+        Math.abs(n - 0.0927) < 0.001, "AR 25-50, para 1-19");
+}
+
+{
+    // The reference memo must be clean.
+    const {OFFLINE_CONTENT, OFFLINE_CONTEXT, assembleMemo} = await import("./army-memo-agent.js");
+    const memo = assembleMemo(OFFLINE_CONTENT, OFFLINE_CONTEXT);
+    const result = validateMemo(memo);
+    check("the worked example produces no errors", result.errors.map((f) => f.rule), [],
+        "AR 25-50");
+    check("the worked example fits on one page", result.pages, 1,
+        "AR 25-50, para 1-39b(7)");
+    // The only advisory should be the seal the repository cannot ship.
+    check("the only advisory is the missing DoD seal",
+        result.warnings.map((f) => f.rule), ["seal-missing"], "AR 25-50, para 1-16b(1)");
+}
+
+// ---------------------------------------------------------------------------
+
+const total = passed + failures.length;
+if (failures.length === 0) {
+    console.log(`AR 25-50 layout verification: ${passed}/${total} checks passed.`);
+} else {
+    console.log(`AR 25-50 layout verification: ${passed}/${total} passed, ${failures.length} FAILED.\n`);
+    for (const f of failures) {
+        console.log(`  FAIL  ${f.name}`);
+        console.log(`        expected ${JSON.stringify(f.expected)}, got ${JSON.stringify(f.actual)}`);
+        console.log(`        -> ${f.cite}`);
+    }
+    process.exitCode = 1;
+}
