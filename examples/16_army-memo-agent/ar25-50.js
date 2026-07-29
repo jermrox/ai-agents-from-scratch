@@ -163,14 +163,35 @@ export const LETTERHEAD = {
     templateSource: "https://armypubs.army.mil/tools/pubsresources.aspx",
     templateCite: "AR 25-50, para 1-16b",
 
+    // The seal artwork itself. AR 25-50 para 1-16b(1) calls it the DoD seal;
+    // the department has since been renamed, and the current seal reads
+    // "DEPARTMENT OF WAR / UNITED STATES OF AMERICA". The regulation's
+    // requirement is unchanged - official letterhead bears the department
+    // seal - so the citation stands and the artwork is the current one.
+    sealFile: "dow-seal.png",
+
     // First page only; continuation pages are plain white paper. - 1-18 / 2-3a(1)
     firstPageOnly: true,
     continuationPaperCite: "AR 25-50, paras 1-18 and 2-3a(1)",
 
-    // APD template defaults - geometry, not regulation text.
-    sealDiameterIn: 1.0,
-    sealTopIn: 0.5,
-    sealLeftIn: 0.75,
+    // Seal geometry, measured from the regulation's own figures rather than
+    // assumed. Each of figures 2-1, 2-3 through 2-7, and 2-11 through 2-14
+    // draws the seal on a full 8.5 x 11 page; scaling the seal's pixel bounding
+    // box against the page gives, across ten figures:
+    //
+    //     diameter   0.953 in wide, 0.941 in tall   (sd 0.005 / 0.006)
+    //     left edge  0.523 in from the page edge    (sd 0.005)
+    //     top edge   0.524 in from the page edge    (sd 0.006)
+    //
+    // AR 25-50 does not state these numbers in prose; the figures are the only
+    // evidence in the regulation, so they are the source.
+    sealDiameterIn: 0.95,
+    sealTopIn: 0.52,
+    sealLeftIn: 0.52,
+    sealGeometryCite: "measured from AR 25-50, figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
+
+    // Point sizes remain APD template defaults - the figures are too coarse to
+    // measure type size reliably, and the regulation does not publish them.
     titleSizePt: 10,
     addressSizePt: 8,
     lines: [
@@ -364,6 +385,25 @@ export function enclosureLabel(count) {
 
 export const ENCLOSURE_CITE = "AR 25-50, para 2-4c(3)";
 
+/**
+ * Distribution and copy-furnished listings are *blocked* flush with the left
+ * margin, not hung like an address:
+ *
+ *   "type 'DISTRIBUTION:' and block the distribution formulas or addresses
+ *    (flush with the left margin)" - para 2-4a(5)(c)
+ *   "Begin listing 'CF:' addressees on the next line flush with the left
+ *    margin." - fig 2-14
+ *
+ * Figure 2-8 indents subordinate entries under a heading entry, so a listing
+ * entry may carry its own indent level.
+ */
+export const LISTING = {
+    wrapIndentIn: 0,
+    subEntryIndentIn: 0.25,
+    continuedMarker: "(CONT)",
+    cite: "AR 25-50, para 2-4a(5)(c) and figs 2-8 and 2-14",
+};
+
 /** Memorandums use "CF:"; letters use "cc:". - 1-21c, 1-21d */
 export const COPY_MARKERS = {
     memorandum: "CF:",
@@ -392,6 +432,20 @@ export const MEMO_TYPES = {
 };
 
 /**
+ * Decision memorandum approval line.
+ *
+ * Figure 2-18 (wet signature) prints an "X" the approver marks by hand.
+ * Figure 2-19 (digital) prints a checkbox the approver clicks. The choice
+ * follows the signature method, not preference.
+ */
+export const DECISION_APPROVAL = {
+    options: ["APPROVED", "DISAPPROVED", "SEE ME"],
+    wetMark: "X",
+    wetCite: "AR 25-50, fig 2-18",
+    digitalCite: "AR 25-50, fig 2-19",
+};
+
+/**
  * MOU/MOA heading and signature rules, which differ from a standard
  * memorandum in every structural respect. - 2-6c
  */
@@ -405,7 +459,56 @@ export const AGREEMENT_FORMAT = {
     overscoreSignatures: true,
     seniorOfficialOnRight: true,
     cite: "AR 25-50, para 2-6c",
+
+    // "Prepare the MOU/MOA on plain white paper. If an MOU/MOA is between two
+    //  Army activities, DA letterhead is appropriate." - para 2-6c(1).
+    // Figures 2-15 and 2-16 both show plain paper, so that is the default.
+    plainPaperByDefault: true,
+    paperCite: "AR 25-50, para 2-6c(1) and figs 2-15 and 2-16",
+
+    // Agreeing agencies are separated by semicolons with the joining word
+    // before the last, as figures 2-15 and 2-16 set them:
+    //   CHIEF INFORMATION OFFICER/G-6; DEPUTY CHIEF OF STAFF, G-2;
+    //   AND
+    //   THE DEFENSE CIVIL PREPAREDNESS AGENCY
+    partySeparator: ";",
+    partyCite: "AR 25-50, figs 2-15 and 2-16",
+
+    // Each block is overscored, and carries its own shorter rule with
+    // "(Date)" centred beneath it. - figs 2-15 and 2-16
+    signatureRuleIn: 2.4,
+    dateRuleIn: 1.5,
+    dateCaption: "(Date)",
+    signatureColumnIn: 3.25,
+    ruleCite: "AR 25-50, para 2-6c(5)(b) and figs 2-15 and 2-16",
+
+    // "If an MOU or MOA has three agreeing agencies, center the signature
+    //  block of the highest ranking official at the bottom. Place the
+    //  signature block of the next-highest ranking official above on the
+    //  right. Place the signature block of the junior official above on the
+    //  left." - para 2-6c(5)(d)
+    thirdSignerCentredBelow: true,
+    thirdSignerCite: "AR 25-50, para 2-6c(5)(d) and fig 2-15",
 };
+
+/**
+ * Compose the agreeing-agency block for an MOU or MOA title.
+ * Returns the lines to centre, excluding the title and BETWEEN.
+ */
+export function agreementParties(parties = []) {
+    if (parties.length === 0) return [];
+    if (parties.length === 1) return [parties[0]];
+
+    // Two agencies are simply joined by the keyword - para 2-6c(1). Three or
+    // more take semicolons, as figures 2-15 and 2-16 set them.
+    const last = parties[parties.length - 1];
+    if (parties.length === 2) {
+        return [parties[0], AGREEMENT_FORMAT.joinKeyword, last];
+    }
+    const leading = parties.slice(0, -1).join(`${AGREEMENT_FORMAT.partySeparator} `)
+        + AGREEMENT_FORMAT.partySeparator;
+    return [leading, AGREEMENT_FORMAT.joinKeyword, last];
+}
 
 /**
  * Convert inches to whole characters for the monospace renderer.

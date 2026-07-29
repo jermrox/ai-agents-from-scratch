@@ -278,7 +278,6 @@ const OFFLINE_CONTEXT = {
         organization: "Headquarters, 4th Infantry Division",
         streetAddress: "1633 Mekong Street",
         cityStateZip: "Fort Carson, CO 80913-4321",
-        seal: null, // supply the seal from the APD letterhead template
     },
     officeSymbol: "ATZB-RC",
     arimsRecordNumber: "25-50a",

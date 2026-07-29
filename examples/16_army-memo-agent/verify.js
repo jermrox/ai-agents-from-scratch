@@ -476,9 +476,16 @@ const FIG_2_1 = {
         "AR 25-50");
     check("the worked example fits on one page", result.pages, 1,
         "AR 25-50, para 1-39b(7)");
-    // The only advisory should be the seal the repository cannot ship.
-    check("the only advisory is the missing DoD seal",
-        result.warnings.map((f) => f.rule), ["seal-missing"], "AR 25-50, para 1-16b(1)");
+    // The seal ships with the example, so a finished memorandum is clean.
+    check("the worked example raises no advisories either",
+        result.warnings.map((f) => f.rule), [], "AR 25-50");
+    checkTrue("the department seal is applied automatically",
+        layoutMemo(memo).letterhead.seal?.endsWith("dow-seal.png") === true,
+        "AR 25-50, para 1-16b(1)");
+    checkTrue("clearing the seal is reported as an error",
+        validateMemo({...memo, letterhead: {...memo.letterhead, seal: null}})
+            .errors.some((f) => f.rule === "seal-missing"),
+        "AR 25-50, para 1-16b(1)");
 }
 
 // ---------------------------------------------------------------------------
@@ -583,6 +590,46 @@ const FIG_2_1 = {
 }
 
 {
+    // The seal, placed to the measurement taken off the regulation's figures.
+    // EMU (English Metric Units) are exact integers at 914400 per inch, so
+    // these assert the placement rather than approximate it.
+    const {renderDocx} = await import("./memo-docx.js");
+    const JSZip = (await import("jszip")).default;
+    const {LETTERHEAD} = await import("./ar25-50.js");
+    const {OFFLINE_CONTENT, OFFLINE_CONTEXT, assembleMemo} = await import("./army-memo-agent.js");
+
+    const zip = await JSZip.loadAsync(await renderDocx(assembleMemo(OFFLINE_CONTENT, OFFLINE_CONTEXT)));
+    const header = await zip.file("word/header1.xml").async("string");
+    const EMU = 914400;
+
+    const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(header);
+    check("seal: the artwork is exactly 0.95 inch wide",
+        Number(extent?.[1]), Math.round(LETTERHEAD.sealDiameterIn * EMU),
+        LETTERHEAD.sealGeometryCite);
+    check("seal: the artwork is exactly 0.95 inch tall",
+        Number(extent?.[2]), Math.round(LETTERHEAD.sealDiameterIn * EMU),
+        LETTERHEAD.sealGeometryCite);
+    check("seal: the artwork is square",
+        extent?.[1], extent?.[2], LETTERHEAD.sealGeometryCite);
+
+    const offsets = [...header.matchAll(/<wp:posOffset>(-?\d+)<\/wp:posOffset>/g)].map((m) => Number(m[1]));
+    check("seal: it sits 0.52 inch from the left edge",
+        offsets[0], Math.round(LETTERHEAD.sealLeftIn * EMU), LETTERHEAD.sealGeometryCite);
+    check("seal: it sits 0.52 inch from the top edge",
+        offsets[1], Math.round(LETTERHEAD.sealTopIn * EMU), LETTERHEAD.sealGeometryCite);
+
+    // JSZip lists the "word/media/" directory entry alongside its files.
+    const media = Object.keys(zip.files)
+        .filter((n) => n.startsWith("word/media/") && !zip.files[n].dir);
+    check("seal: exactly one image is embedded", media.length, 1, "AR 25-50, para 1-16b(2)");
+
+    // Para 1-16b(2) forbids any other device on letterhead, so the seal must be
+    // the only image in the document.
+    checkTrue("seal: no other emblem, insignia, or device appears",
+        media.length === 1, LETTERHEAD.insigniaCite);
+}
+
+{
     // A memorandum for record is plain white paper with no letterhead header
     // and no authority line. - fig 2-17
     const {renderDocx} = await import("./memo-docx.js");
@@ -626,6 +673,21 @@ const FIG_2_1 = {
         !/_FOR DECISION_/.test(document), "AR 25-50, para 1-32");
     checkTrue("docx: the approval line keeps its columns",
         /APPROVED/.test(document) && /DISAPPROVED/.test(document), "AR 25-50, fig 2-18");
+
+    // "Preparing a digital decision memorandum" - fig 2-19 - shows a checkbox
+    // the approver clicks, not an X to strike by hand.
+    const boxes = (document.match(/<w14:checkbox>/g) ?? []).length;
+    check("docx: a digital decision memorandum has three approval checkboxes",
+        boxes, 3, "AR 25-50, fig 2-19");
+
+    // The wet-signature form of the same memorandum uses the X of fig 2-18.
+    const wet = createTemplate("decision");
+    wet.digitalSignature = false;
+    const wetXml = await (await JSZip.loadAsync(await renderDocx(wet)))
+        .file("word/document.xml").async("string");
+    checkTrue("docx: a wet-signature decision memorandum uses X, not checkboxes",
+        !/<w14:checkbox>/.test(wetXml) && /APPROVED {2}X/.test(wetXml),
+        "AR 25-50, fig 2-18");
 }
 
 {
@@ -643,6 +705,92 @@ const FIG_2_1 = {
         !/MEMORANDUM FOR/.test(document), "AR 25-50, para 2-6c(1)");
     checkTrue("docx: MOU signature blocks are overscored",
         /_{10,}/.test(document), "AR 25-50, para 2-6c(5)(b)");
+
+    // "Prepare the MOU/MOA on plain white paper." - para 2-6c(1). The only
+    // running head an agreement carries is the continuation subject, so the
+    // test is for letterhead content, not for the absence of a header part.
+    const mouZip = await JSZip.loadAsync(await renderDocx(createTemplate("mou")));
+    const names = Object.keys(mouZip.files);
+    checkTrue("docx: an MOU carries no seal image",
+        !names.some((n) => n.startsWith("word/media/") && !mouZip.files[n].dir),
+        "AR 25-50, para 2-6c(1)");
+
+    const headerParts = names.filter((n) => /word\/header\d+\.xml$/.test(n));
+    const headerText = (await Promise.all(headerParts.map((n) => mouZip.file(n).async("string")))).join("");
+    checkTrue("docx: an MOU has no DEPARTMENT OF THE ARMY letterhead block",
+        !/DEPARTMENT OF THE ARMY/.test(headerText), "AR 25-50, para 2-6c(1)");
+    checkTrue("docx: an MOU continuation head repeats the subject only",
+        !headerText.includes("OFFICE SYMBOL"), "AR 25-50, figs 2-15 and 2-16");
+
+    // Each block carries its own date rule and centred caption. - figs 2-15, 2-16
+    checkTrue("docx: each MOU signature block has a date line",
+        /\(Date\)/.test(document), "AR 25-50, figs 2-15 and 2-16");
+}
+
+{
+    // Agreement heading and signature geometry in the layout engine.
+    const {AGREEMENT_FORMAT, agreementParties} = await import("./ar25-50.js");
+
+    check("two agencies are joined by AND alone",
+        agreementParties(["A", "B"]), ["A", "AND", "B"], "AR 25-50, para 2-6c(1)");
+    check("three agencies take semicolons with AND before the last",
+        agreementParties(["A", "B", "C"]), ["A; B;", "AND", "C"],
+        "AR 25-50, figs 2-15 and 2-16");
+
+    const mou = layoutMemo({
+        type: "mou",
+        letterhead: null,
+        parties: ["CHIEF INFORMATION OFFICER/G-6", "DEPUTY CHIEF OF STAFF, G-2", "THE DEFENSE CIVIL PREPAREDNESS AGENCY"],
+        subject: "Preparing a Memorandum of Understanding",
+        paragraphs: [{text: "BACKGROUND:  [If there is need to discuss background.]"}],
+        signers: [
+            {name: "Name One", gradeAndBranch: "Lieutenant General", titleAndAgency: "DCS, G-2"},
+            {name: "Name Two", gradeAndBranch: "Lieutenant General", titleAndAgency: "Chief Information Officer/G-6"},
+            {name: "Name Three", titleAndAgency: "Director, Defense Civilian Preparedness Agency"},
+        ],
+        digitalSignature: false,
+    });
+
+    checkTrue("an MOU is laid out on plain paper", mou.hasLetterhead === false,
+        "AR 25-50, para 2-6c(1)");
+
+    const overscores = mou.flow.filter((l) => l.role === "overscore");
+    check("an MOU with three agencies has two overscore rows",
+        overscores.length, 2, "AR 25-50, para 2-6c(5)(d)");
+    checkTrue("the first overscore row carries both side-by-side blocks",
+        !!overscores[0].sameLine, "AR 25-50, para 2-6c(5)");
+    checkTrue("the third block is centred and stands alone",
+        !overscores[1].sameLine && overscores[1].indentIn > 0.5,
+        "AR 25-50, para 2-6c(5)(d)");
+
+    check("the senior of the first two signs on the right",
+        mou.flow.find((l) => l.role === "signature").sameLine.text, "NAME TWO",
+        "AR 25-50, para 2-6c(5)(d)");
+
+    const dateCaptions = mou.flow.filter((l) => l.text === AGREEMENT_FORMAT.dateCaption
+        || l.sameLine?.text === AGREEMENT_FORMAT.dateCaption);
+    checkTrue("every signature block has a (Date) caption", dateCaptions.length >= 2,
+        "AR 25-50, figs 2-15 and 2-16");
+
+    // "If the title requires more than one line, continue it on the fourth
+    //  line, indenting 1/4 inch." - para 6-4c
+    const wrapped = mou.flow.find((l) => l.text === "Preparedness Agency");
+    checkTrue("a signature title too long for its column wraps at 1/4 inch",
+        !!wrapped, "AR 25-50, para 6-4c");
+
+    // An MOU has no office symbol, so continuation pages repeat the subject.
+    const long = layoutMemo({
+        type: "mou", letterhead: null, parties: ["A", "B"], subject: "Long Agreement",
+        paragraphs: Array.from({length: 40}, (_, i) => ({text: `Paragraph ${i + 1} of the agreement text.`})),
+        signers: [{name: "A", titleAndAgency: "T"}, {name: "B", titleAndAgency: "T"}],
+        digitalSignature: false,
+    });
+    if (long.pages.length > 1) {
+        checkTrue("an MOU continuation page repeats the subject and no office symbol",
+            long.pages[1].heading.some((l) => l.role === "subject")
+            && !long.pages[1].heading.some((l) => l.role === "office-symbol"),
+            "AR 25-50, figs 2-15 and 2-16");
+    }
 }
 
 // ---------------------------------------------------------------------------

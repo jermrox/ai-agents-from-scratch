@@ -42,7 +42,7 @@ const LETTERHEAD = {
     organization: "[ORGANIZATIONAL NAME/TITLE]",
     streetAddress: "[STANDARDIZED STREET ADDRESS]",
     cityStateZip: "[CITY STATE 12345-1234]",
-    seal: null,
+    // seal omitted on purpose: the shipped department seal is the default.
 };
 
 const SIGNATURE = {
@@ -149,7 +149,10 @@ function decision() {
                 children: [
                     // The approval line is a tabular row, not a subparagraph:
                     // it carries no letter and its columns are the content.
-                    {text: "APPROVED  X\tDISAPPROVED  X\tSEE ME  X", literal: true, tabsIn: [2.5, 4.5]},
+                    // `approvalLine` lets the renderer choose the mark: an "X"
+                    // to strike by hand (fig 2-18) or a checkbox to click on a
+                    // digitally signed memorandum (fig 2-19).
+                    {approvalLine: true, literal: true, tabsIn: [2.5, 4.5]},
                 ],
             },
             {text: "_BACKGROUND_.  [Explain the origin of the action, convey the facts necessary to understand the recommendation, and list the alternatives considered.]"},
@@ -187,35 +190,83 @@ function decision() {
  * anticipated (para 2-6a); an MOA establishes terms where transfer of funds for
  * services is anticipated (para 2-6b).
  */
+/**
+ * Memorandum of understanding / agreement - para 2-6, figures 2-15 and 2-16.
+ *
+ * The paragraph skeleton is the one the figures actually print, which is more
+ * specific than the category list in para 2-6c(3) ("will generally contain,
+ * but is not limited to"). Headings take a colon and are not underlined -
+ * figures 2-15 and 2-16 set them in plain type.
+ *
+ * An MOU describes shared concepts and plans where no transfer of funds is
+ * anticipated (para 2-6a); an MOA establishes terms where transfer of funds
+ * for services is anticipated (para 2-6b). Both are prepared on plain white
+ * paper (para 2-6c(1)); DA letterhead is appropriate only when the agreement
+ * is between two Army activities.
+ */
 function agreement(type) {
+    const moa = type === "moa";
+    const word = moa ? "MOA" : "MOU";
+    const noun = moa ? "Agreement" : "Understanding";
+
+    const provisions = moa
+        ? [
+            {text: "Points of Contact:"},
+            {text: "Review of Agreement:  [This MOA will be reviewed annually, or ...]"},
+            {text: "Modification of Agreement:  [This MOA may be modified only by the written agreement of the Parties, duly signed by their authorized representatives.]"},
+            {text: "Disputes:  [Any disputes relating to this MOA will ...]"},
+            {text: "Termination of Agreement:"},
+            {text: "Transferability:"},
+            {text: "Entire Agreement:  [It is expressly understood and agreed that this MOA embodies the entire agreement between the Parties regarding the MOA's subject matter.]"},
+            {text: "Effective Date:  [This MOA takes effect ...]"},
+            {text: "Expiration Date:  [This Agreement expires on [DATE].]"},
+        ]
+        : [
+            {text: "Points of Contact:"},
+            {text: "Correspondence:"},
+            {text: "Funds and Manpower:  [This MOU does not document or provide for the exchange of funds or manpower between the Parties, nor does it make any commitment of funds or resources.]"},
+            {text: "Modifications of MOU:"},
+            {text: "Disputes:"},
+            {text: "Termination of Understanding:"},
+            {text: "Transferability:"},
+            {text: "Entire Understanding:  [It is expressly understood and agreed that this MOU embodies the entire understanding between the Parties regarding the MOU's subject matter.]"},
+            {text: "Effective Date:  [This MOU takes effect the day after all parties have signed.]"},
+            {text: "Expiration Date:"},
+            {text: `Cancellation of Previous ${word}:  [This ${word} cancels and supersedes the ${word} between the same parties with the subject [SUBJECT] and effective date of [DATE].]`},
+        ];
+
     return {
         type,
-        letterhead: {...LETTERHEAD},
+        // "Prepare the MOU/MOA on plain white paper." - para 2-6c(1)
+        letterhead: null,
         officeSymbol: null,
         date: formatMemoDate(),
         parties: ["[FIRST AGENCY]", "[SECOND AGENCY]"],
-        subject: "[SUBJECT OF THE AGREEMENT]",
+        subject: `[SUBJECT OF THE ${moa ? "AGREEMENT" : "UNDERSTANDING"}]`,
         paragraphs: [
-            {text: "_REFERENCES_.  [List the references directly related to this document.]"},
-            {text: "_PURPOSE_.  [Clearly state the purpose of this " + (type === "moa" ? "agreement" : "understanding") + ".]"},
-            {text: "_BACKGROUND_.  [Include a brief background.]"},
-            {
-                text: "_UNDERSTANDINGS, AGREEMENTS, SUPPORT, RESOURCES, AND RESPONSIBILITIES_.",
-                children: [
-                    {text: "[FIRST AGENCY] agrees to [responsibilities]."},
-                    {text: "[SECOND AGENCY] agrees to [responsibilities]."},
-                ],
-            },
-            {text: "_EFFECTIVE DATE_.  This " + (type === "moa" ? "agreement" : "understanding") + " is effective [DATE]."},
-            {text: "_REVIEW, REVISION, MODIFICATION, OR CANCELLATION_.  [Enter the date mutually agreed to by the signers or their designated representatives.]"},
+            {text: "BACKGROUND:  [If there is a need to discuss background, do so here.]"},
+            {text: moa
+                ? "REFERENCES/AUTHORITIES:  [State the legal authorities.]"
+                : "REFERENCES/AUTHORITIES:  [An MOU is non-binding. Generally, authorities need not be included. If appropriate, N/A may be used.]"},
+            {text: moa
+                ? "AUTHORITIES:  [State the legal authorities.]"
+                : "AUTHORITIES:  [An MOU is non-binding. Generally, authorities need not be included. If appropriate, N/A may be used.]"},
+            {text: `PURPOSE:  [State the purpose of the ${word}.]`},
+            {text: moa
+                ? "RESPONSIBILITIES OF THE PARTIES:"
+                : "UNDERSTANDINGS OF THE PARTIES:  [State the intentions of all parties.]"},
+            {text: "PERSONNEL:"},
+            {text: "GENERAL PROVISIONS:", children: provisions},
         ],
         // "Place the signature blocks in protocol order, with the senior
-        //  official on the right." - para 2-6c(5)(d)
+        //  official on the right." - para 2-6c(5)(d). A third signer is
+        //  centred below, the highest ranking of the three.
         signers: [
-            {name: "[JUNIOR OFFICIAL NAME]", titleAndAgency: "[GRADE, BRANCH, TITLE, AGENCY]", date: "[DATE]"},
-            {name: "[SENIOR OFFICIAL NAME]", titleAndAgency: "[GRADE, BRANCH, TITLE, AGENCY]", date: "[DATE]"},
+            {name: "[JUNIOR OFFICIAL NAME]", gradeAndBranch: "[GRADE, BRANCH]", titleAndAgency: `[TITLE, AGENCY]`},
+            {name: "[SENIOR OFFICIAL NAME]", gradeAndBranch: "[GRADE, BRANCH]", titleAndAgency: `[TITLE, AGENCY]`},
         ],
         digitalSignature: false,
+        enclosures: [],
     };
 }
 

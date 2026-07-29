@@ -414,9 +414,11 @@ function checkClosing(memo, out) {
 function checkPresentation(memo, doc, out) {
     const lh = memo.letterhead ?? {};
 
-    if (!lh.seal && usesLetterhead(memo)) {
-        out.push(warn("format", "seal-missing",
-            "No DoD seal supplied. All official letterhead stationery will bear the DoD seal; use the letterhead template on the APD website and pass its seal image as letterhead.seal. The renderer draws a labelled placeholder until then.",
+    // The seal ships with the example and is applied automatically, so this
+    // only fires if a caller explicitly cleared it.
+    if (lh.seal === null && usesLetterhead(memo)) {
+        out.push(error("format", "seal-missing",
+            "Letterhead carries no seal. All official letterhead stationery will bear the department seal.",
             LETTERHEAD.sealCite,
             {template: LETTERHEAD.templateSource}));
     }

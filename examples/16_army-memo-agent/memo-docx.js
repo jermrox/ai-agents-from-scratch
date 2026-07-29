@@ -27,19 +27,21 @@
 
 import fs from "fs/promises";
 import path from "path";
+import {fileURLToPath} from "url";
 import {
     Document, Packer, Paragraph, TextRun, Tab, TabStopType, AlignmentType,
     LineRuleType, Header, Footer, PageNumber, ImageRun, UnderlineType,
-    convertInchesToTwip,
+    CheckBox, convertInchesToTwip,
 } from "docx";
 
 import {
     LAYOUT, TEXT_WIDTH_IN, TYPE, LETTERHEAD, SPACING, PARAGRAPH_LABELS,
     MAX_SUBDIVISION_DEPTH, ADDRESS_LIMITS, enclosureLabel, COPY_MARKERS,
-    normalizePunctuationSpacing, formatMemoDate, AGREEMENT_FORMAT,
+    normalizePunctuationSpacing, formatMemoDate, AGREEMENT_FORMAT, LISTING,
+    agreementParties, DECISION_APPROVAL,
 } from "./ar25-50.js";
 import {layoutMemo, usesLetterhead} from "./memo-formatter.js";
-import {measureTextIn} from "./text-metrics.js";
+import {measureTextIn, breakLines} from "./text-metrics.js";
 
 const IN = convertInchesToTwip;
 
@@ -53,6 +55,17 @@ const IN = convertInchesToTwip;
 const SINGLE = {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO};
 
 const LINE_HEIGHT_IN = 13.8 / 72;
+
+/**
+ * docx-js expresses image dimensions in pixels at 96 dpi, not in points.
+ * Passing points silently renders the seal at three quarters of its size,
+ * which is exactly the kind of unit slip an "exact measurements" requirement
+ * exists to catch, so the conversion is named rather than inlined.
+ */
+const PX_PER_IN = 96;
+
+/** English Metric Units per inch, for the floating-position offsets. */
+const EMU_PER_IN = 914400;
 
 /** Every run in the document. No exceptions - para 1-19 and para 1-20. */
 function run(text, extra = {}) {
@@ -117,13 +130,17 @@ function letterheadHeader(memo, sealImage) {
             children: [new ImageRun({
                 data: sealImage,
                 type: "png",
+                // Exactly 0.95 inch square at the measured offsets - the
+                // artwork is placed, never scaled to taste.
+                // Not rounded: 0.95 in is 91.2 px, and rounding to 91 would
+                // render the seal 0.002 in small.
                 transformation: {
-                    width: LETTERHEAD.sealDiameterIn * 72,
-                    height: LETTERHEAD.sealDiameterIn * 72,
+                    width: LETTERHEAD.sealDiameterIn * PX_PER_IN,
+                    height: LETTERHEAD.sealDiameterIn * PX_PER_IN,
                 },
                 floating: {
-                    horizontalPosition: {offset: Math.round(LETTERHEAD.sealLeftIn * 914400)},
-                    verticalPosition: {offset: Math.round(LETTERHEAD.sealTopIn * 914400)},
+                    horizontalPosition: {offset: Math.round(LETTERHEAD.sealLeftIn * EMU_PER_IN)},
+                    verticalPosition: {offset: Math.round(LETTERHEAD.sealTopIn * EMU_PER_IN)},
                     behindDocument: false,
                 },
             })],
@@ -155,6 +172,20 @@ function letterheadHeader(memo, sealImage) {
  * header itself begins at the half-inch header distance set on the section.
  */
 function continuationHeader(memo) {
+    // An MOU or MOA has no office symbol, so its continuation pages repeat the
+    // subject alone. - figs 2-15 and 2-16
+    if (memo.type === "mou" || memo.type === "moa") {
+        return new Header({
+            children: [
+                new Paragraph({
+                    spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.sealTopIn)},
+                    children: [run(`SUBJECT: ${memo.subject ?? ""}`)],
+                }),
+                ...blankParagraph(SPACING.continuationSubjectToText.linesBelow - 1),
+            ],
+        });
+    }
+
     const symbol = memo.arimsRecordNumber
         ? `${memo.officeSymbol} (${memo.arimsRecordNumber})`
         : (memo.officeSymbol ?? "");
@@ -227,11 +258,7 @@ function agreementHeadingParagraphs(memo) {
         centred(AGREEMENT_FORMAT.betweenKeyword),
     ];
 
-    const parties = memo.parties ?? [];
-    parties.forEach((p, i) => {
-        out.push(centred(p));
-        if (i < parties.length - 1) out.push(centred(AGREEMENT_FORMAT.joinKeyword));
-    });
+    for (const partyLine of agreementParties(memo.parties ?? [])) out.push(centred(partyLine));
 
     // "Type the word 'SUBJECT:' at the left margin on the second line below the
     //  last line of the agreeing agencies' titles." - para 2-6c(2)
@@ -253,31 +280,105 @@ function agreementHeadingParagraphs(memo) {
  */
 function agreementClosingParagraphs(memo) {
     const out = blankParagraph(AGREEMENT_FORMAT.signatureLinesBelowText - 1);
-    const halfIn = TEXT_WIDTH_IN / 2;
-    const tabs = [{type: TabStopType.LEFT, position: IN(halfIn)}];
+    const colIn = AGREEMENT_FORMAT.signatureColumnIn;
+    const tabs = [{type: TabStopType.LEFT, position: IN(colIn)}];
+
+    const ruleOf = (widthIn) => {
+        const one = measureTextIn("_", TYPE.fontSizePt);
+        return "_".repeat(Math.max(1, Math.round(widthIn / one)));
+    };
+    const nameRule = ruleOf(AGREEMENT_FORMAT.signatureRuleIn);
+    const dateRule = ruleOf(AGREEMENT_FORMAT.dateRuleIn);
+
+    // Rows of one column: overscore, block, date rule, centred caption.
+    const column = (signer) => {
+        const rows = [{text: nameRule, indentIn: 0}];
+        if (signer.name) rows.push({text: String(signer.name).toUpperCase(), indentIn: 0});
+        const grade = signer.gradeAndBranch ?? signer.grade;
+        if (grade) rows.push({text: grade, indentIn: 0});
+        const title = signer.titleAndAgency ?? signer.title;
+        if (title) {
+            // Para 6-4c: a title needing a second line continues at 1/4 inch.
+            for (const part of wrapSignatureTitle(title, AGREEMENT_FORMAT.signatureRuleIn)) {
+                rows.push(part);
+            }
+        }
+        rows.push({text: dateRule, indentIn: 0});
+        rows.push({text: AGREEMENT_FORMAT.dateCaption, indentIn: captionOffsetIn()});
+        return rows;
+    };
 
     const signers = memo.signers ?? [];
-    const left = signers[0] ?? {};
-    const right = signers[1] ?? {};
+    const left = signers[0] ? column(signers[0]) : [];
+    const right = signers[1] ? column(signers[1]) : [];
 
-    const row = (a, b) => new Paragraph({
-        spacing: SINGLE,
-        tabStops: tabs,
-        children: [run(a ?? ""), tabRun(), run(b ?? "")],
-    });
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+        const children = [];
+        if (left[i]) children.push(run(indentText(left[i])));
+        children.push(tabRun());
+        if (right[i]) children.push(run(indentText(right[i])));
+        out.push(new Paragraph({spacing: SINGLE, tabStops: tabs, children}));
+    }
 
-    // Overscoring: a bottom border on an empty paragraph would be a rule under
-    // the block, so the line above each block is drawn with underscores in the
-    // same face, which is what figures 2-15 and 2-16 show.
-    const rule = "_".repeat(28);
-    out.push(row(rule, rule));
+    // "If an MOU or MOA has three agreeing agencies, center the signature
+    //  block of the highest ranking official at the bottom." - para 2-6c(5)(d)
+    if (signers[2]) {
+        out.push(...blankParagraph(AGREEMENT_FORMAT.signatureLinesBelowText - 1));
+        const centreIn = (TEXT_WIDTH_IN - AGREEMENT_FORMAT.signatureRuleIn) / 2;
+        for (const row of column(signers[2])) {
+            out.push(new Paragraph({
+                spacing: SINGLE,
+                indent: {left: IN(centreIn + row.indentIn)},
+                children: [run(row.text)],
+            }));
+        }
+    }
 
-    const fields = (s) => [s.name, s.titleAndAgency, s.date].filter(Boolean);
-    const l = fields(left);
-    const r = fields(right);
-    for (let i = 0; i < Math.max(l.length, r.length); i++) out.push(row(l[i], r[i]));
+    // The enclosure listing sits at the left margin below the blocks. - fig 2-15
+    if (memo.enclosures?.length) {
+        out.push(...blankParagraph(1));
+        out.push(new Paragraph({spacing: SINGLE, children: [run(enclosureLabel(memo.enclosures.length))]}));
+    }
 
     return out;
+}
+
+/** "(Date)" is centred beneath its own rule. */
+function captionOffsetIn() {
+    const w = measureTextIn(AGREEMENT_FORMAT.dateCaption, TYPE.fontSizePt);
+    return (AGREEMENT_FORMAT.dateRuleIn - w) / 2;
+}
+
+/** Indentation inside a signature column, expressed as leading spaces. */
+function indentText(row) {
+    if (!row.indentIn) return row.text;
+    const space = measureTextIn(" ", TYPE.fontSizePt);
+    return " ".repeat(Math.max(0, Math.round(row.indentIn / space))) + row.text;
+}
+
+/** Wrap a signature title to its column, continuing at 1/4 inch. - para 6-4c */
+function wrapSignatureTitle(title, columnIn) {
+    const indentForLine = (i) => (i === 0 ? 0 : LAYOUT.multiAddressWrapIndentIn);
+    return breakLines(title, {
+        sizePt: TYPE.fontSizePt,
+        indentForLine,
+        widthForLine: (i) => columnIn - indentForLine(i),
+    }).map((b) => ({text: b.text, indentIn: b.indentIn}));
+}
+
+/**
+ * A distribution or copy-furnished entry: blocked flush with the left margin
+ * (para 2-4a(5)(c), fig 2-14), with subordinate entries indented as figure 2-8
+ * indents the Army commands under "Commander".
+ */
+function listingParagraph(entry) {
+    const text = typeof entry === "string" ? entry : (entry.text ?? "");
+    const level = typeof entry === "string" ? 0 : (Number.isFinite(entry.indent) ? entry.indent : 0);
+    return new Paragraph({
+        spacing: SINGLE,
+        indent: level ? {left: IN(level * LISTING.subEntryIndentIn)} : undefined,
+        children: [run(text)],
+    });
 }
 
 function buildHeadingParagraphs(memo) {
@@ -374,9 +475,10 @@ function bodyParagraphs(memo, doc) {
             // A literal row keeps its spacing and gets explicit tab stops, so
             // the columns of a fig 2-18 approval or coordination line land
             // where they were written rather than where a space happens to be.
-            const text = node.literal
-                ? String(node.text ?? "")
-                : normalizePunctuationSpacing(node.text ?? "");
+            const source = node.approvalLine
+                ? DECISION_APPROVAL.options.map((o) => `${o}  ${DECISION_APPROVAL.wetMark}`).join("\t")
+                : (node.text ?? "");
+            const text = node.literal ? String(source) : normalizePunctuationSpacing(source);
             const children = [];
             let tabStops;
 
@@ -389,7 +491,15 @@ function bodyParagraphs(memo, doc) {
                 tabStops = [{type: TabStopType.LEFT, position: IN(textStartIn)}];
                 children.push(run(label), tabRun());
             }
-            if (node.literal && node.tabsIn?.length) {
+            if (node.approvalLine && memo.digitalSignature !== false) {
+                // "Preparing a digital decision memorandum" - fig 2-19 - shows
+                // a checkbox the approver clicks rather than an X to strike.
+                DECISION_APPROVAL.options.forEach((option, i) => {
+                    if (i > 0) children.push(tabRun());
+                    children.push(run(`${option}  `));
+                    children.push(new CheckBox({checked: false}));
+                });
+            } else if (node.literal && node.tabsIn?.length) {
                 text.split("\t").forEach((cell, i) => {
                     if (i > 0) children.push(tabRun());
                     children.push(...emphasize(cell));
@@ -492,7 +602,7 @@ function closingParagraphs(memo) {
     if (memo.distribution?.length) {
         out.push(...gapParagraphs(SPACING.lastBlockToDistribution));
         out.push(new Paragraph({spacing: SINGLE, children: [run("DISTRIBUTION:")]}));
-        for (const d of memo.distribution) out.push(addressParagraph(d, {hanging: true}));
+        for (const entry of memo.distribution) out.push(listingParagraph(entry));
     }
 
     if (memo.copiesFurnished?.length) {
@@ -501,7 +611,7 @@ function closingParagraphs(memo) {
             ? `${COPY_MARKERS.memorandum} (w/o encls)`
             : COPY_MARKERS.memorandum;
         out.push(new Paragraph({spacing: SINGLE, children: [run(marker)]}));
-        for (const c of memo.copiesFurnished) out.push(addressParagraph(c));
+        for (const entry of memo.copiesFurnished) out.push(listingParagraph(entry));
     }
 
     return out;
@@ -516,7 +626,12 @@ function closingParagraphs(memo) {
 function signatureBlockLines(sig) {
     const lines = [{text: String(sig.name ?? "NAME").toUpperCase()}];
     if (sig.gradeAndBranch) lines.push({text: sig.gradeAndBranch});
-    if (sig.title) lines.push({text: sig.title});
+    if (sig.title) {
+        const columnIn = TEXT_WIDTH_IN - LAYOUT.signatureBlockIndentIn;
+        for (const part of wrapSignatureTitle(sig.title, columnIn)) {
+            lines.push({text: indentText(part)});
+        }
+    }
     return lines;
 }
 
@@ -669,11 +784,15 @@ async function lockFormatting(buffer) {
 async function loadSeal(memo, options) {
     if (Buffer.isBuffer(options.seal)) return options.seal;
 
+    const here = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
         options.seal,
         options.sealPath,
         memo.letterhead?.seal,
-        path.join(path.dirname(new URL(import.meta.url).pathname), "assets", "dod-seal.png"),
+        // The department seal ships with the example and is the default for
+        // every memorandum. It does not change, so there is nothing to
+        // configure - para 1-16b(1) is satisfied out of the box.
+        path.join(here, "assets", LETTERHEAD.sealFile),
     ].filter((c) => typeof c === "string" && c.length > 0);
 
     for (const candidate of candidates) {
