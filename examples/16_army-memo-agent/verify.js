@@ -538,29 +538,32 @@ const FIG_2_1 = {
         inventory[type] = [...sizes].map((v) => v / 2).sort((a, b) => b - a);
     }
 
-    // The sizes present differ by memorandum type, and the difference is the
-    // letterhead: a plain-paper memorandum has no 8 pt organization block.
-    // "Type the MFR on plain white paper" - fig 2-17; "Prepare the MOU/MOA on
-    // plain white paper" - para 2-6c(1).
-    checkTrue("type: a letterhead memorandum carries the 10 pt and 8 pt letterhead sizes",
-        inventory.standard.includes(10) && inventory.standard.includes(8),
-        LETTERHEAD.letterheadSizeCite);
-    checkTrue("type: a plain-paper MFR carries no 8 pt letterhead block",
-        !inventory.record.includes(8), "AR 25-50, fig 2-17");
-    checkTrue("type: a plain-paper MOU carries no 8 pt letterhead block",
-        !inventory.mou.includes(8), "AR 25-50, para 2-6c(1)");
     checkTrue("type: every memorandum type tops out at exactly 12 pt",
         Object.values(inventory).every((sizes) => Math.max(...sizes) === T.maxSizePt),
         T.maxSizeCite);
 
-    // The measured letterhead sizes themselves.
-    check("type: DEPARTMENT OF THE ARMY is set at 10 pt",
-        LETTERHEAD.titleSizePt, 10, LETTERHEAD.letterheadSizeCite);
-    check("type: the organization block is set at 8 pt",
-        LETTERHEAD.addressSizePt, 8, LETTERHEAD.letterheadSizeCite);
-    checkTrue("type: both letterhead sizes sit below the body ceiling",
-        LETTERHEAD.titleSizePt < T.maxSizePt && LETTERHEAD.addressSizePt < T.maxSizePt,
-        T.maxSizeCite);
+    // One uniform size, letterhead included. Para 1-19 leaves the size to the
+    // organization, and this one sets 12 pt throughout.
+    check("type: the letterhead title is 12 pt, like everything else",
+        LETTERHEAD.titleSizePt, T.fontSizePt, LETTERHEAD.letterheadSizeCite);
+    check("type: the letterhead organization block is 12 pt",
+        LETTERHEAD.addressSizePt, T.fontSizePt, LETTERHEAD.letterheadSizeCite);
+
+    // Twelve point is the *only* size in the file - body, letterhead, running
+    // heads, and every latent style Word ships. Not "nothing above 12": one
+    // size, everywhere.
+    const {LEGACY_LETTERHEAD_SIZES} = await import("./ar25-50.js");
+    for (const [type, sizes] of Object.entries(inventory)) {
+        check(`type: ${type} contains exactly one type size, and it is 12 pt`,
+            sizes, [T.fontSizePt], T.maxSizeCite);
+    }
+
+    // The older template's smaller letterhead is still available, and still
+    // below the ceiling.
+    checkTrue("type: the legacy letterhead sizes remain available and compliant",
+        LEGACY_LETTERHEAD_SIZES.titleSizePt < T.maxSizePt
+        && LEGACY_LETTERHEAD_SIZES.addressSizePt < T.maxSizePt,
+        LEGACY_LETTERHEAD_SIZES.cite);
 
     // Asking for larger type is an error, not an advisory.
     checkTrue("type: a request for type above the ceiling is rejected",

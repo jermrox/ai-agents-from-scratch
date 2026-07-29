@@ -757,6 +757,17 @@ export async function renderDocx(memo, options = {}) {
                 heading4: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
                 heading5: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
                 heading6: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+                // Word's footnote and endnote styles default to 10 pt. No
+                // memorandum here uses them, but leaving them behind means the
+                // file still contains a size other than 12, so they are
+                // levelled too. One size, everywhere.
+                footnoteText: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                footnoteTextChar: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                endnoteText: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                endnoteTextChar: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                listParagraph: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                strong: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+                hyperlink: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
             },
         },
         sections: [section],

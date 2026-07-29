@@ -424,40 +424,42 @@ The signature column landing on 4.25 in independently is the one worth noting: p
 
 ---
 
-## 16) Type: 12 pt Arial, never higher
+## 16) Type: Arial 12, and only Arial 12
 
-Para 1-19a *"A font with a point size of 12 is recommended"* — and nothing in AR 25-50 sets anything larger. The field template confirms it from the other direction; here is every size it actually uses:
+Para 1-19a: *"A font with a point size of 12 is recommended."* Para 1-19 also delegates the choice — *"Army senior leaders will determine the font size and type his or her organization will use"* — so the size is the organization's call, and this one sets **12 pt throughout, letterhead included**.
 
-| Size | Where |
-| --- | --- |
-| **12 pt** | every line of body text — the largest run in the file |
-| 10 pt | `DEPARTMENT OF THE ARMY` |
-| 8 pt | organization, street, city/state/ZIP |
-| 6 pt | `REPLY TO / ATTENTION OF` — the block para 1-16b(1) says is not required |
+Twelve is therefore both the size and the ceiling. `verify.js` asserts the strong form: not "nothing above 12", but **12 is the only type size present in the file** — body, letterhead, running heads, and every latent style.
 
-So 12 pt is a **ceiling**, and the letterhead sits below it. That also promotes the letterhead sizes from "APD template defaults" to measured values from an Army memorandum.
-
-**The trap is latent styles.** Auditing the generated `.docx` turned up runs at **28, 16 and 13 pt** in every file — `docx-js` ships `Title` and `Heading 1`/`Heading 2` styles by default. Nothing in the memo applied them, so the rendered page was fine, but the oversized type was sitting in the file one click away in Word's style gallery. Under a formatting lock that permits text editing, that is a live route to a non-compliant document. They are now overridden to Arial 12:
-
-```javascript
-title:    {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
-heading1: {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
-// ... heading2 through heading6
+```
+standard  every size in the file: [12.0]
+record    every size in the file: [12.0]
+decision  every size in the file: [12.0]
 ```
 
-`verify.js` scans **every XML part** of every memorandum type — not just the body — and fails on any `w:sz` above 24 half-points.
+**Getting there took removing two layers of Word's defaults.** `docx-js` ships `Title` at 28 pt and `Heading 1`/`Heading 2` at 16/13 pt in every document, plus footnote and endnote styles at 10 pt. Nothing in a memorandum applied any of them, so the rendered page always looked right — which is exactly why it went unnoticed. But under a formatting lock that deliberately permits text editing, an oversized latent style is a live route to a non-compliant document: one click in the style gallery. All of them are now levelled:
 
-**The sizes present differ by memorandum type**, and the difference is exactly the letterhead:
+```javascript
+title:        {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+heading1:     {run: {font: TYPE.fontFamily, size: TYPE.maxSizePt * 2}},
+// ... heading2 through heading6
+footnoteText: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+endnoteText:  {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
+```
 
-| Type | Sizes in the file | Why |
+**What the older sources show, kept for reference.** Two independent sources set the letterhead *smaller* than the body:
+
+| Source | Title line | Organization block |
 | --- | --- | --- |
-| standard, THRU, decision | 12, 10, 8 | letterhead: 10 pt title, 8 pt organization block |
-| MFR | 12, 10 | plain white paper (fig 2-17) — no organization block |
-| MOU, MOA | 12, 10 | plain white paper (para 2-6c(1)) — no organization block |
+| 2009 field template (embedded font data) | 10 pt | 8 pt |
+| AR 25-50 figures (measured ink height) | visibly smaller than body — but at ~70 px/inch these cannot pin a size closer than ±1.5 pt |
 
-The stray 10 pt on the plain-paper types is Word's latent footnote/endnote style; it is below the ceiling and no footnotes exist. The only non-Arial run in any document is the decision memorandum's checkbox glyph, which Word implements in `MS Gothic`.
+Neither is a rule; AR 25-50 publishes no letterhead point size. They are preserved as `LEGACY_LETTERHEAD_SIZES` for an office that still sets its letterhead that way:
 
-Asking for larger type is now an **error**, not an advisory.
+```javascript
+renderDocx(memo, {letterhead: LEGACY_LETTERHEAD_SIZES})
+```
+
+Asking for type above the ceiling is an **error**. The only non-Arial run in any document is the decision memorandum's checkbox glyph, which Word implements in `MS Gothic`.
 
 ---
 

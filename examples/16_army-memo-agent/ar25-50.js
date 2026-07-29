@@ -137,12 +137,9 @@ export const TYPE = {
     fontSizePt: 12,
     recommendedSizePt: 12,
 
-    // Twelve point is the ceiling for body type, never a floor to exceed.
-    // Para 1-19a recommends 12; nothing in AR 25-50 sets anything larger, and
-    // a real unit memorandum measured for this example uses 12 pt for every
-    // line of text and smaller sizes only inside the letterhead - 10 pt for
-    // "DEPARTMENT OF THE ARMY", 8 pt for the organization block. Its largest
-    // run anywhere is 12 pt.
+    // Twelve point everywhere, and never higher. Para 1-19a recommends 12 and
+    // nothing in AR 25-50 sets anything larger, so 12 pt is simultaneously the
+    // size and the ceiling - letterhead included, by default.
     //
     // This is enforced, not advised: the Word renderer overrides every latent
     // heading style so the document cannot produce type above 12 pt by any
@@ -225,18 +222,31 @@ export const LETTERHEAD = {
     officeSymbolTopIn: 1.79,
     officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2; measured from figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
 
-    // Letterhead point sizes, measured from a field memorandum's PDF text
-    // placement rather than assumed: "DEPARTMENT OF THE ARMY" at 10 pt, and
-    // the organization, street, and city/state/ZIP lines at 8 pt. AR 25-50
-    // does not publish them, but these are what an Army office actually set.
+    // Letterhead point size.
     //
-    // Both sit below the 12 pt ceiling, which is the direction the rule runs -
-    // letterhead is smaller than body type, never larger.
-    titleSizePt: 10,
-    addressSizePt: 8,
-    letterheadSizeCite: "measured from an Army unit memorandum template (HHC/ESB, 9 December 2009)",
+    // AR 25-50 does not publish one. Para 1-19 delegates the choice: "Army
+    // senior leaders will determine the font size and type his or her
+    // organization will use." So this is the organization's call, not the
+    // regulation's, and the default is a single uniform 12 pt throughout -
+    // letterhead included.
+    //
+    // Two older sources set the letterhead smaller, and are recorded here
+    // rather than discarded, because an office still working from the APD
+    // template will want them:
+    //
+    //   - The 2009 field template's embedded font data gives 10 pt for
+    //     "DEPARTMENT OF THE ARMY" and 8 pt for the organization block.
+    //   - The figures show the letterhead visibly smaller than the body,
+    //     though at roughly 70 pixels per inch they cannot pin a point size
+    //     closer than about 1.5 pt either way.
+    //
+    // Neither is a rule. Set `titleSizePt`/`addressSizePt` from
+    // LEGACY_LETTERHEAD_SIZES to follow the older template.
+    titleSizePt: 12,
+    addressSizePt: 12,
+    letterheadSizeCite: "AR 25-50, para 1-19 - the organization sets the size; 12 pt throughout by default",
 
-    // The template also carries "REPLY TO / ATTENTION OF" at 6 pt. Para
+    // The 2009 template also carries "REPLY TO / ATTENTION OF" at 6 pt. Para
     // 1-16b(1) says that block is not required, so it is not rendered.
     replyToBlockSizePt: 6,
     replyToNotRequiredCite: "AR 25-50, para 1-16b(1)",
@@ -247,6 +257,19 @@ export const LETTERHEAD = {
         "CITY STATE 12345-1234",
     ],
     linesCite: "AR 25-50, figs 2-1 through 2-5",
+};
+
+/**
+ * The smaller letterhead sizes measured from the 2009 field template, for an
+ * office that still sets its letterhead that way. Not a rule - para 1-19
+ * leaves the size to the organization.
+ *
+ *   renderDocx(memo, {letterhead: LEGACY_LETTERHEAD_SIZES})
+ */
+export const LEGACY_LETTERHEAD_SIZES = {
+    titleSizePt: 10,
+    addressSizePt: 8,
+    cite: "measured from an Army unit memorandum template (HHC/ESB, 9 December 2009)",
 };
 
 /**
