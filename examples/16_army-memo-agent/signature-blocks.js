@@ -153,18 +153,31 @@ export function buildSignature(signer, correspondence = "memorandum") {
         });
     }
 
-    // Grade: spelled out for general officers and in every letter; abbreviated
-    // otherwise. - paras 6-4f(1), 6-4f(3), 6-5c(1), 1-15b
+    // Grade: spelled out for general officers and in every letter. For everyone
+    // else on a memorandum the abbreviation is the default, but "in military
+    // correspondence, grade abbreviations are optional" (para 6-5c(1)), and
+    // figures D-2 and D-14 show both forms - "Lieutenant Colonel, AG" beside
+    // "MSG, USA". `spellOut` selects the long form.
     const spelled = spellOutGrade(abbr);
-    const gradeText = (isLetter || isGeneralOfficer(abbr))
+    const mustSpell = isLetter || isGeneralOfficer(abbr) || signer.spellOut === true;
+    const gradeText = mustSpell
         ? (spelled ?? signer.grade ?? "")
         : (abbr ?? signer.grade ?? "");
 
     // Designation, in the order the regulation resolves conflicts: retired
     // status wins, then the GS/IG detail, then the categories that take USA,
     // then the branch.
+    //
+    // Enlisted personnel take "USA", never a branch abbreviation. Figure D-14
+    // shows this throughout - "Command Sergeant Major, USA", "MSG, USA",
+    // "SFC, USA" - and a reservist not on active duty takes "USAR" in its
+    // place rather than in addition to it (fig D-20).
     let designation;
-    if (signer.retired) {
+    if (isEnlisted(abbr) && !signer.retired) {
+        designation = signer.reserveNotOnActiveDuty
+            ? DESIGNATIONS.reserve
+            : (isLetter ? DESIGNATIONS.armyLetters : DESIGNATIONS.army);
+    } else if (signer.retired) {
         // "no organization or branch of the Army will be shown" - para 6-6
         designation = DESIGNATIONS.retired;
         if (signer.branch) {
@@ -188,7 +201,7 @@ export function buildSignature(signer, correspondence = "memorandum") {
         if (!designation) {
             findings.push({
                 rule: "branch-missing",
-                message: "Memorandum signature blocks use a branch abbreviation on the grade line.",
+                message: "Memorandum signature blocks for commissioned officers use a branch abbreviation on the grade line.",
                 cite: "AR 25-50, para 6-4f(2)",
             });
         }
@@ -204,8 +217,11 @@ export function buildSignature(signer, correspondence = "memorandum") {
     }
 
     // "Add the identification 'USAR' after the grade of enlisted personnel or
-    //  the branch assignment of commissioned officers." - para 6-7
-    if (signer.reserveNotOnActiveDuty && !signer.retired) {
+    //  the branch assignment of commissioned officers." - para 6-7.
+    // Enlisted blocks already carry USAR in place of USA, so this appends only
+    // for commissioned and warrant officers.
+    if (signer.reserveNotOnActiveDuty && !signer.retired && !isEnlisted(abbr)
+        && !String(gradeAndBranch).includes(DESIGNATIONS.reserve)) {
         gradeAndBranch = `${gradeAndBranch}, ${DESIGNATIONS.reserve}`;
     }
 

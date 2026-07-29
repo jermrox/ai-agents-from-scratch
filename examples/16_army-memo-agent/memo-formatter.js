@@ -31,6 +31,7 @@ import {
     normalizePunctuationSpacing,
     stripEmphasis,
     LISTING,
+    ADDRESSING,
     agreementParties,
     DECISION_APPROVAL,
 } from "./ar25-50.js";
@@ -475,6 +476,14 @@ function buildClosing(memo, opts) {
     if (memo.distribution?.length) {
         out.push(...gap(SPACING.lastBlockToDistribution));
         out.push(line("DISTRIBUTION:", {role: "distribution"}));
+
+        // "(see next page)" goes directly under DISTRIBUTION: when the listing
+        // is prepared on a page of its own. - fig 2-9
+        if (memo.distributionOnSeparatePage) {
+            out.push(line(LISTING.separatePageMarker, {role: "distribution"}));
+            return finishClosing(out, memo, opts);
+        }
+
         for (const entry of memo.distribution) {
             const {text, indentIn} = listingEntry(entry);
             out.push(...wrap(text, {
@@ -486,6 +495,11 @@ function buildClosing(memo, opts) {
         }
     }
 
+    return finishClosing(out, memo, opts);
+}
+
+/** The copy-furnished block, which follows whichever listing came last. */
+function finishClosing(out, memo, opts) {
     if (memo.copiesFurnished?.length) {
         out.push(...gap(SPACING.lastBlockToCopiesFurnished));
         const marker = memo.copiesWithoutEnclosures
@@ -502,7 +516,6 @@ function buildClosing(memo, opts) {
             }));
         }
     }
-
     return out;
 }
 
@@ -810,6 +823,20 @@ export function layoutMemo(memo, options = {}) {
                 : b.lines),
         ...closing,
     ];
+
+    // "a complete distribution listing can be prepared on a separate page" -
+    // fig 2-9. It carries the continuation heading, then DISTRIBUTION: on the
+    // third line below the subject, then the listing.
+    if (memo.distributionOnSeparatePage && memo.distribution?.length) {
+        const listing = [line("DISTRIBUTION:", {role: "distribution"})];
+        for (const entry of memo.distribution) {
+            const {text, indentIn} = listingEntry(entry);
+            listing.push(...wrap(text, {
+                firstIndentIn: indentIn, wrapIndentIn: indentIn, opts, role: "distribution",
+            }));
+        }
+        pages.push(listing);
+    }
 
     return {
         opts,

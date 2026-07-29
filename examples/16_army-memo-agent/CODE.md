@@ -165,17 +165,22 @@ So `1.` at the left margin puts its text at 0.25 in, `a.` at the 0.25 in indent 
 
 Para 1-16b(1): *"All official letterhead stationery will bear the DoD seal."* Para 1-16b(2): do not print any other seal, emblem, insignia, or motto.
 
-Taken together, that is an instruction not to improvise. The renderer leaves a **slot**:
+The department seal ships in `assets/` and is applied to every letterhead memorandum with no configuration - it does not change, so there is nothing to configure. Clearing it explicitly is an **error**, not an advisory. It is never drawn or approximated: para 1-16b(2) forbids substituting any other device, and artwork that merely resembles the seal would produce a document that looks official and is not.
 
-```javascript
-const sealHtml = seal
-    ? `<img class="seal" src="${escapeHtml(seal)}" alt="Department of Defense seal">`
-    : `<div class="seal placeholder">DoD<br>SEAL</div>`;
-```
+Its geometry was **measured, not assumed**. AR 25-50 never states the seal's size in prose, but ten figures draw it on a full 8.5 x 11 page. Scaling each seal's pixel bounding box against its page frame gives:
 
-Pass `letterhead.seal` as a path or data URI to the seal from the official APD template (`https://armypubs.army.mil/tools/pubsresources.aspx`). Until you do, the page renders a labelled placeholder and the validator raises `seal-missing`. Drawing an approximation would produce a document that looks official and is not.
+| | measured | sd |
+| --- | --- | --- |
+| diameter, width | 0.953 in | 0.005 |
+| diameter, height | 0.941 in | 0.006 |
+| left edge from page edge | 0.523 in | 0.005 |
+| top edge from page edge | 0.524 in | 0.006 |
 
-The seal is positioned absolutely at the left so the header text centres on the **page**, not on the space beside the seal - as the figures show.
+So **0.95 in square at 0.52 in from the top and left**. The earlier values - 1.0 in at 0.75 / 0.5 - were guesses, and all three were wrong.
+
+One unit trap is worth naming: `docx-js` takes `transformation.width` in **pixels at 96 dpi**, not points. Passing points renders the seal at 0.71 in, which looks plausible and is wrong by a quarter inch. `verify.js` asserts the extent in English Metric Units (`868680` exactly, 914400 per inch), because that integer cannot hide a rounding slip.
+
+The seal is anchored absolutely so the header text centres on the **page**, not on the space beside it - as the figures show.
 
 ---
 
@@ -349,6 +354,30 @@ detectMemoType("I need a decision memo for the CG")                       // -> 
 ```
 
 It is deliberately shallow, and the chosen type is always printed back. A wrong guess is cheap to correct with `--template`; a wrong guess made *silently* would not be.
+
+---
+
+## 14) Every memorandum form, read from its figure
+
+Nothing here is inferred from the prose alone. Each form was reconstructed from the figure that prints it, and several of those figures contradicted a reasonable reading of the text:
+
+| Form | Figure | What the figure settled |
+| --- | --- | --- |
+| Standard | 2-1, 2-3, 2-4 | Wrap returns to the left margin; quarter-inch tab grid |
+| Multiple address | 2-5, 2-6, 2-7 | Addresses stack under a bare `MEMORANDUM FOR`; second line indents 1/4 in; office-symbol addresses are uppercase and must not be mixed with full titles |
+| SEE DISTRIBUTION | 2-8 | Listing is *blocked flush left*, not hung; sub-entries indent; `(CONT)` when it runs on |
+| Separate listing | 2-9 | `DISTRIBUTION:` / `(see next page)`, full listing on its own page |
+| Distribution formula | 2-10 | `SPECIAL DISTRIBUTION:` sub-block, all flush left |
+| THRU | 2-11, 2-12 | The addressee line reads **`FOR`**, not `MEMORANDUM FOR`; two or more stack under a bare `MEMORANDUM THRU` |
+| One paragraph | 2-13 | Not numbered - but its **subparagraphs still are** |
+| Enclosures / CF | 2-14 | Two-column closing; `CF:` addressees flush left |
+| MOU / MOA | 2-15, 2-16 | **Plain white paper**; semicolon-joined parties; date rule and `(Date)` under each block; third signer centred below |
+| MFR | 2-17 | **Plain paper, no authority line, no addressee** |
+| Decision | 2-18 | Fixed skeleton, underlined headings, `APPROVED X` approval line |
+| Digital decision | 2-19 | Approval line is a **checkbox**, not an X |
+| Signature blocks | D-2, D-8, D-14, D-20 | Enlisted use **`USA`, never a branch**; `USAR` *replaces* `USA` for an enlisted reservist; a long title wraps at 1/4 in; grade abbreviations are optional |
+
+The Word checkbox is the one place a run is not Arial: Word implements checkbox content controls with an `MS Gothic` glyph (U+2610). That is Word's own mechanism, not a styling choice, and it applies only to the box itself.
 
 ---
 

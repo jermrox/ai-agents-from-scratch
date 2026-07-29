@@ -402,6 +402,30 @@ export const LISTING = {
     subEntryIndentIn: 0.25,
     continuedMarker: "(CONT)",
     cite: "AR 25-50, para 2-4a(5)(c) and figs 2-8 and 2-14",
+
+    // "When necessary, a complete distribution listing can be prepared on a
+    //  separate page. On the first page [...] type DISTRIBUTION: flush with
+    //  the left margin and the words (see next page) in parentheses, directly
+    //  under DISTRIBUTION: on the next line." - fig 2-9
+    separatePageMarker: "(see next page)",
+    separatePageCite: "AR 25-50, para 2-4a(5)(c) and fig 2-9",
+};
+
+/**
+ * Addressing styles for a multiple-address memorandum. Figure 2-5 uses full
+ * titles and addresses; figure 2-6 uses office symbols. "Do not mix the two
+ * authorized types of addressing." - fig 2-6
+ *
+ * Office-symbol addresses are typed in uppercase, and an abbreviated city
+ * takes no comma before the state: "Because WASH DC and ALEX VA are
+ * abbreviations, do not use a comma between the city and the state." - fig 2-6
+ */
+export const ADDRESSING = {
+    styles: ["full-title", "office-symbol"],
+    officeSymbolUppercase: true,
+    mixCite: "AR 25-50, fig 2-6",
+    abbreviatedCities: ["WASH", "ALEX"],
+    abbreviatedCityCite: "AR 25-50, fig 2-6",
 };
 
 /** Memorandums use "CF:"; letters use "cc:". - 1-21c, 1-21d */

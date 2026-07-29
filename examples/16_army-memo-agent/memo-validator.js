@@ -34,6 +34,8 @@ import {
     ENCLOSURE_CITE,
     COPY_MARKERS,
     SPACING,
+    ADDRESSING,
+    LISTING,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -116,6 +118,60 @@ function checkHeading(memo, out) {
             out.push(error("content", "address-style-mixed",
                 "Addresses mix all-uppercase and upper/lowercase styles. Pick one and be consistent.",
                 "AR 25-50, para 2-4a(5)"));
+        }
+    }
+
+    checkAddressingStyle(addressees, out);
+
+    if (memo.distributionOnSeparatePage && !(memo.distribution?.length)) {
+        out.push(error("content", "distribution-page-empty",
+            "The memorandum promises a distribution listing on a separate page but supplies no entries.",
+            LISTING.separatePageCite));
+    }
+}
+
+/**
+ * Figure 2-6 addressing rules for a multiple-address memorandum:
+ *   "Use one of the following [...] a. The full title and address (see figure
+ *    2-5). b. Office symbols. [...] Type the office symbol addresses in
+ *    uppercase. Do not mix the two authorized types of addressing."
+ *   "Because WASH DC and ALEX VA are abbreviations, do not use a comma between
+ *    the city and the state."
+ */
+function checkAddressingStyle(addressees, out) {
+    if (addressees.length < 2) return;
+
+    // An office-symbol address opens with an organization and a symbol in
+    // parentheses, for example "HQDA (DAMI-XX), 1000 ARMY PENTAGON ...".
+    const isOfficeSymbol = (a) => /^[A-Z0-9.\- ]{2,12}\s*\([A-Z0-9-]+\)/.test(String(a).trim());
+    const kinds = addressees.map(isOfficeSymbol);
+
+    if (kinds.some(Boolean) && !kinds.every(Boolean)) {
+        out.push(error("content", "addressing-types-mixed",
+            "Addresses mix the full-title method with the office-symbol method. Use one or the other.",
+            ADDRESSING.mixCite));
+    }
+
+    if (kinds.every(Boolean)) {
+        for (const a of addressees) {
+            if (String(a) !== String(a).toUpperCase()) {
+                out.push(error("content", "office-symbol-address-case",
+                    `Office-symbol addresses are typed in uppercase: "${a}"`,
+                    ADDRESSING.mixCite));
+                break;
+            }
+        }
+    }
+
+    for (const a of addressees) {
+        for (const city of ADDRESSING.abbreviatedCities) {
+            const re = new RegExp(`\\b${city}\\s*,\\s*[A-Z]{2}\\b`, "i");
+            if (re.test(String(a))) {
+                out.push(error("content", "abbreviated-city-comma",
+                    `"${city}" is an abbreviation, so no comma goes between the city and the state.`,
+                    ADDRESSING.abbreviatedCityCite));
+                break;
+            }
         }
     }
 }

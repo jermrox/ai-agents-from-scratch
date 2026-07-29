@@ -835,6 +835,72 @@ const FIG_2_1 = {
 }
 
 {
+    // Figure 2-6 addressing rules.
+    const officeSymbolStyle = {
+        ...FIG_2_1,
+        addressees: [
+            "HQDA (DAMI-XX), 1000 ARMY PENTAGON, WASH DC 20310-1000",
+            "HQDA (DALO-XX), 500 ARMY PENTAGON, WASH DC 20310-0500",
+        ],
+    };
+    check("fig 2-6: consistent office-symbol addressing passes",
+        validateMemo(officeSymbolStyle).errors.filter((f) => f.rule.startsWith("address")).length, 0,
+        "AR 25-50, fig 2-6");
+
+    checkTrue("fig 2-6: mixing office symbols with full titles is reported",
+        validateMemo({...FIG_2_1, addressees: [
+            "HQDA (DAMI-XX), 1000 ARMY PENTAGON, WASH DC 20310-1000",
+            "Information Office, U.S. Army Forces Command, 4700 Knox St., Fort Bragg, NC 28310-5000",
+        ]}).errors.some((f) => f.rule === "addressing-types-mixed"),
+        "AR 25-50, fig 2-6");
+
+    checkTrue("fig 2-6: an abbreviated city with a comma before the state is reported",
+        validateMemo({...FIG_2_1, addressees: [
+            "HQDA (DAMI-XX), 1000 ARMY PENTAGON, WASH, DC 20310-1000",
+            "HQDA (DALO-XX), 500 ARMY PENTAGON, WASH, DC 20310-0500",
+        ]}).errors.some((f) => f.rule === "abbreviated-city-comma"),
+        "AR 25-50, fig 2-6");
+
+    checkTrue("fig 2-6: lowercase office-symbol addresses are reported",
+        validateMemo({...FIG_2_1, addressees: [
+            "HQDA (DAMI-XX), 1000 Army Pentagon, Wash DC 20310-1000",
+            "HQDA (DALO-XX), 500 Army Pentagon, Wash DC 20310-0500",
+        ]}).errors.some((f) => f.rule === "office-symbol-address-case"),
+        "AR 25-50, fig 2-6");
+}
+
+{
+    // Figure 2-9: the complete distribution listing on a page of its own.
+    const {LISTING} = await import("./ar25-50.js");
+    const memo = {
+        ...FIG_2_1,
+        seeDistribution: true,
+        addressees: [],
+        distributionOnSeparatePage: true,
+        distribution: ["Deputy Chief of Staff, G-1 (DAPE)", "Deputy Chief of Staff, G-2 (DAMI)"],
+    };
+    const doc = layoutMemo(memo);
+    const rendered = renderText(memo);
+
+    checkTrue("fig 2-9: the memorandum points to the listing on the next page",
+        rendered.includes(`DISTRIBUTION:\n${LISTING.separatePageMarker}`),
+        LISTING.separatePageCite);
+    checkTrue("fig 2-9: the listing itself is on a page of its own",
+        doc.pages.length >= 2
+        && doc.pages.at(-1).lines.some((l) => l.text === "DISTRIBUTION:")
+        && doc.pages.at(-1).lines.some((l) => l.text?.includes("DAPE")),
+        LISTING.separatePageCite);
+    checkTrue("fig 2-9: that page repeats the office symbol and subject",
+        doc.pages.at(-1).heading.some((l) => l.role === "office-symbol")
+        && doc.pages.at(-1).heading.some((l) => l.role === "subject"),
+        "AR 25-50, paras 2-5a and 2-5b");
+    checkTrue("a promised separate listing with no entries is reported",
+        validateMemo({...FIG_2_1, distributionOnSeparatePage: true, distribution: []})
+            .errors.some((f) => f.rule === "distribution-page-empty"),
+        LISTING.separatePageCite);
+}
+
+{
     const {detectMemoType} = await import("./army-memo-agent.js");
     check("intent: a decision request selects the decision memorandum",
         detectMemoType("I need a decision memo for the CG to approve the range plan"), "decision",
@@ -907,6 +973,49 @@ const FIG_2_1 = {
         buildSignature({name: "A B", grade: "XYZ", branch: "IN", title: "T"})
             .findings.some((f) => f.rule === "unknown-grade"),
         "AR 25-50, table 6-1");
+
+    // Appendix D, reproduced block for block.
+    const block = (signer, correspondence) => buildSignature(signer, correspondence).lines.join(" / ");
+
+    check("fig D-14: a command sergeant major uses USA, not a branch",
+        block({name: "William H. Sargent", grade: "CSM", spellOut: true}),
+        "WILLIAM H. SARGENT / Command Sergeant Major, USA", "AR 25-50, fig D-14");
+    check("fig D-14: a master sergeant uses USA",
+        block({name: "Ronald L. Stanley", grade: "MSG", title: "Operations Sergeant"}),
+        "RONALD L. STANLEY / MSG, USA / Operations Sergeant", "AR 25-50, fig D-14");
+    check("fig D-14: a retired sergeant first class uses USA Retired",
+        block({name: "Bryan J. Gramps", grade: "SFC", retired: true}),
+        "BRYAN J. GRAMPS / SFC, USA Retired", "AR 25-50, fig D-14");
+    check("fig D-20: an enlisted reservist uses USAR in place of USA",
+        block({name: "Name", grade: "SFC", reserveNotOnActiveDuty: true, title: "Platoon Sergeant"}),
+        "NAME / SFC, USAR / Platoon Sergeant", "AR 25-50, fig D-20 and para 6-7");
+    check("para 6-7: a commissioned reservist adds USAR after the branch",
+        block({name: "Name", grade: "MAJ", branch: "AG", reserveNotOnActiveDuty: true, title: "S1"}),
+        "NAME / MAJ, AG, USAR / S1", "AR 25-50, para 6-7");
+    check("fig D-2: a lieutenant colonel may spell the grade out",
+        block({name: "Name", grade: "LTC", branch: "AG", spellOut: true, title: "Adjutant General"}),
+        "NAME / Lieutenant Colonel, AG / Adjutant General", "AR 25-50, paras 6-5c(1) and fig D-2");
+    check("fig D-2: a deputy commander who is a general officer uses USA",
+        block({name: "Name", grade: "MG", title: "Deputy Commander"}),
+        "NAME / Major General, USA / Deputy Commander", "AR 25-50, paras 6-5c(3) and 6-5c(4)");
+    check("fig D-2: a general officer on the general staff uses GS",
+        block({name: "Name", grade: "MG", generalStaff: true, title: "Chief of Staff"}),
+        "NAME / Major General, GS / Chief of Staff", "AR 25-50, para 6-5c(7)");
+
+    checkTrue("an enlisted block is not asked for a branch",
+        buildSignature({name: "N", grade: "SFC", title: "Platoon Sergeant"})
+            .findings.every((f) => f.rule !== "branch-missing"),
+        "AR 25-50, fig D-14");
+    checkTrue("a commissioned officer without a branch is still reported",
+        buildSignature({name: "N", grade: "MAJ", title: "S1"})
+            .findings.some((f) => f.rule === "branch-missing"),
+        "AR 25-50, para 6-4f(2)");
+
+    // "FOR THE [TITLE]:" - fig D-8, para 6-2e(1)
+    const {AUTHORITY_LINES} = await import("./signature-blocks.js");
+    check("fig D-8: an agency head's authority line names the office",
+        AUTHORITY_LINES.agencyHead.text("Chief, Civilian Personnel Division"),
+        "FOR THE CHIEF, CIVILIAN PERSONNEL DIVISION:", "AR 25-50, para 6-2e(1)");
 }
 
 {

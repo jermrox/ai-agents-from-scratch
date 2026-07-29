@@ -29,7 +29,7 @@ import fs from "fs/promises";
 import path from "path";
 import {fileURLToPath} from "url";
 import {
-    Document, Packer, Paragraph, TextRun, Tab, TabStopType, AlignmentType,
+    Document, Packer, Paragraph, TextRun, Tab, TabStopType, AlignmentType, PageBreak,
     LineRuleType, Header, Footer, PageNumber, ImageRun, UnderlineType,
     CheckBox, convertInchesToTwip,
 } from "docx";
@@ -602,7 +602,13 @@ function closingParagraphs(memo) {
     if (memo.distribution?.length) {
         out.push(...gapParagraphs(SPACING.lastBlockToDistribution));
         out.push(new Paragraph({spacing: SINGLE, children: [run("DISTRIBUTION:")]}));
-        for (const entry of memo.distribution) out.push(listingParagraph(entry));
+        // "(see next page)" directly under DISTRIBUTION: when the listing goes
+        // on a page of its own. - fig 2-9
+        if (memo.distributionOnSeparatePage) {
+            out.push(new Paragraph({spacing: SINGLE, children: [run(LISTING.separatePageMarker)]}));
+        } else {
+            for (const entry of memo.distribution) out.push(listingParagraph(entry));
+        }
     }
 
     if (memo.copiesFurnished?.length) {
@@ -668,6 +674,13 @@ export async function renderDocx(memo, options = {}) {
         ...bodyParagraphs(memo, doc),
         ...(isAgreement ? agreementClosingParagraphs(memo) : closingParagraphs(memo)),
     ];
+
+    // The complete listing on a page of its own. - fig 2-9
+    if (memo.distributionOnSeparatePage && memo.distribution?.length) {
+        children.push(new Paragraph({children: [new PageBreak()]}));
+        children.push(new Paragraph({spacing: SINGLE, children: [run("DISTRIBUTION:")]}));
+        for (const entry of memo.distribution) children.push(listingParagraph(entry));
+    }
 
     const multiPage = doc.pages.length > 1;
 
