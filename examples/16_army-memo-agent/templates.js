@@ -13,11 +13,25 @@
 
 import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
 
-/** Placeholder syntax, so tooling and the validator agree on what is unfilled. */
-export const PLACEHOLDER = /\[[A-Z][A-Z0-9 _/()-]*\]/g;
+/**
+ * Placeholder syntax, so tooling and the validator agree on what is unfilled.
+ *
+ * Two or more capitals after the bracket, then anything up to the close. The
+ * leading capitals are what separate a blank from ordinary bracketed prose:
+ * "[PURPOSE SENTENCE - state the action first]" is a blank, "[Enclosure 1]" is
+ * not. Instructional placeholders carry lowercase guidance after the caps, so
+ * matching only `[ALL CAPS]` would miss most of the body of every template.
+ */
+export const PLACEHOLDER = /\[[A-Z]{2,}[^\]]*\]/g;
 
 export function hasPlaceholders(value) {
-    if (typeof value === "string") return PLACEHOLDER.test(value);
+    if (typeof value === "string") {
+        // PLACEHOLDER is global, and `.test()` on a global regex advances
+        // lastIndex - calling it twice on the same string returns true then
+        // false. Reset before every use.
+        PLACEHOLDER.lastIndex = 0;
+        return PLACEHOLDER.test(value);
+    }
     if (Array.isArray(value)) return value.some(hasPlaceholders);
     if (value && typeof value === "object") return Object.values(value).some(hasPlaceholders);
     return false;
@@ -50,6 +64,41 @@ const SIGNATURE = {
     gradeAndBranch: "[GRADE, BRANCH]",
     title: "[DUTY TITLE]",
 };
+
+/**
+ * The matters of record - who the office is, what it is called, when the thing
+ * was signed, and who signed it. A drafting model must never supply these, and
+ * the person running the agent usually cannot either: the date is not known
+ * until signature (para 2-4a(3)(b): "Place the date on the same line as the
+ * office symbol flush with the right margin *after the memorandum has been
+ * signed*"), and the signature block belongs to whoever ends up signing.
+ *
+ * So they default to placeholders rather than to a plausible-looking unit.
+ * A memorandum that says [OFFICE SYMBOL] is obviously unfinished; one that
+ * says ATZB-RC because that is what the demo used is wrong in a way nobody
+ * notices until it has been staffed.
+ *
+ * The layout does not depend on any of these values, so filling them in later
+ * - in JSON, or by typing over them in Word - cannot move anything on the page.
+ */
+export function recordFieldPlaceholders() {
+    return {
+        letterhead: {...LETTERHEAD},
+        officeSymbol: "[OFFICE SYMBOL]",
+        arimsRecordNumber: "[ARIMS RECORD NUMBER]",
+        date: "[DATE]",
+        signature: {...SIGNATURE},
+    };
+}
+
+/** Which fields recordFieldPlaceholders() covers, and why each is a matter of record. */
+export const RECORD_FIELDS = [
+    {path: "letterhead", label: "Letterhead", cite: "AR 25-50, paras 1-16 and 1-18"},
+    {path: "officeSymbol", label: "Office symbol", cite: "AR 25-50, para 2-4a(1)"},
+    {path: "arimsRecordNumber", label: "ARIMS record number", cite: "AR 25-50, paras 1-5 and 2-4a(2)"},
+    {path: "date", label: "Date", cite: "AR 25-50, para 2-4a(3)(b)"},
+    {path: "signature", label: "Signature block", cite: "AR 25-50, paras 2-4c(2) and 6-4"},
+];
 
 const POC = "My point of contact for this action is [GRADE OR PREFIX] [FULL NAME], [OFFICE SYMBOL], at [PHONE] or [EMAIL].";
 

@@ -61,7 +61,7 @@ import {
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
-import {findPlaceholders} from "./templates.js";
+import {findPlaceholders, hasPlaceholders} from "./templates.js";
 import {
     buildSignature,
     resolveSignature,
@@ -78,12 +78,21 @@ function finding(severity, klass, rule, message, cite, extra = {}) {
 const error = (...a) => finding("error", ...a);
 const warn = (...a) => finding("warning", ...a);
 
+/**
+ * MOUs and MOAs are the one memorandum form para 2-4 does not govern. Para
+ * 2-6c(1) enumerates their heading - centered title, "BETWEEN", the agreeing
+ * agencies - and the office symbol and ARIMS record number are not among them.
+ * Para 2-6c(5) replaces the single signature block with the agreeing parties'
+ * blocks side by side on the same line.
+ */
+const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
+
 // ---------------------------------------------------------------------------
 // Heading
 // ---------------------------------------------------------------------------
 
 function checkHeading(memo, out) {
-    if (!memo.officeSymbol) {
+    if (!memo.officeSymbol && !isAgreement(memo)) {
         out.push(error("content", "office-symbol-missing",
             "The heading has no office symbol. It identifies the writer's office and is the first element of the heading.",
             "AR 25-50, para 2-4a(1)"));
@@ -93,7 +102,7 @@ function checkHeading(memo, out) {
             "AR 25-50, para 2-4a(1)"));
     }
 
-    if (!memo.arimsRecordNumber) {
+    if (!memo.arimsRecordNumber && !isAgreement(memo)) {
         out.push(warn("content", "arims-missing",
             "No ARIMS record number. Agencies place the appropriate Army record number in parentheses one space after the office symbol (for example, ISES-RM (25-50a)).",
             "AR 25-50, paras 1-5 and 2-4a(2)"));
@@ -103,6 +112,11 @@ function checkHeading(memo, out) {
         out.push(error("content", "date-missing",
             "Memorandums must be dated.",
             "AR 25-50, para 2-4a(3)(a)"));
+    } else if (hasPlaceholders(memo.date)) {
+        // A placeholder is an unfilled field, not a malformed one, and
+        // checkPlaceholders already reports it. Complaining about its *format*
+        // too would be two findings for one blank, and the wrong one first.
+        // Para 2-4a(3)(b) puts the date on after signature anyway.
     } else if (!MEMO_DATE_PATTERN.test(memo.date)) {
         const isStamp = MEMO_DATE_STAMP_PATTERN.test(memo.date);
         out.push(isStamp
@@ -114,7 +128,8 @@ function checkHeading(memo, out) {
                 DATE_FORMAT_CITE));
     }
 
-    if (memo.suspenseDate && !MEMO_DATE_PATTERN.test(memo.suspenseDate) && !MEMO_DATE_STAMP_PATTERN.test(memo.suspenseDate)) {
+    if (memo.suspenseDate && !hasPlaceholders(memo.suspenseDate)
+        && !MEMO_DATE_PATTERN.test(memo.suspenseDate) && !MEMO_DATE_STAMP_PATTERN.test(memo.suspenseDate)) {
         out.push(error("content", "suspense-format",
             `Suspense date "${memo.suspenseDate}" is not a valid date form.`,
             "AR 25-50, paras 1-27a and 2-4a(4)"));
@@ -283,6 +298,9 @@ function checkSubject(memo, out) {
             "AR 25-50, para 2-4a(6)"));
         return;
     }
+    // Still a placeholder: checkPlaceholders reports it, and the style rules
+    // below would be judging the placeholder's own wording, not the author's.
+    if (hasPlaceholders(subject)) return;
 
     const words = subject.split(/\s+/);
     if (words.length > WRITING_STANDARDS.subjectMaxWords) {
@@ -348,7 +366,12 @@ function checkBody(memo, doc, out) {
         //  subparagraph 'b.'" - fig 2-1
         nodes.forEach((node, i) => {
             const here = [...path, i + 1].join(".");
-            const kids = node.children ?? [];
+            // A `literal` child is a row, not a subparagraph: it carries no
+            // letter and its columns are the content. Figure 2-18's approval
+            // line and figure 2-18's coordination rows are both of these, and
+            // counting them as subparagraphs would demand a "b." for a block
+            // the regulation never letters at all.
+            const kids = (node.children ?? []).filter((k) => !k.literal);
 
             if (kids.length === 1) {
                 out.push(error("content", "orphan-subparagraph",
@@ -380,7 +403,7 @@ function checkBody(memo, doc, out) {
     checkParagraphLength(doc, out);
     checkSentenceLength(paragraphs, out);
     checkPassiveVoice(paragraphs, out);
-    checkPointOfContact(paragraphs, out);
+    checkPointOfContact(paragraphs, out, memo);
     checkPostscript(paragraphs, out);
 }
 
@@ -403,8 +426,19 @@ function collectText(nodes, acc = []) {
     return acc;
 }
 
+/**
+ * Body text with the still-unfilled parts dropped. The style rules of para
+ * 1-39 judge the author's prose, and a placeholder is not the author's prose -
+ * it is a blank, which checkPlaceholders already reports. Measuring the
+ * template's own wording for sentence length or passive voice tells the author
+ * nothing and buries the one finding that matters.
+ */
+function authoredText(paragraphs) {
+    return collectText(paragraphs).filter((t) => !hasPlaceholders(t));
+}
+
 function checkSentenceLength(paragraphs, out) {
-    const text = collectText(paragraphs).join(" ");
+    const text = authoredText(paragraphs).join(" ");
     const sentences = text.split(/(?<=[.?!])\s+/).map((s) => s.trim()).filter(Boolean);
     if (sentences.length === 0) return;
 
@@ -427,7 +461,7 @@ function checkSentenceLength(paragraphs, out) {
 }
 
 function checkPassiveVoice(paragraphs, out) {
-    for (const text of collectText(paragraphs)) {
+    for (const text of authoredText(paragraphs)) {
         PASSIVE.lastIndex = 0;
         const hits = [...text.matchAll(PASSIVE)];
         for (const hit of hits) {
@@ -444,7 +478,14 @@ function checkPassiveVoice(paragraphs, out) {
  *  civilian prefix, first and last name; position and address; phone; and
  *  email address, if appropriate." - 1-23a
  */
-function checkPointOfContact(paragraphs, out) {
+function checkPointOfContact(paragraphs, out, memo) {
+    // "Ensure the point of contact line is in the last paragraph of the body."
+    //  is para 2-4b(1)(e), a standard-memorandum body rule. Para 2-6c(3) lists
+    //  what an agreement's text contains - references, purpose, background,
+    //  understandings, effective date, review date - and a point of contact is
+    //  not one of them.
+    if (isAgreement(memo)) return;
+
     const flat = collectText(paragraphs);
     const last = flat[flat.length - 1] ?? "";
     const anywhere = flat.join(" ");
@@ -459,6 +500,11 @@ function checkPointOfContact(paragraphs, out) {
             "AR 25-50, paras 1-23a and 2-4b(1)(e)"));
         return;
     }
+
+    // The paragraph is there but still a template line - [PHONE] and [EMAIL]
+    // are exactly the blanks checkPlaceholders reports, so saying the phone
+    // number is missing as well is the same fact twice.
+    if (hasPlaceholders(last)) return;
 
     if (!/\d{3}[-.\s]?\d{3,4}/.test(last)) {
         out.push(warn("content", "poc-no-phone",
@@ -701,7 +747,16 @@ function checkClosing(memo, out) {
     const sig = resolveSignature(raw);
     const suppliedName = raw.signer ? raw.signer.name : raw.name;
 
-    if (!suppliedName) {
+    if (isAgreement(memo)) {
+        // "the signature blocks of the agreeing agencies' parties appear on
+        //  the same line" - para 2-6c(5)
+        const signers = memo.signers ?? [];
+        if (signers.length < 2) {
+            out.push(error("content", "agreement-signers-missing",
+                `An agreement carries one signature block per agreeing party, side by side; ${signers.length} supplied.`,
+                "AR 25-50, para 2-6c(5)"));
+        }
+    } else if (!suppliedName) {
         out.push(error("content", "signature-missing",
             "The closing has no signature block.",
             "AR 25-50, paras 2-4c(2) and 6-4"));
@@ -714,7 +769,7 @@ function checkClosing(memo, out) {
     // Figure D-14 shows four noncommissioned officer blocks with no title at
     // all, so the title is only expected where the block is not a bare
     // name-and-grade pair.
-    if (sig.titleSegments.length === 0 && !isEnlisted(raw.signer?.grade)) {
+    if (sig.titleSegments.length === 0 && !isEnlisted(raw.signer?.grade) && !isAgreement(memo)) {
         out.push(warn("content", "signature-title-missing",
             "The signature block gives no title.",
             "AR 25-50, para 6-4"));
@@ -822,7 +877,7 @@ function checkPresentation(memo, doc, out) {
     // Continuation-page rules the paginator is responsible for. - 2-5c
     doc.pages.slice(1).forEach((page) => {
         const heading = page.heading ?? [];
-        if (!heading.some((l) => l.role === "office-symbol")) {
+        if (!heading.some((l) => l.role === "office-symbol") && !isAgreement(memo)) {
             out.push(error("format", "continuation-office-symbol",
                 `Page ${page.number} does not repeat the office symbol at the left margin 1 inch from the top edge.`,
                 "AR 25-50, para 2-5a"));
@@ -851,12 +906,19 @@ function checkRenderedSpacing(doc, out) {
     const indexOfRole = (role) => lines.findIndex((l) => l.role === role);
 
     const officeSymbol = indexOfRole("office-symbol");
-    const memoFor = lines.findIndex((l) => l.role === "memorandum-for");
-    if (officeSymbol >= 0 && memoFor > officeSymbol) {
-        const delta = memoFor - officeSymbol;
+
+    // The third-line rule governs whichever line opens the address block. On a
+    // THRU memorandum that is MEMORANDUM THRU - figures 2-11 and 2-12 put the
+    // THRU chain first and the action office on a FOR line below it, so
+    // measuring FOR against the office symbol would demand line 3 for a line
+    // the regulation never puts there.
+    const opener = lines.findIndex((l) => l.role === "thru" || l.role === "memorandum-for");
+    if (officeSymbol >= 0 && opener > officeSymbol) {
+        const delta = opener - officeSymbol;
+        const label = lines[opener].role === "thru" ? "MEMORANDUM THRU" : "MEMORANDUM FOR";
         if (delta !== SPACING.officeSymbolToMemorandumFor.linesBelow) {
             out.push(error("format", "spacing-memorandum-for",
-                `MEMORANDUM FOR renders on line ${delta} below the office symbol; the regulation places it on the third.`,
+                `${label} renders on line ${delta} below the office symbol; the regulation places it on the third.`,
                 SPACING.officeSymbolToMemorandumFor.cite));
         }
     }
@@ -960,7 +1022,7 @@ function checkSignatureFormalities(memo, out) {
     const sig = memo.signature;
     if (!sig) return;
 
-    if (sig.gradeAndBranch) {
+    if (sig.gradeAndBranch && !hasPlaceholders(sig.gradeAndBranch)) {
         const first = String(sig.gradeAndBranch).split(",")[0].trim();
         // Only check tokens that look like a grade attempt.
         if (/^[A-Za-z0-9]{2,4}$/.test(first) && !normalizeGrade(first)) {

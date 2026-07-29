@@ -1873,6 +1873,71 @@ const FIELD_TEMPLATE = {
         validateMemo(createTemplate("standard"))
             .warnings.some((f) => f.rule === "unfilled-placeholder"),
         "template not yet filled in");
+
+    /*
+     * A template is the starting point of every memorandum this module
+     * produces, so a template that reports an error means the module cannot
+     * produce a compliant memorandum at all. Every type has to come out clean.
+     */
+    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+        const result = validateMemo(createTemplate(type));
+        check(`the ${type} template raises no errors`,
+            result.errors.map((f) => f.rule), [], "AR 25-50");
+    }
+
+    const {hasPlaceholders, PLACEHOLDER} = await import("./templates.js");
+
+    // PLACEHOLDER is a global regex, and `.test()` on one advances lastIndex.
+    // Three identical calls have to give three identical answers.
+    check("hasPlaceholders is not stateful",
+        [1, 2, 3].map(() => hasPlaceholders("[OFFICE SYMBOL]")), [true, true, true],
+        "template");
+    checkTrue("an instructional placeholder counts as unfilled",
+        hasPlaceholders("[PURPOSE SENTENCE - state the action first, in the active voice.]"),
+        "template");
+    checkTrue("ordinary bracketed prose does not",
+        !hasPlaceholders("the schedule at [Enclosure 1]"), "template");
+
+    // A placeholder is reported once, as unfilled - not a second time as a
+    // malformed date, an acronym-laden subject, or a point of contact with no
+    // telephone number.
+    const bare = createTemplate("standard");
+    const rules = validateMemo(bare).findings.map((f) => f.rule);
+    for (const rule of ["date-format", "date-stamp-form", "subject-acronyms",
+                        "poc-no-phone", "poc-no-email", "grade-not-in-table"]) {
+        checkTrue(`an unfilled template does not also report ${rule}`,
+            !rules.includes(rule), "AR 25-50");
+    }
+
+    // fig 2-11: the third-line rule governs MEMORANDUM THRU on a THRU
+    // memorandum; the action office follows on a FOR line below the chain.
+    checkTrue("fig 2-11: a THRU memorandum's opener is measured, not its FOR line",
+        validateMemo({...FIG_2_1, thru: ["U.S. Army North (ARNO-CG)"]})
+            .findings.every((f) => f.rule !== "spacing-memorandum-for"),
+        "AR 25-50, para 2-4a(5) and figs 2-11 and 2-12");
+
+    // fig 2-18: the approval line is a row, not a subparagraph, so it does not
+    // owe the "if there is an a, there must be a b" rule a sibling.
+    checkTrue("fig 2-18: a literal row is not counted as a subparagraph",
+        validateMemo({...FIG_2_1, paragraphs: [
+            {text: "Only paragraph.", children: [{approvalLine: true, literal: true}]},
+        ]}).errors.every((f) => f.rule !== "orphan-subparagraph"),
+        "AR 25-50, fig 2-18");
+
+    // para 2-6: an agreement is not governed by para 2-4, so the standard
+    // memorandum's heading, closing and body rules must not be applied to it.
+    for (const type of ["mou", "moa"]) {
+        const agreement = validateMemo(createTemplate(type));
+        for (const rule of ["office-symbol-missing", "arims-missing", "signature-missing",
+                            "continuation-office-symbol", "poc-placement", "signature-title-missing"]) {
+            checkTrue(`an ${type.toUpperCase()} is not asked for ${rule.replace(/-/g, " ")}`,
+                agreement.findings.every((f) => f.rule !== rule), "AR 25-50, para 2-6");
+        }
+        checkTrue(`an ${type.toUpperCase()} with fewer than two signers is reported`,
+            validateMemo({...createTemplate(type), signers: []})
+                .errors.some((f) => f.rule === "agreement-signers-missing"),
+            "AR 25-50, para 2-6c(5)");
+    }
 }
 
 // ---------------------------------------------------------------------------
