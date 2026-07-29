@@ -43,6 +43,7 @@ import {
 } from "./ar25-50.js";
 import {layoutMemo, usesLetterhead} from "./memo-formatter.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
+import {resolveSignature} from "./signature-blocks.js";
 
 const IN = convertInchesToTwip;
 
@@ -362,8 +363,9 @@ function indentText(row) {
 }
 
 /** Wrap a signature title to its column, continuing at 1/4 inch. - para 6-4c */
-function wrapSignatureTitle(title, columnIn) {
-    const indentForLine = (i) => (i === 0 ? 0 : LAYOUT.multiAddressWrapIndentIn);
+function wrapSignatureTitle(title, columnIn, continuation = false) {
+    const indentForLine = (i) =>
+        (i === 0 && !continuation ? 0 : LAYOUT.multiAddressWrapIndentIn);
     return breakLines(title, {
         sizePt: TYPE.fontSizePt,
         indentForLine,
@@ -649,11 +651,16 @@ function closingParagraphs(memo) {
  *  signature block of civilian officials on two lines." - para 6-4c
  */
 function signatureBlockLines(sig) {
-    const lines = [{text: String(sig.name ?? "NAME").toUpperCase()}];
-    if (sig.gradeAndBranch) lines.push({text: sig.gradeAndBranch});
-    if (sig.title) {
-        const columnIn = TEXT_WIDTH_IN - LAYOUT.signatureBlockIndentIn;
-        for (const part of wrapSignatureTitle(sig.title, columnIn)) {
+    const resolved = resolveSignature(sig);
+    const lines = [{text: resolved.name}];
+    if (resolved.gradeAndBranch) lines.push({text: resolved.gradeAndBranch});
+
+    // A title continuation starts indented 1/4 inch (para 6-4c, fig D-13);
+    // "Commanding" and the organization are elements of their own and start
+    // flush (figs D-1 and D-9).
+    const columnIn = TEXT_WIDTH_IN - LAYOUT.signatureBlockIndentIn;
+    for (const segment of resolved.titleSegments) {
+        for (const part of wrapSignatureTitle(segment.text, columnIn, segment.continuation)) {
             lines.push({text: indentText(part)});
         }
     }

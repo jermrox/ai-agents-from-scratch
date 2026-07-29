@@ -41,6 +41,7 @@ import {
 } from "./ar25-50.js";
 
 import {breakLines, measureTextIn} from "./text-metrics.js";
+import {resolveSignature} from "./signature-blocks.js";
 
 /**
  * Rendering options. `charsPerInch` only affects the plain-text backend; the
@@ -469,12 +470,13 @@ function buildClosing(memo, opts) {
     // "Type the signature block of military officials on three lines [...] If
     //  the title requires more than one line, continue it on the fourth line,
     //  indenting 1/4 inch." - para 6-4c
-    const sig = memo.signature ?? {};
+    const sig = resolveSignature(memo.signature);
     const columnIn = TEXT_WIDTH_IN - sigIndent;
     const rightColumn = [
-        {text: String(sig.name ?? "NAME").toUpperCase(), indentIn: 0},
+        {text: sig.name, indentIn: 0},
         ...(sig.gradeAndBranch ? [{text: sig.gradeAndBranch, indentIn: 0}] : []),
-        ...(sig.title ? wrapToColumn(sig.title, columnIn, opts) : []),
+        // A title continuation starts indented; a new element starts flush.
+        ...sig.titleSegments.flatMap((seg) => wrapToColumn(seg.text, columnIn, opts, seg.continuation)),
     ].map((r) => line(r.text, {indentIn: sigIndent + r.indentIn, role: "signature"}));
 
     // Chapter 4 decides the whole shape of this listing, and it turns on
@@ -564,8 +566,9 @@ function approvalLineText(memo) {
  * line continues indented 1/4 inch. - para 6-4c
  * Returns [{text, indentIn}] relative to the column's own left edge.
  */
-function wrapToColumn(text, columnIn, opts) {
-    const indentForLine = (i) => (i === 0 ? 0 : LAYOUT.multiAddressWrapIndentIn);
+function wrapToColumn(text, columnIn, opts, continuation = false) {
+    const indentForLine = (i) =>
+        (i === 0 && !continuation ? 0 : LAYOUT.multiAddressWrapIndentIn);
     return breakLines(text, {
         sizePt: opts.fontSizePt,
         indentForLine,

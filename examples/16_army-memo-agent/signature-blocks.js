@@ -358,7 +358,13 @@ export function buildSignature(signer, correspondence = "memorandum") {
 }
 
 function finish(name, gradeAndBranch, signer, findings) {
-    const titleLines = signer.title ? String(signer.title).split("\n") : [];
+    // Below the grade line the block is a list of elements, and the difference
+    // between them is visible in the figures. A title that will not fit on one
+    // line continues indented 1/4 inch (para 6-4c, figure D-13). "Commanding"
+    // and the organization are elements in their own right, so they sit flush
+    // with the name - figure D-1 and figure D-9. `continuation` records which
+    // of the two a segment is; turning that into inches is the renderer's job.
+    const segments = titleSegmentsOf(signer.title);
 
     // "'Commanding' for commanders to denote the active exercise of
     //  authority." - para 6-4a(3). An officer serving in an acting capacity
@@ -367,16 +373,18 @@ function finish(name, gradeAndBranch, signer, findings) {
     //  Sergeant".
     if (signer.commanding) {
         const word = signer.acting ? "Acting Commander" : "Commanding";
-        if (!titleLines.some((l) => l.trim() === word)) titleLines.push(word);
+        if (!segments.some((s) => s.text === word)) segments.push({text: word, continuation: false});
     }
 
     // "When the organization is not identified in the letterhead, show it as
     //  the last line of the signature block." - para 6-5d. Figure D-9 is the
     //  officer writing as an individual: "CPT, AR / Co B, 2/34 Armor".
-    if (signer.organization) titleLines.push(String(signer.organization));
+    if (signer.organization) {
+        segments.push({text: String(signer.organization), continuation: false});
+    }
 
-    const title = titleLines.join("\n");
-    const lines = [name, gradeAndBranch, ...titleLines].filter(Boolean);
+    const title = segments.map((s) => s.text).join("\n");
+    const lines = [name, gradeAndBranch, ...segments.map((s) => s.text)].filter(Boolean);
 
     // "Civilians will use only a two-line signature block consisting of name
     //  and title, unless a third line is necessary for a long title." - 6-4a note 2
@@ -388,7 +396,63 @@ function finish(name, gradeAndBranch, signer, findings) {
         });
     }
 
-    return {name, gradeAndBranch, title, lines, findings};
+    return {name, gradeAndBranch, title, titleSegments: segments, lines, findings};
+}
+
+/**
+ * A title string split into segments. Line breaks the author put inside the
+ * title are continuations of it, so they take the 1/4-inch indent of para
+ * 6-4c - figure D-13 sets a three-line title that way, with both continuations
+ * indented equally.
+ */
+function titleSegmentsOf(title) {
+    if (!title) return [];
+    return String(title).split("\n").map((s) => s.trim()).filter(Boolean)
+        .map((text, i) => ({text, continuation: i > 0}));
+}
+
+/**
+ * Resolve a memorandum's `signature` field into the three elements a block is
+ * made of, accepting either a structured `signer` - in which case chapter 6
+ * decides the grade line - or the finished elements directly.
+ *
+ * Each returned segment carries `continuation`, which says whether it is the
+ * rest of a title that would not fit on one line - indent it 1/4 inch, per
+ * para 6-4c and figure D-13 - or an element in its own right. "Commanding"
+ * (para 6-4a(3)) and the organization (para 6-5d) are elements, which is why
+ * figure D-1 sets "Commanding" flush with the name and figure D-9 does the
+ * same with "Co B, 2/34 Armor". Wrapping a segment that is still too wide is
+ * the renderer's job and also continues at 1/4 inch.
+ */
+export function resolveSignature(sig = {}, correspondence = "memorandum") {
+    const built = sig?.signer ? buildSignature(sig.signer, correspondence) : null;
+    if (built) {
+        return {
+            name: built.name,
+            gradeAndBranch: built.gradeAndBranch ?? null,
+            titleSegments: built.titleSegments,
+            findings: built.findings,
+        };
+    }
+
+    // The elements given directly. A "\n" inside `title` is a title
+    // continuation; "Commanding" and the organization have their own fields so
+    // they can stay flush without the caller having to know the difference.
+    const isLetter = correspondence === "letter";
+    const rawName = String(sig?.name ?? "NAME");
+    const segments = titleSegmentsOf(sig?.title);
+    if (sig?.commanding) {
+        const word = sig.acting ? "Acting Commander" : "Commanding";
+        if (!segments.some((s) => s.text === word)) segments.push({text: word, continuation: false});
+    }
+    if (sig?.organization) segments.push({text: String(sig.organization), continuation: false});
+
+    return {
+        name: isLetter ? rawName : rawName.toUpperCase(),
+        gradeAndBranch: sig?.gradeAndBranch ?? null,
+        titleSegments: segments,
+        findings: [],
+    };
 }
 
 function titleCaseName(name) {

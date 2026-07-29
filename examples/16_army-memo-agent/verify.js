@@ -1732,6 +1732,79 @@ const FIELD_TEMPLATE = {
         block({name: "Name", grade: "COL", contractSurgeon: true, title: "Contract Surgeon"}),
         "NAME / COL, USA / Contract Surgeon", "AR 25-50, para 6-8b");
 
+    /*
+     * What actually reaches the page. buildSignature() is only correct if the
+     * renderer uses it, and the two are joined by resolveSignature().
+     */
+    {
+        const {layoutMemo} = await import("./memo-formatter.js");
+        const {LAYOUT} = await import("./ar25-50.js");
+        // The signature block shares its lines with the enclosure listing, so a
+        // row is either a signature line or carries one as `sameLine`.
+        const sigRows = (signature) => layoutMemo({...FIG_2_1, signature}).flow
+            .map((l) => (l.role === "signature" ? l : l.sameLine))
+            .filter((l) => l?.role === "signature")
+            .map((l) => `${l.text}@${l.indentIn.toFixed(2)}`);
+
+        const centre = LAYOUT.signatureBlockIndentIn;
+        const indented = centre + LAYOUT.multiAddressWrapIndentIn;
+
+        check("a structured signer reaches the page as a built block",
+            sigRows({signer: {name: "John Doe", grade: "COL", branch: "IN", commanding: true}}),
+            [`JOHN DOE@${centre.toFixed(2)}`, `COL, IN@${centre.toFixed(2)}`,
+             `Commanding@${centre.toFixed(2)}`],
+            "AR 25-50, paras 6-4a(3) and 6-4c");
+
+        // fig D-9: the organization is an element of its own, so it is flush.
+        check("fig D-9: an organization line is flush, not indented",
+            sigRows({signer: {name: "John Doe", grade: "CPT", branch: "AR",
+                              organization: "Co B, 2/34 Armor"}}),
+            [`JOHN DOE@${centre.toFixed(2)}`, `CPT, AR@${centre.toFixed(2)}`,
+             `Co B, 2/34 Armor@${centre.toFixed(2)}`],
+            "AR 25-50, para 6-5d");
+
+        // fig D-13: a title that will not fit continues indented 1/4 inch, and
+        // a three-line title indents both continuations equally.
+        check("fig D-13: both continuations of a three-line title are indented equally",
+            sigRows({signer: {name: "John Doe", grade: "COL", branch: "IN",
+                              title: "Assistant Inspector General for\nMilitary Operations for Plans\nand Procedures"}}),
+            [`JOHN DOE@${centre.toFixed(2)}`, `COL, IN@${centre.toFixed(2)}`,
+             `Assistant Inspector General for@${centre.toFixed(2)}`,
+             `Military Operations for Plans@${indented.toFixed(2)}`,
+             `and Procedures@${indented.toFixed(2)}`],
+            "AR 25-50, para 6-4c and fig D-13");
+
+        checkTrue("no line break survives into a rendered line's text",
+            layoutMemo({...FIG_2_1, signature: {signer: {
+                name: "N", grade: "COL", branch: "IN", commanding: true,
+                title: "Chief, Operational Testing and\nLicensing Division"}}})
+                .flow.every((l) => !String(l.text).includes("\n")),
+            "AR 25-50, para 6-4c");
+
+        // memo-docx.js builds the block through the same resolveSignature(), so
+        // the .docx is asserted against the same figure rather than trusted.
+        {
+            const {renderDocx} = await import("./memo-docx.js");
+            const JSZip = (await import("jszip")).default;
+            const zip = await JSZip.loadAsync(await renderDocx({...FIG_2_1, signature: {signer: {
+                name: "John Doe", grade: "COL", branch: "IN",
+                title: "Assistant Inspector General for\nMilitary Operations for Plans\nand Procedures",
+            }}}));
+            const xml = await zip.file("word/document.xml").async("string");
+            const text = [...xml.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]);
+
+            checkTrue("docx: the structured signer reaches the file",
+                text.some((t) => t.includes("JOHN DOE")) && text.some((t) => t.includes("COL, IN")),
+                "AR 25-50, para 6-4c");
+            checkTrue("docx: a three-line title keeps all three lines",
+                ["Assistant Inspector General for", "Military Operations for Plans", "and Procedures"]
+                    .every((s) => text.some((t) => t.includes(s))),
+                "AR 25-50, fig D-13");
+            checkTrue("docx: no line break survives into a run",
+                text.every((t) => !t.includes("\n")), "AR 25-50, para 6-4c");
+        }
+    }
+
     // Para 6-3c: signing for another person is a handwritten act, so the typed
     // block must NOT change - the rule is reported instead.
     {
