@@ -8,7 +8,7 @@ Nine files, each with one job:
 | `text-metrics.js` | Arial/Helvetica advance widths, tokenizing, line breaking in inches. |
 | `memo-formatter.js` | Layout engine plus two preview backends: plain text and print-ready HTML. |
 | `memo-docx.js` | **The deliverable.** Word output: exact type, margins, tab stops, running heads, and a formatting lock. |
-| `signature-blocks.js` | Chapter 6 formalities: table 6-1 grades, GS/IG, general officers, civilians, retired, USAR, authority lines. |
+| `signature-blocks.js` | Chapter 6 and appendix D: table 6-1 grades, GS/IG, general officers, warrant officers, civilians, retired, USAR, ARNG, chaplains, authority lines. |
 | `templates.js` | One editable skeleton per memorandum type, with `[BRACKETED]` placeholders. |
 | `memo-validator.js` | Compliance checks. Every finding cites AR 25-50 and is tagged `content` or `format`. |
 | `army-memo-agent.js` | Intent detection, the draft/validate/repair loop, and the CLI. |
@@ -269,13 +269,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-379 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+384 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 379/379 checks passed.
+# AR 25-50 layout verification: 384/384 checks passed.
 ```
 
 ---
