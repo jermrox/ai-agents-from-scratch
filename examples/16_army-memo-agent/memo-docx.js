@@ -85,6 +85,29 @@ const xmlEscape = (t) => String(t).replace(/[&<>]/g,
 const RUN_PROPS = `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE.fontFamily}" w:cs="${TYPE.fontFamily}"/><w:sz w:val="${TYPE.fontSizePt * 2}"/><w:szCs w:val="${TYPE.fontSizePt * 2}"/></w:rPr>`;
 
 /**
+ * A hand-written XML fragment, as a component the document can hold.
+ *
+ * `ImportedXmlComponent.fromXmlString` hands back the *document* node rather
+ * than the element in it: its rootKey is undefined, and serializing it writes a
+ * literal `<undefined>` wrapper around the real element. That wrapper is in no
+ * namespace and is legal nowhere, so Word declines to open the file - while
+ * LibreOffice descends through it and renders the contents, which is how it
+ * survived a rendered page. Unwrap it here, once.
+ *
+ * If a later docx release returns the element itself, `rootKey` is set and it
+ * is used as-is. Either way the root name is checked, so this fails loudly
+ * rather than quietly emitting something Word will reject.
+ */
+function importXml(xml, expectedRoot) {
+    const parsed = ImportedXmlComponent.fromXmlString(xml);
+    const node = parsed.rootKey === undefined ? parsed.root?.[0] : parsed;
+    if (!node || node.rootKey !== expectedRoot) {
+        throw new Error(`imported XML did not yield a <${expectedRoot}> element`);
+    }
+    return node;
+}
+
+/**
  * A stable, positive `w:id` for a content control.
  *
  * Word writes an id on every control. It is optional in the schema, but every
@@ -121,7 +144,7 @@ function slot(value, prompt) {
     const text = value == null ? "" : String(value).trim();
     if (text) return run(text);
 
-    return ImportedXmlComponent.fromXmlString(
+    return importXml(
         `<w:sdt>` +
         `<w:sdtPr>` +
         RUN_PROPS +
@@ -132,7 +155,8 @@ function slot(value, prompt) {
         `<w:text/>` +
         `</w:sdtPr>` +
         `<w:sdtContent><w:r>${RUN_PROPS}<w:t xml:space="preserve">${xmlEscape(prompt)}</w:t></w:r></w:sdtContent>` +
-        `</w:sdt>`);
+        `</w:sdt>`,
+        "w:sdt");
 }
 
 /** A regulation blank line. */

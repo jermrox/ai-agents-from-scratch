@@ -2864,6 +2864,85 @@ function hasPlaceholdersDeep(value) {
 }
 
 // ---------------------------------------------------------------------------
+// The file, against the schema Word implements
+// ---------------------------------------------------------------------------
+
+/*
+ * Everything else here checks the memorandum. This checks the file: whether
+ * Word will open it at all.
+ *
+ * Word validates each part against ISO/IEC 29500-4. A part that breaks the
+ * schema does not render slightly wrong - it produces "Word found unreadable
+ * content" and an offer to repair, and nothing reaches the page. LibreOffice
+ * renders straight through faults Word rejects, so the rendered-page block
+ * below cannot stand in for this. Two faults proved it: every content control
+ * shipped inside a literal `<undefined>` wrapper, and `w:documentProtection`
+ * sat ahead of an element that outranks it. Both rendered perfectly.
+ *
+ * Every type the generator can produce is validated, filled and blank, because
+ * the slots are the part written by hand.
+ *
+ * Skipped when the schemas or lxml are absent, so the suite still runs
+ * anywhere - `validate-ooxml.py` exits 3 to say which.
+ */
+{
+    const {execFile} = await import("child_process");
+    const {promisify} = await import("util");
+    const os = await import("os");
+    const fsp = await import("fs/promises");
+    const run = promisify(execFile);
+
+    const {renderDocx} = await import("./memo-docx.js");
+    const {TEMPLATES, createTemplate, recordFieldPlaceholders} = await import("./templates.js");
+    const {assembleMemo} = await import("./memo-intent.js");
+    const {OFFLINE_CONTENT, OFFLINE_CONTEXT} = await import("./army-memo-agent.js");
+
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "ar2550-schema-"));
+    const files = [];
+    const write = async (name, memo) => {
+        const file = path.join(dir, `${name}.docx`);
+        await fsp.writeFile(file, await renderDocx(memo));
+        files.push(file);
+    };
+
+    for (const type of Object.keys(TEMPLATES)) {
+        await write(`type-${type}`, createTemplate(type));
+        await write(`blank-${type}`, {...createTemplate(type), ...recordFieldPlaceholders()});
+    }
+    await write("offline", assembleMemo(OFFLINE_CONTENT, OFFLINE_CONTEXT));
+    await write("bare", {paragraphs: [{text: "Range 14 closes for maintenance in August 2026."}]});
+    // Long enough to run past one page, with a distribution page after it.
+    await write("multipage", {
+        letterhead: {organization: "HQ", streetAddress: "1 MEKONG ST", cityStateZip: "FORT CARSON, CO  80913"},
+        officeSymbol: "ATZB-CG", subject: "Range Operations", date: "30 July 2026",
+        addressees: ["SEE DISTRIBUTION"], distribution: ["Commander, 1st Battalion", "Garrison Safety Office"],
+        distributionOnSeparatePage: true, enclosures: ["Range 14 Maintenance Schedule"],
+        paragraphs: Array.from({length: 30}, (_, i) => ({
+            text: `Paragraph ${i + 1}.  Range operations continue under the published schedule. `.repeat(3),
+        })),
+    });
+
+    const script = new URL("./validate-ooxml.py", import.meta.url).pathname;
+    const result = await run("python3", [script, ...files], {timeout: 300_000})
+        .then((r) => ({code: 0, ...r}))
+        .catch((e) => ({code: e.code ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(e)}));
+
+    if (result.code === 3) {
+        console.log(`  (${result.stderr.trim().replace(/^skip:\s*/, "")} - skipping schema validation)`);
+    } else {
+        const parts = /(\d+) parts validated/.exec(result.stdout);
+        checkTrue("docx: every part validates against ISO/IEC 29500-4, so Word opens the file",
+            result.code === 0, "ISO/IEC 29500-4:2016 (ECMA-376)");
+        if (result.code !== 0) console.log(result.stdout.split("\n").slice(0, 6).join("\n"));
+        // A validator that silently checks nothing would pass the line above.
+        checkTrue("docx: and every type the generator makes was put through it",
+            Number(parts?.[1]) >= files.length * 3, "ISO/IEC 29500-4:2016 (ECMA-376)");
+    }
+
+    await fsp.rm(dir, {recursive: true, force: true});
+}
+
+// ---------------------------------------------------------------------------
 // The page as it actually renders
 // ---------------------------------------------------------------------------
 

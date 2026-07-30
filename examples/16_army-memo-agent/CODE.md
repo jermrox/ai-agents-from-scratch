@@ -1,6 +1,6 @@
 # Code explanation: `army-memo-agent.js`
 
-Twelve files, each with one job:
+Thirteen files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
@@ -16,6 +16,7 @@ Twelve files, each with one job:
 | `memo-server.js` | **The front end.** A page that takes a request and returns a checked memorandum and a Word file. |
 | `army-memo-agent.js` | The CLI. |
 | `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
+| `validate-ooxml.py` | Validates the .docx against ISO/IEC 29500-4 - the schema Word itself enforces. |
 
 ## Run
 
@@ -37,7 +38,8 @@ node examples/16_army-memo-agent/army-memo-agent.js --offline
 # The front end: say what you need, get a memorandum and a .docx
 node examples/16_army-memo-agent/army-memo-agent.js --serve
 
-# Check the renderer and the .docx against AR 25-50's own figures
+# Check the renderer and the .docx against AR 25-50's own figures,
+# and the .docx against the schema Word enforces
 node examples/16_army-memo-agent/verify.js
 
 # With a local model, letting it pick the memorandum type from the request
@@ -277,13 +279,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-551 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+553 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 551/551 checks passed.
+# AR 25-50 layout verification: 553/553 checks passed.
 ```
 
 ---
@@ -321,12 +323,36 @@ The continuation header is now written even when the layout measures one page. W
 
 Text stays fully editable - that is the point of shipping Word - but formatting cannot be changed from inside the application. Adding `w:edit="readOnly"` would lock the text too. This is a deterrent rather than a security control: unpassworded protection is removable from the Review tab, which is the right level for a document a staff officer still has to finish.
 
-**Schema order is not a style question.** `w:settings` and `w:sdtPr` are both `xsd:sequence` (ECMA-376 Part 1, paras 17.15.1.78 and 17.5.2.38): every child has exactly one legal position. Word validates the parts it opens, and a child out of place is not a nuance — it is *"Word found unreadable content"* and an offer to repair the file. LibreOffice accepts either order, so neither of these could be caught on a rendered page:
+**The file has to open before any of this matters.** Word validates each part it reads against ISO/IEC 29500-4. A part that breaks the schema does not render slightly wrong — it produces *"Word found unreadable content"* and an offer to repair, and the memorandum never reaches the page at all. LibreOffice is lenient by design and renders straight through faults Word rejects, so no amount of rendering catches this. `validate-ooxml.py` runs every part of every memorandum type — filled and blank, one page and several — against the schema itself, and `verify.js` gates on it.
+
+That gate is not theoretical. It found the worst bug in the example:
+
+```
+FAIL word/document.xml: Element 'undefined': This element is not expected.
+```
+
+`ImportedXmlComponent.fromXmlString` returns the **document node**, not the element in it. Its `rootKey` is undefined, so serializing it writes a literal `<undefined>` wrapper around the real element — and every content control in the file shipped inside one. The wrapper is in no namespace and is legal nowhere. LibreOffice descended through it and rendered the slots correctly, which is exactly why eleven rendered-page measurements and a hundred OOXML assertions all passed while the file would not have opened in Word. `importXml()` unwraps it and checks the root name, so it fails loudly instead.
+
+**Schema order is not a style question either.** `w:settings` and `w:sdtPr` are both `xsd:sequence` (ECMA-376 Part 1, paras 17.15.1.78 and 17.5.2.38): every child has exactly one legal position, and LibreOffice accepts any order:
 
 - `w:documentProtection` belongs after `w:doNotTrackFormatting`, which puts it behind the `w:displayBackgroundShape` the generator already writes. It was being spliced in behind the opening tag. `insertSetting()` now places it before the first element that outranks it, so it stays correct as the generator's own settings change.
 - `w:sdtPr` is `rPr, alias, tag, id, lock, placeholder, temporary, showingPlcHdr`, then the type. Every content control now emits in that order, with a `w:id` hashed from the prompt — distinct within the document, and identical from one run to the next so the file stays reproducible.
 
-Both are asserted on the XML in `verify.js`, and both assertions were confirmed by reintroducing the fault and watching them fail.
+Both are asserted on the XML in `verify.js` as well as through the schema, and every one of these assertions was confirmed by reintroducing the fault and watching it fail — including the schema gate, which reports the part and the line:
+
+```
+FAIL word/settings.xml:1: Element 'displayBackgroundShape': This element is not expected.
+FAIL word/document.xml:1: Element 'rPr': This element is not expected. Expected is one of ( tag, id, lock, ... )
+```
+
+The schemas are not vendored — they are ISO's. Point `MEMO_OOXML_SCHEMAS` at a copy of the ISO/IEC 29500-4 XSDs, or leave it unset and they are looked for where the Claude `docx` skill keeps them. Without them, or without `lxml`, the script exits 3 and `verify.js` reports a skip rather than a pass:
+
+```
+  (no ISO/IEC 29500-4 schemas found; set MEMO_OOXML_SCHEMAS - skipping schema validation)
+  AR 25-50 layout verification: 551/551 checks passed.
+```
+
+A skip that reads as a pass is how a broken file ships, so the count visibly drops.
 
 ---
 
@@ -590,7 +616,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 551 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 553 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
