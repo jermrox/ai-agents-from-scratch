@@ -31,7 +31,7 @@ import {fileURLToPath} from "url";
 import {
     Document, Packer, Paragraph, TextRun, Tab, TabStopType, AlignmentType, PageBreak,
     LineRuleType, Header, Footer, PageNumber, ImageRun, UnderlineType,
-    CheckBox, convertInchesToTwip,
+    CheckBox, convertInchesToTwip, ImportedXmlComponent,
 } from "docx";
 
 import {
@@ -78,6 +78,42 @@ function tabRun() {
     return new TextRun({children: [new Tab()], font: TYPE.fontFamily, size: TYPE.fontSizePt * 2});
 }
 
+const xmlEscape = (t) => String(t).replace(/[&<>]/g,
+    (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+
+/** The run properties every run in this document carries. - paras 1-19, 1-20 */
+const RUN_PROPS = `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE.fontFamily}" w:cs="${TYPE.fontFamily}"/><w:sz w:val="${TYPE.fontSizePt * 2}"/><w:szCs w:val="${TYPE.fontSizePt * 2}"/></w:rPr>`;
+
+/**
+ * A value, or a click-to-type slot where one belongs.
+ *
+ * A supplied value is an ordinary run. An unsupplied one becomes a plain-text
+ * content control: it shows a grey prompt, it is a single click target, and
+ * typing replaces the whole prompt rather than editing around it. The slot
+ * carries the document's own run properties, so what you type comes out Arial
+ * 12 like everything else - and `lockFormatting()` means it cannot be changed
+ * to anything else.
+ *
+ * `w:lock="sdtContentLocked"` is deliberately NOT set: the point is that these
+ * are the parts you fill in. What is locked is the formatting, not the text.
+ */
+function slot(value, prompt) {
+    const text = value == null ? "" : String(value).trim();
+    if (text) return run(text);
+
+    return ImportedXmlComponent.fromXmlString(
+        `<w:sdt>` +
+        `<w:sdtPr>` +
+        `<w:alias w:val="${xmlEscape(prompt)}"/>` +
+        `<w:tag w:val="${xmlEscape(prompt)}"/>` +
+        RUN_PROPS +
+        `<w:showingPlcHdr/>` +
+        `<w:text/>` +
+        `</w:sdtPr>` +
+        `<w:sdtContent><w:r>${RUN_PROPS}<w:t xml:space="preserve">${xmlEscape(prompt)}</w:t></w:r></w:sdtContent>` +
+        `</w:sdt>`);
+}
+
 /** A regulation blank line. */
 function blankParagraph(count = 1) {
     return Array.from({length: count}, () => new Paragraph({spacing: SINGLE, children: [run("")]}));
@@ -114,11 +150,14 @@ function tabStopAfter(positionIn) {
  */
 function letterheadHeader(memo, sealImage) {
     const lh = memo.letterhead ?? {};
+    // "DEPARTMENT OF THE ARMY" is fixed; the three lines under it are the
+    // office's, and stay slots until it says what they are. - para 1-18
+    const upper = (v) => (v ? String(v).trim().toUpperCase() : "");
     const lines = [
         {text: LETTERHEAD.lines[0], sizePt: LETTERHEAD.titleSizePt},
-        {text: (lh.organization ?? LETTERHEAD.lines[1]).toUpperCase(), sizePt: LETTERHEAD.addressSizePt},
-        {text: (lh.streetAddress ?? LETTERHEAD.lines[2]).toUpperCase(), sizePt: LETTERHEAD.addressSizePt},
-        {text: (lh.cityStateZip ?? LETTERHEAD.lines[3]).toUpperCase(), sizePt: LETTERHEAD.addressSizePt},
+        {text: upper(lh.organization), prompt: "ORGANIZATION", sizePt: LETTERHEAD.addressSizePt},
+        {text: upper(lh.streetAddress), prompt: "STREET ADDRESS", sizePt: LETTERHEAD.addressSizePt},
+        {text: upper(lh.cityStateZip), prompt: "CITY, STATE ZIP+4", sizePt: LETTERHEAD.addressSizePt},
     ];
 
     const children = [];
@@ -153,12 +192,9 @@ function letterheadHeader(memo, sealImage) {
         children.push(new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO},
-            children: [new TextRun({
-                text: l.text,
-                font: TYPE.fontFamily,
-                size: l.sizePt * 2,
-                bold: true,
-            })],
+            children: [l.text
+                ? new TextRun({text: l.text, font: TYPE.fontFamily, size: l.sizePt * 2, bold: true})
+                : slot(null, l.prompt)],
         }));
     }
 
@@ -181,16 +217,14 @@ function continuationHeader(memo) {
             children: [
                 new Paragraph({
                     spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.sealTopIn)},
-                    children: [run(`SUBJECT: ${memo.subject ?? ""}`)],
+                    children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")],
                 }),
                 ...blankParagraph(SPACING.continuationSubjectToText.linesBelow - 1),
             ],
         });
     }
 
-    const symbol = memo.arimsRecordNumber
-        ? `${memo.officeSymbol} (${memo.arimsRecordNumber})`
-        : (memo.officeSymbol ?? "");
+    const symbol = memo.officeSymbol ?? "";
 
     return new Header({
         children: [
@@ -198,7 +232,7 @@ function continuationHeader(memo) {
                 spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.sealTopIn)},
                 children: [run(symbol)],
             }),
-            new Paragraph({spacing: SINGLE, children: [run(`SUBJECT: ${memo.subject ?? ""}`)]}),
+            new Paragraph({spacing: SINGLE, children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")]}),
             ...blankParagraph(SPACING.continuationSubjectToText.linesBelow - 1),
         ],
     });
@@ -208,16 +242,15 @@ function continuationHeader(memo) {
 // Heading
 // ---------------------------------------------------------------------------
 
-/** Office symbol at the left margin, date flush right on the same line. */
+/**
+ * Office symbol at the left margin, date flush right on the same line. The
+ * office symbol stands alone - no ARIMS record number is emitted.
+ */
 function officeSymbolParagraph(memo) {
-    const symbol = memo.officeSymbol ?? "OFFICE SYMBOL";
-    // "Place the record number one space after the office symbol in
-    //  parentheses." - para 2-4a(2)(b)
-    const withRecord = memo.arimsRecordNumber ? `${symbol} (${memo.arimsRecordNumber})` : symbol;
     return new Paragraph({
         spacing: SINGLE,
         tabStops: [{type: TabStopType.RIGHT, position: IN(TEXT_WIDTH_IN)}],
-        children: [run(withRecord), tabRun(), run(memo.date ?? formatMemoDate())],
+        children: [slot(memo.officeSymbol, "OFFICE SYMBOL"), tabRun(), slot(memo.date, "DATE")],
     });
 }
 
@@ -265,7 +298,7 @@ function agreementHeadingParagraphs(memo) {
     // "Type the word 'SUBJECT:' at the left margin on the second line below the
     //  last line of the agreeing agencies' titles." - para 2-6c(2)
     out.push(...blankParagraph(AGREEMENT_FORMAT.subjectLinesBelowAgencies - 1));
-    out.push(new Paragraph({spacing: SINGLE, children: [run(`SUBJECT: ${memo.subject ?? ""}`)]}));
+    out.push(new Paragraph({spacing: SINGLE, children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")]}));
     // "Begin the first line of text at the left margin on the third line below
     //  the last line of the subject." - para 2-6c(3)
     out.push(...blankParagraph(AGREEMENT_FORMAT.textLinesBelowSubject - 1));
@@ -445,7 +478,12 @@ function buildHeadingParagraphs(memo) {
             const personal = PERSONAL_ADDRESS_TYPES.includes(memo.type)
                 ? [addressees[0], memo.addresseeTitle, memo.addresseeAddress].filter(Boolean).join(", ")
                 : null;
-            out.push(addressParagraph(`${keyword} ${personal ?? styleAddress(addressees[0] ?? "")}`.trim()));
+            // No addressee yet: the label stands with a slot to click into.
+            const target = personal ?? (addressees[0] ? styleAddress(addressees[0]) : null);
+            out.push(target
+                ? addressParagraph(`${keyword} ${target}`)
+                : new Paragraph({spacing: SINGLE,
+                                 children: [run(`${keyword} `), slot(null, "ADDRESSEE")]}));
         } else {
             out.push(new Paragraph({spacing: SINGLE, children: [run(keyword)]}));
             out.push(...gapParagraphs(SPACING.memorandumForToFirstAddress));
@@ -454,7 +492,7 @@ function buildHeadingParagraphs(memo) {
     }
 
     out.push(...gapParagraphs(SPACING.addressToSubject));
-    out.push(new Paragraph({spacing: SINGLE, children: [run(`SUBJECT: ${memo.subject ?? ""}`)]}));
+    out.push(new Paragraph({spacing: SINGLE, children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")]}));
     out.push(...gapParagraphs(SPACING.subjectToBody));
     return out;
 }
@@ -609,7 +647,7 @@ function closingParagraphs(memo) {
         const children = [];
         if (left[i]) children.push(run(left[i].text));
         children.push(tabRun());
-        if (right[i]) children.push(run(right[i].text));
+        if (right[i]) children.push(right[i].slot ? slot(null, right[i].slot) : run(right[i].text));
         out.push(new Paragraph({
             spacing: SINGLE,
             tabStops: sigTab,
@@ -652,6 +690,13 @@ function closingParagraphs(memo) {
  */
 function signatureBlockLines(sig) {
     const resolved = resolveSignature(sig);
+
+    // Nothing supplied: the block is three click-to-type slots on the three
+    // lines para 6-4c gives it, so the space it occupies is already right.
+    if (!resolved.name && !resolved.gradeAndBranch && resolved.titleSegments.length === 0) {
+        return [{slot: "SIGNER NAME"}, {slot: "GRADE, BRANCH"}, {slot: "DUTY TITLE"}];
+    }
+
     const lines = [{text: resolved.name}];
     if (resolved.gradeAndBranch) lines.push({text: resolved.gradeAndBranch});
 

@@ -214,16 +214,16 @@ function buildLetterhead(memo, opts) {
     };
 }
 
-/** "OFFICE SYMBOL (25-50a)" with the date flush right on the same line. */
+/**
+ * The office symbol, with the date flush right on the same line. - 2-4a(1),
+ * 2-4a(3)(b)
+ *
+ * The office symbol stands alone. Para 2-4a(2)(b) would put an ARIMS record
+ * number one space after it in parentheses; this module does not emit one, by
+ * decision of whoever is using it, and carries no field for it.
+ */
 function officeSymbolLine(memo) {
-    const symbol = memo.officeSymbol ?? "OFFICE SYMBOL";
-    // "Place the record number one space after the office symbol in
-    //  parentheses." - para 2-4a(2)(b)
-    const withRecord = memo.arimsRecordNumber
-        ? `${symbol} (${memo.arimsRecordNumber})`
-        : symbol;
-    const date = memo.date ?? formatMemoDate();
-    return line(withRecord, {right: date, role: "office-symbol"});
+    return line(memo.officeSymbol ?? "", {right: memo.date ?? "", role: "office-symbol"});
 }
 
 function buildHeading(memo, opts) {
@@ -496,12 +496,22 @@ function buildClosing(memo, opts) {
     //  indenting 1/4 inch." - para 6-4c
     const sig = resolveSignature(memo.signature);
     const columnIn = TEXT_WIDTH_IN - sigIndent;
-    const rightColumn = [
-        {text: sig.name, indentIn: 0},
-        ...(sig.gradeAndBranch ? [{text: sig.gradeAndBranch, indentIn: 0}] : []),
-        // A title continuation starts indented; a new element starts flush.
-        ...sig.titleSegments.flatMap((seg) => wrapToColumn(seg.text, columnIn, opts, seg.continuation)),
-    ].map((r) => line(r.text, {indentIn: sigIndent + r.indentIn, role: "signature"}));
+
+    // Nothing supplied yet: the block still occupies the three lines para 6-4c
+    // gives it, so the space it will take is already on the page and the
+    // enclosure listing beside it lines up. Filling it in later moves nothing.
+    const rows = (sig.name || sig.gradeAndBranch || sig.titleSegments.length)
+        ? [
+            {text: sig.name, indentIn: 0},
+            ...(sig.gradeAndBranch ? [{text: sig.gradeAndBranch, indentIn: 0}] : []),
+            // A title continuation starts indented; a new element starts flush.
+            ...sig.titleSegments.flatMap((seg) =>
+                wrapToColumn(seg.text, columnIn, opts, seg.continuation)),
+        ]
+        : [{text: "", indentIn: 0}, {text: "", indentIn: 0}, {text: "", indentIn: 0}];
+
+    const rightColumn = rows.map((r) =>
+        line(r.text, {indentIn: sigIndent + r.indentIn, role: "signature"}));
 
     // Chapter 4 decides the whole shape of this listing, and it turns on
     // whether each enclosure was already identified in the body (para 4-2).
@@ -838,11 +848,8 @@ function continuationHeading(memo, opts) {
             ...blank(SPACING.continuationSubjectToText.linesBelow - 1),
         ];
     }
-    const symbol = memo.arimsRecordNumber
-        ? `${memo.officeSymbol} (${memo.arimsRecordNumber})`
-        : memo.officeSymbol;
     return [
-        line(symbol, {role: "office-symbol"}),
+        line(memo.officeSymbol ?? "", {role: "office-symbol"}),
         ...wrap(`SUBJECT: ${memo.subject ?? ""}`, {firstIndentIn: 0, wrapIndentIn: 0, opts, role: "subject"}),
         ...blank(SPACING.continuationSubjectToText.linesBelow - 1),
     ];

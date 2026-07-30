@@ -73,21 +73,24 @@ const SIGNATURE = {
  * office symbol flush with the right margin *after the memorandum has been
  * signed*"), and the signature block belongs to whoever ends up signing.
  *
- * So they default to placeholders rather than to a plausible-looking unit.
- * A memorandum that says [OFFICE SYMBOL] is obviously unfinished; one that
- * says ATZB-RC because that is what the demo used is wrong in a way nobody
- * notices until it has been staffed.
+ * They come back blank, not filled with something plausible. What the document
+ * carries is the *frame* - "DEPARTMENT OF THE ARMY", "MEMORANDUM FOR",
+ * "SUBJECT:", and the lines the signature block occupies - with nothing in the
+ * slots until somebody says what goes there.
+ *
+ * `letterhead` is an object of blanks rather than null, because null means
+ * something else: plain white paper, as an MFR requires (fig 2-17). Blank
+ * means the letterhead is there and nobody has filled it in yet.
  *
  * The layout does not depend on any of these values, so filling them in later
- * - in JSON, or by typing over them in Word - cannot move anything on the page.
+ * - in JSON, or by typing into the slots in Word - cannot move anything.
  */
 export function recordFieldPlaceholders() {
     return {
-        letterhead: {...LETTERHEAD},
-        officeSymbol: "[OFFICE SYMBOL]",
-        arimsRecordNumber: "[ARIMS RECORD NUMBER]",
-        date: "[DATE]",
-        signature: {...SIGNATURE},
+        letterhead: {organization: "", streetAddress: "", cityStateZip: ""},
+        officeSymbol: "",
+        date: "",
+        signature: {name: "", gradeAndBranch: "", title: ""},
     };
 }
 
@@ -95,7 +98,6 @@ export function recordFieldPlaceholders() {
 export const RECORD_FIELDS = [
     {path: "letterhead", label: "Letterhead", cite: "AR 25-50, paras 1-16 and 1-18"},
     {path: "officeSymbol", label: "Office symbol", cite: "AR 25-50, para 2-4a(1)"},
-    {path: "arimsRecordNumber", label: "ARIMS record number", cite: "AR 25-50, paras 1-5 and 2-4a(2)"},
     {path: "date", label: "Date", cite: "AR 25-50, para 2-4a(3)(b)"},
     {path: "signature", label: "Signature block", cite: "AR 25-50, paras 2-4c(2) and 6-4"},
 ];
@@ -107,7 +109,6 @@ function base(overrides = {}) {
         type: "standard",
         letterhead: {...LETTERHEAD},
         officeSymbol: "[OFFICE SYMBOL]",
-        arimsRecordNumber: "[ARIMS RECORD NUMBER]",
         date: formatMemoDate(),
         suspenseDate: null,
         addressStyle: "mixed",

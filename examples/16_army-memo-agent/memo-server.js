@@ -109,15 +109,13 @@ export function specFromForm(form = {}) {
     const context = {
         type,
         officeSymbol: filled(form.officeSymbol, record.officeSymbol),
-        arimsRecordNumber: filled(form.arimsRecordNumber, record.arimsRecordNumber),
         date: filled(form.date, record.date),
         suspenseDate: filled(form.suspenseDate, null),
         // An unsupplied addressee is a blank like any other, so it falls back
         // to the template's placeholder rather than to nothing. An MFR and an
         // agreement genuinely have no addressee (fig 2-17, para 2-6c(1)).
-        addressees: lines(form.addressees).length
-            ? lines(form.addressees)
-            : (template.addressees ?? []),
+        // Blank until told. The label is what the document carries.
+        addressees: lines(form.addressees),
         thru: lines(form.thru).length ? lines(form.thru) : (template.thru ?? []),
         enclosures: lines(form.enclosures),
         copiesFurnished: lines(form.copiesFurnished),
@@ -138,7 +136,7 @@ export function specFromForm(form = {}) {
     if (type === "record") context.authorityLine = null;
 
     const memo = assembleMemo({
-        subject: filled(form.subject, template.subject),
+        subject: String(form.subject ?? "").trim(),
         paragraphs: body.length ? body : template.paragraphs,
         addressees: context.addressees,
     }, context);
@@ -265,7 +263,6 @@ Range Control will complete the following work:
     <legend>Matters of record</legend>
     <p>Leave these blank and they come out as bracketed placeholders you type over in Word. Nothing on the page moves when you do — no measurement depends on what they say. The date is normally one of them: para 2-4a(3)(b) puts it on <em style="display:inline">after</em> the memorandum has been signed.</p>
     ${field("officeSymbol", "Office symbol", "para 2-4a(1)")}
-    ${field("arimsRecordNumber", "ARIMS record number", "paras 1-5 and 2-4a(2)")}
     ${field("date", "Date", `para 2-4a(3)(b) — today is ${formatMemoDate()}`)}
     ${field("suspenseDate", "Suspense date", "optional, para 2-4a(4)")}
     ${field("organization", "Letterhead organization", "paras 1-16 and 1-18")}

@@ -88,7 +88,6 @@ const OFFLINE_CONTEXT = {
         cityStateZip: "Fort Carson, CO  80913-4321",
     },
     officeSymbol: "ATZB-RC",
-    arimsRecordNumber: "25-50a",
     date: "17 July 2026",
     suspenseDate: "25 July 2026",
     authorityLine: "FOR THE COMMANDER:",

@@ -69,7 +69,6 @@ export function assembleMemo(content, context = {}) {
         type: context.type ?? "standard",
         letterhead: context.letterhead !== undefined ? context.letterhead : record.letterhead,
         officeSymbol: context.officeSymbol ?? record.officeSymbol,
-        arimsRecordNumber: context.arimsRecordNumber ?? record.arimsRecordNumber,
         date: context.date ?? record.date,
         suspenseDate: context.suspenseDate ?? null,
         addressStyle: context.addressStyle ?? "mixed",

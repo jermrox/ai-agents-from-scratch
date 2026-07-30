@@ -484,7 +484,9 @@ export function resolveSignature(sig = {}, correspondence = "memorandum") {
     // continuation; "Commanding" and the organization have their own fields so
     // they can stay flush without the caller having to know the difference.
     const isLetter = correspondence === "letter";
-    const rawName = String(sig?.name ?? "NAME");
+    // Unsupplied is empty, not a stand-in word. The renderers turn an empty
+    // block into click-to-type slots on the lines para 6-4c gives it.
+    const rawName = String(sig?.name ?? "");
     const segments = titleSegmentsOf(sig?.title);
     if (sig?.commanding) {
         const word = sig.acting ? "Acting Commander" : "Commanding";

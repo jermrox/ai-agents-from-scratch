@@ -1846,10 +1846,11 @@ const FIELD_TEMPLATE = {
             structured.findings.every((f) => f.rule !== "signature-case"),
             "AR 25-50, figs 2-1 through 2-5");
 
-        checkTrue("a signature with no name at all is still reported",
+        checkTrue("a signature with no name at all is reported as not yet supplied",
             validateMemo({...FIG_2_1, signature: {}})
-                .errors.some((f) => f.rule === "signature-missing"),
-            "AR 25-50, paras 2-4c(2) and 6-4");
+                .warnings.some((f) => f.rule === "not-yet-supplied"
+                    && f.message.startsWith("Signature block")),
+            "AR 25-50, paras 2-4c(2)(a) and 6-4c");
 
         // fig D-14: four of the seven blocks are a name and grade, no title.
         checkTrue("fig D-14: an NCO block with no title is not reported",
@@ -2230,20 +2231,31 @@ const FIELD_TEMPLATE = {
             && parseBody("1. Typed by hand.")[0].level === 0,
         "AR 25-50, para 2-4b(4)(b)");
 
-    // Every matter of record left blank comes back a placeholder, never a
-    // plausible-looking value.
+    /*
+     * Every matter of record left blank comes back *blank* - not filled with
+     * something plausible, and not filled with bracket text either. What the
+     * document carries is the frame; the slot stays empty until told.
+     */
     const blank = specFromForm({request: "tell the battalions the range closes"});
+    const isBlank = (v) => v == null || (typeof v === "string" && v.trim() === "")
+        || (typeof v === "object" && Object.values(v).every(isBlank));
     for (const {path, label} of (await import("./templates.js")).RECORD_FIELDS) {
         const value = path.split(".").reduce((o, k) => o?.[k], blank);
-        checkTrue(`${label} defaults to a placeholder, not a plausible value`,
-            hasPlaceholdersDeep(value), "AR 25-50");
+        checkTrue(`${label} defaults to blank, not to a plausible value`, isBlank(value), "AR 25-50");
     }
-    check("the date is a placeholder, because it goes on after signature",
-        blank.date, "[DATE]", "AR 25-50, para 2-4a(3)(b)");
-    checkTrue("an unfilled date is reported as unfilled",
-        validateMemo(blank).warnings.some(
-            (f) => f.rule === "unfilled-placeholder" && f.message.startsWith("date")),
-        "AR 25-50, para 2-4a(3)(b)");
+    check("the date is blank, because it goes on after signature",
+        blank.date, "", "AR 25-50, para 2-4a(3)(b)");
+
+    // Blank is reported as not yet supplied, with what it is and where it goes.
+    const pending = validateMemo(blank).warnings.filter((f) => f.rule === "not-yet-supplied");
+    for (const what of ["Office symbol", "Date", "Addressee", "Subject", "Signature block"]) {
+        checkTrue(`${what.toLowerCase()} is reported as not yet supplied`,
+            pending.some((f) => f.message.startsWith(what)), "AR 25-50");
+    }
+    checkTrue("every one of them says which paragraph puts it there",
+        pending.every((f) => /AR 25-50, para/.test(f.cite)), "AR 25-50");
+    checkTrue("and none of them is an error - the format is right, the value is absent",
+        validateMemo(blank).errors.length === 0, "AR 25-50");
 
     // Supplied values are used as given.
     const filled = specFromForm({
@@ -2326,6 +2338,8 @@ const FIELD_TEMPLATE = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "front end");
     {
         const JSZip = (await import("jszip")).default;
+        const {renderDocx: renderDocxFn} = await import("./memo-docx.js");
+        const zipOf = (buf) => JSZip.loadAsync(buf);
         const zip = await JSZip.loadAsync(Buffer.from(await docx.arrayBuffer()));
         const xml = await zip.file("word/document.xml").async("string");
         const styles = await zip.file("word/styles.xml").async("string");
@@ -2338,10 +2352,46 @@ const FIELD_TEMPLATE = {
             /<w:documentProtection w:formatting="1" w:enforcement="1"\/>/.test(settings)
                 && !/w:edit="readOnly"/.test(settings),
             "AR 25-50, paras 1-19 and 2-3");
-        checkTrue("the placeholders reach the file as ordinary editable text",
-            [...xml.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)]
-                .some((m) => m[1].includes("[OFFICE SYMBOL]")),
-            "AR 25-50, para 2-4a(1)");
+        /*
+         * An unsupplied value is a plain-text content control: a single click
+         * target with a grey prompt, which typing replaces whole. The point of
+         * `w:showingPlcHdr` is that it is not text you have to select and
+         * delete around - and the absence of `w:lock` is what makes it fillable
+         * at all. Formatting stays locked by lockFormatting(); the text does
+         * not.
+         */
+        // Rendered from a memorandum with nothing but its body, so every
+        // matter of record is still a slot.
+        const bare = await zipOf(await renderDocxFn(
+            {paragraphs: [{text: "Range 14 closes for maintenance in August 2026."}]}));
+        const bareXml = await bare.file("word/document.xml").async("string");
+        const slots = [...bareXml.matchAll(/<w:alias w:val="([^"]+)"/g)].map((m) => m[1]);
+
+        for (const [name, cite] of [
+            ["OFFICE SYMBOL", "AR 25-50, para 2-4a(1)"],
+            ["DATE", "AR 25-50, para 2-4a(3)(b)"],
+            ["ADDRESSEE", "AR 25-50, para 2-4a(5)"],
+            ["SUBJECT", "AR 25-50, para 2-4a(6)"],
+            ["SIGNER NAME", "AR 25-50, para 6-4c"],
+            ["GRADE, BRANCH", "AR 25-50, para 6-4c"],
+            ["DUTY TITLE", "AR 25-50, para 6-4c"],
+        ]) {
+            checkTrue(`an unsupplied ${name.toLowerCase()} is a click-to-type slot`,
+                slots.includes(name), cite);
+        }
+        checkTrue("each slot shows a prompt rather than empty space",
+            (bareXml.match(/<w:showingPlcHdr\/>/g) ?? []).length >= slots.length, "front end");
+        checkTrue("no slot is content-locked - these are the parts you fill in",
+            !/<w:lock w:val="sdtContentLocked"/.test(bareXml), "front end");
+        checkTrue("every slot carries the document's own type",
+            (bareXml.match(new RegExp(`<w:sz w:val="${TYPE.fontSizePt * 2}"/>`, "g")) ?? []).length
+                >= slots.length, TYPE_CITE);
+        checkTrue("a supplied value is ordinary text, not a slot",
+            [...(await (await zipOf(await renderDocxFn({...FIG_2_1})))
+                .file("word/document.xml").async("string"))
+                .matchAll(/<w:alias w:val="([^"]+)"/g)].map((m) => m[1])
+                .includes("SUBJECT") === false,
+            "AR 25-50, para 2-4a(6)");
     }
 
     const spec = await (await post("/spec")).json();

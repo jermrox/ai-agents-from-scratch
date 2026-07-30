@@ -94,19 +94,13 @@ const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
 
 function checkHeading(memo, out) {
     if (!memo.officeSymbol && !isAgreement(memo) && !memo.abbreviated) {
-        out.push(error("content", "office-symbol-missing",
-            "The heading has no office symbol. It identifies the writer's office and is the first element of the heading.",
+        out.push(warn("content", "not-yet-supplied",
+            "Office symbol. Its slot is on the first line of the heading, with the date flush right beside it.",
             "AR 25-50, para 2-4a(1)"));
     } else if (/\s{2,}/.test(memo.officeSymbol)) {
         out.push(warn("content", "office-symbol-crowded",
             "Do not crowd the office symbol line; if the additional information is lengthy, use a second line flush with the left margin.",
             "AR 25-50, para 2-4a(1)"));
-    }
-
-    if (!memo.arimsRecordNumber && !isAgreement(memo) && !memo.abbreviated) {
-        out.push(warn("content", "arims-missing",
-            "No ARIMS record number. Agencies place the appropriate Army record number in parentheses one space after the office symbol (for example, ISES-RM (25-50a)).",
-            "AR 25-50, paras 1-5 and 2-4a(2)"));
     }
 
     // The abbreviated MFR of figure 2-17 note 7 omits the office symbol, and
@@ -116,9 +110,11 @@ function checkHeading(memo, out) {
     if (memo.abbreviated) {
         // no date line to check
     } else if (!memo.date) {
-        out.push(error("content", "date-missing",
-            "Memorandums must be dated.",
-            "AR 25-50, para 2-4a(3)(a)"));
+        // Para 2-4a(3)(b) puts the date on "after the memorandum has been
+        // signed", so blank is the normal state of a draft, not a defect.
+        out.push(warn("content", "not-yet-supplied",
+            "Date. Its slot is flush right on the office symbol line, and it goes on after the memorandum is signed.",
+            "AR 25-50, para 2-4a(3)(b)"));
     } else if (hasPlaceholders(memo.date)) {
         // A placeholder is an unfilled field, not a malformed one, and
         // checkPlaceholders already reports it. Complaining about its *format*
@@ -144,8 +140,8 @@ function checkHeading(memo, out) {
 
     const addressees = memo.addressees ?? [];
     if (addressees.length === 0 && !memo.seeDistribution && memo.type !== "record" && memo.type !== "mou" && memo.type !== "moa") {
-        out.push(error("content", "no-addressee",
-            "No addressee. Write to the office that is expected to complete the action.",
+        out.push(warn("content", "not-yet-supplied",
+            "Addressee. Its slot follows MEMORANDUM FOR. Write to the office that is expected to complete the action.",
             "AR 25-50, para 2-4a(5)"));
     }
 
@@ -305,7 +301,8 @@ function checkSubject(memo, out) {
     }
     const subject = (memo.subject ?? "").trim();
     if (!subject) {
-        out.push(error("content", "subject-missing", "The memorandum has no subject line.",
+        out.push(warn("content", "not-yet-supplied",
+            "Subject. Its slot follows \"SUBJECT:\" on the second line below the address.",
             "AR 25-50, para 2-4a(6)"));
         return;
     }
@@ -795,9 +792,9 @@ function checkClosing(memo, out) {
                 "AR 25-50, para 2-6c(5)"));
         }
     } else if (!suppliedName) {
-        out.push(error("content", "signature-missing",
-            "The closing has no signature block.",
-            "AR 25-50, paras 2-4c(2) and 6-4"));
+        out.push(warn("content", "not-yet-supplied",
+            "Signature block. Its three slots are at the centre of the page on the fifth line below the text.",
+            "AR 25-50, paras 2-4c(2)(a) and 6-4c"));
     } else if (sig.name !== sig.name.toUpperCase()) {
         out.push(error("format", "signature-case",
             "The name in a memorandum signature block is typed in all uppercase letters.",
@@ -807,7 +804,8 @@ function checkClosing(memo, out) {
     // Figure D-14 shows four noncommissioned officer blocks with no title at
     // all, so the title is only expected where the block is not a bare
     // name-and-grade pair.
-    if (sig.titleSegments.length === 0 && !isEnlisted(raw.signer?.grade) && !isAgreement(memo)) {
+    if (suppliedName && sig.titleSegments.length === 0
+        && !isEnlisted(raw.signer?.grade) && !isAgreement(memo)) {
         out.push(warn("content", "signature-title-missing",
             "The signature block gives no title.",
             "AR 25-50, para 6-4"));
@@ -1095,7 +1093,6 @@ function checkSignatureFormalities(memo, out) {
 function checkPlaceholders(memo, out) {
     const spots = findPlaceholders({
         officeSymbol: memo.officeSymbol,
-        arimsRecordNumber: memo.arimsRecordNumber,
         // The date is the placeholder most likely to survive to the staffing
         // folder, because para 2-4a(3)(b) means it is *supposed* to be blank
         // until the memorandum is signed. That makes reporting it more
