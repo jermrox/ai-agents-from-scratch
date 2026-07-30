@@ -37,6 +37,7 @@ import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
 import {createTemplate, describeTemplates, recordFieldPlaceholders, RECORD_FIELDS} from "./templates.js";
 import {detectMemoType, assembleMemo, runMemoAgent} from "./memo-intent.js";
 import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
+import {loadOffices, findOffice, officeRecordFields, OFFICES_PATH, OFFICE_CITE} from "./offices.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,8 +94,13 @@ const lines = (text) => String(text ?? "").split("\n").map((l) => l.trim()).filt
  * [OFFICE SYMBOL] is obviously unfinished, while one that says ATZB-RC because
  * that is what the demo used is wrong in a way nobody notices.
  */
-export function specFromForm(form = {}) {
+export function specFromForm(form = {}, offices = []) {
     const record = recordFieldPlaceholders();
+
+    // The office of record supplies its own symbol, ARIMS number and
+    // letterhead together, because they are one fact about one office
+    // (paras 2-4a(1), 2-4a(2), 1-18). Picking it beats typing three fields.
+    const office = officeRecordFields(findOffice(offices, form.office));
     const type = form.type && MEMO_TYPES[form.type] ? form.type : detectMemoType(form.request ?? "");
     const template = createTemplate(type);
 
@@ -108,8 +114,9 @@ export function specFromForm(form = {}) {
 
     const context = {
         type,
-        officeSymbol: filled(form.officeSymbol, record.officeSymbol),
-        arimsRecordNumber: filled(form.arimsRecordNumber, record.arimsRecordNumber),
+        officeSymbol: filled(form.officeSymbol, office.officeSymbol ?? record.officeSymbol),
+        arimsRecordNumber: filled(form.arimsRecordNumber,
+            office.arimsRecordNumber ?? record.arimsRecordNumber),
         date: filled(form.date, record.date),
         suspenseDate: filled(form.suspenseDate, null),
         // An unsupplied addressee is a blank like any other, so it falls back
@@ -133,7 +140,7 @@ export function specFromForm(form = {}) {
             organization: filled(form.organization, record.letterhead.organization),
             streetAddress: filled(form.streetAddress, record.letterhead.streetAddress),
             cityStateZip: filled(form.cityStateZip, record.letterhead.cityStateZip),
-        } : record.letterhead),
+        } : (office.letterhead ?? record.letterhead)),
     };
     if (type === "record") context.authorityLine = null;
 
@@ -160,10 +167,13 @@ export function specFromForm(form = {}) {
 
 const TYPES = describeTemplates();
 
+const escapeAttr = (s) => String(s).replace(/[&<>"]/g,
+    (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
 const field = (id, label, hint = "") =>
     `<label for="${id}">${label}${hint ? `<em>${hint}</em>` : ""}</label><input id="${id}" name="${id}">`;
 
-const page = () => `<!doctype html>
+const page = (offices = []) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AR 25-50 memorandum</title>
@@ -264,6 +274,14 @@ Range Control will complete the following work:
   <fieldset>
     <legend>Matters of record</legend>
     <p>Leave these blank and they come out as bracketed placeholders you type over in Word. Nothing on the page moves when you do — no measurement depends on what they say. The date is normally one of them: para 2-4a(3)(b) puts it on <em style="display:inline">after</em> the memorandum has been signed.</p>
+
+    <label for="office">Office of record<em>Its symbol, ARIMS number and letterhead are one fact about one office — pick it rather than typing three fields</em></label>
+    <select id="office" name="office">
+      <option value="">${offices.length ? "Not from the directory — type them below" : "No office directory configured"}</option>
+      ${offices.map((o) => `<option value="${escapeAttr(o.id)}" data-symbol="${escapeAttr(o.officeSymbol ?? "")}" data-arims="${escapeAttr(o.arimsRecordNumber ?? "")}" data-org="${escapeAttr(o.letterhead?.organization ?? "")}" data-street="${escapeAttr(o.letterhead?.streetAddress ?? "")}" data-czip="${escapeAttr(o.letterhead?.cityStateZip ?? "")}">${escapeAttr(o.name)}${o.officeSymbol ? ` — ${escapeAttr(o.officeSymbol)}` : ""}</option>`).join("")}
+    </select>
+    <p class="detected" id="officenote">${offices.length ? "" : `Nothing at <span class="rule">${escapeAttr(OFFICES_PATH)}</span>. AR 25-50 publishes no directory of office symbols (para 2-4a(1) only says what one is), so this is your organization's to supply — or type the fields below.`}</p>
+
     ${field("officeSymbol", "Office symbol", "para 2-4a(1)")}
     ${field("arimsRecordNumber", "ARIMS record number", "paras 1-5 and 2-4a(2)")}
     ${field("date", "Date", `para 2-4a(3)(b) — today is ${formatMemoDate()}`)}
@@ -372,6 +390,24 @@ fetch("/health").then((r) => r.json()).then((h) => {
     escapeHtml(h.model.path) + "</span>. Write the words yourself \u2014 everything else works.";
 }).catch(() => {});
 
+// The office supplies the fields it owns. They stay visible so you can see
+// what you are sending, and go back to being yours the moment you pick "not
+// from the directory".
+const OFFICE_FIELDS = {symbol: "officeSymbol", arims: "arimsRecordNumber",
+                       org: "organization", street: "streetAddress", czip: "cityStateZip"};
+$("office").addEventListener("change", () => {
+  const opt = $("office").selectedOptions[0];
+  const picked = Boolean($("office").value);
+  for (const [key, id] of Object.entries(OFFICE_FIELDS)) {
+    const el = $(id);
+    if (picked) { el.value = opt.dataset[key] || ""; el.readOnly = true; el.style.opacity = ".6"; }
+    else { el.readOnly = false; el.style.opacity = ""; }
+  }
+  $("officenote").textContent = picked
+    ? "Office symbol, ARIMS number and letterhead come from the directory entry."
+    : "";
+});
+
 $("f").addEventListener("submit", (e) => { e.preventDefault(); generate(); });
 $("dl").addEventListener("click", () => download("/docx", "memorandum.docx"));
 $("spec").addEventListener("click", () => download("/spec", "memorandum.json"));
@@ -430,11 +466,22 @@ function withServedSeal(memo, host) {
  *   memo-drafter.js. This is the seam a different backend plugs into, and it
  *   is what lets the drafting route be tested without a model on disk.
  */
-export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
+export function createMemoServer({seal, modelPath, drafter: injected, offices: injectedOffices} = {}) {
+    // Read once at start, so the page and every request see the same
+    // directory. A missing file is not an error - it means nobody has
+    // configured one, and the record fields stay placeholders.
+    let officesPromise = null;
+    const offices = () => (injectedOffices
+        ? Promise.resolve(injectedOffices)
+        : (officesPromise ??= loadOffices().catch((err) => {
+            console.error(`Office directory: ${err.message}`);
+            return [];
+        })));
+
     return http.createServer(async (req, res) => {
         try {
             if (req.method === "GET" && (req.url === "/" || req.url.startsWith("/?"))) {
-                return send(res, 200, "text/html; charset=utf-8", page());
+                return send(res, 200, "text/html; charset=utf-8", page(await offices()));
             }
             // Browsers ask for this unprompted; answering keeps a 404 out of
             // every console that opens the page.
@@ -453,6 +500,9 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
             }
             if (req.method === "GET" && req.url === "/types") {
                 return json(res, 200, TYPES);
+            }
+            if (req.method === "GET" && req.url === "/offices") {
+                return json(res, 200, {path: OFFICES_PATH, cite: OFFICE_CITE, offices: await offices()});
             }
             if (req.method === "GET" && req.url === "/seal.png") {
                 const png = await fs.readFile(seal ?? DEFAULT_SEAL_PATH);
@@ -486,7 +536,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 }
 
                 const type = detectMemoType(form.type && MEMO_TYPES[form.type] ? form.type : request);
-                const context = {...specFromForm({...form, body: "", subject: ""}), type};
+                const context = {...specFromForm({...form, body: "", subject: ""}, await offices()), type};
                 let passes = 0;
 
                 const {memo: drafted, result} = await drafter.withSession((draft) => runMemoAgent({
@@ -513,7 +563,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 return json(res, 200, {type, title: meta.title, cite: meta.cite});
             }
 
-            const memo = specFromForm(form);
+            const memo = specFromForm(form, await offices());
             const meta = MEMO_TYPES[memo.type] ?? MEMO_TYPES.standard;
 
             if (req.url === "/generate") {

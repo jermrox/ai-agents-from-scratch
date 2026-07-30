@@ -1,6 +1,6 @@
 # Code explanation: `army-memo-agent.js`
 
-Twelve files, each with one job:
+Thirteen files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
@@ -13,6 +13,7 @@ Twelve files, each with one job:
 | `memo-validator.js` | Compliance checks. Every finding cites AR 25-50 and is tagged `content` or `format`. |
 | `memo-intent.js` | Request &rarr; memorandum type; content + facts of record &rarr; a spec; the draft/validate/repair loop. |
 | `memo-drafter.js` | The drafting model as a service: loaded once, one job at a time, no context bleed. |
+| `offices.js` | The office of record: symbol, ARIMS number and letterhead, picked rather than typed. |
 | `memo-server.js` | **The front end.** A page that takes a request and returns a checked memorandum and a Word file. |
 | `army-memo-agent.js` | The CLI. |
 | `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
@@ -277,13 +278,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-510 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+524 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 510/510 checks passed.
+# AR 25-50 layout verification: 524/524 checks passed.
 ```
 
 ---
@@ -526,7 +527,7 @@ Node's own `http` module, one page, no framework and no network. It makes the di
 | --- | --- |
 | **What do you need** | `detectMemoType()` reads the memorandum type out of it (para 2-2). Override it if the guess is wrong; the guess is always shown. |
 | **Your words** | Subject and body — the only things a person actually writes. |
-| **Matters of record** | Office symbol, ARIMS number, date, letterhead, signature block. |
+| **Matters of record** | Picked from the office directory, or left as placeholders. |
 
 Everything else — every measurement on the page — is not on the form, because none of it is a choice.
 
@@ -579,7 +580,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 510 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 524 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
