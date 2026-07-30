@@ -1096,6 +1096,39 @@ const FIELD_TEMPLATE = {
     check("the office symbol is the 2d line below the letterhead",
         Number(((LH.officeSymbolTopIn - letterheadEndsIn) / lineIn).toFixed(3)) + 1, 2,
         "AR 25-50, para 2-4a(1) and fig 2-2");
+
+    /*
+     * A continuation page's text belongs on the third line below the subject
+     * (para 2-5c), which is half a line lower than where page 1's body starts.
+     * One section carries one top margin, so OOXML expresses the difference
+     * the only way it can: the running head is taller than the margin, and
+     * Word pushes the body down by exactly the excess.
+     *
+     * That is asserted here rather than on a rendered page because LibreOffice
+     * rounds the push to a whole line and Word does not, and Word is what the
+     * file is for. Page 1 - where no header overflows anything, so the two
+     * renderers cannot disagree - is measured on the rendered page instead.
+     *
+     * Two alternatives were tried and rejected. Setting the margin to the
+     * continuation position and shortening the running head puts page 1's
+     * office symbol half a line low. Pulling it back with negative
+     * space-before is valid OOXML, and made LibreOffice drop page 1's body
+     * altogether. Relying on the header overflow is what OOXML is for.
+     */
+    const {SPACING: SP} = await import("./ar25-50.js");
+    const runningHeadLines = 2 + (SP.continuationSubjectToText.linesBelow - 1);
+    const contBody = LH.continuationBodyFrom(runningHeadLines);
+
+    check("the running head is the office symbol, the subject, and the 2-5c gap",
+        runningHeadLines, 4, "AR 25-50, paras 2-5a through 2-5c");
+    check("continuation text lands on the 3d line below the subject",
+        Number(((contBody - (1.0 + lineIn)) / lineIn).toFixed(2)), 3,
+        "AR 25-50, para 2-5c");
+    checkTrue("which requires the running head to overflow the top margin",
+        contBody > LH.officeSymbolTopIn, "AR 25-50, paras 2-5a through 2-5c");
+    check("by exactly the half line the two positions differ by",
+        Number(((contBody - LH.officeSymbolTopIn) / lineIn).toFixed(2)), 0.5,
+        "AR 25-50, paras 2-4a(1) and 2-5c");
 }
 
 {

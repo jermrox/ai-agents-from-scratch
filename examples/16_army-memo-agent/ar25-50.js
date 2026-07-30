@@ -226,6 +226,31 @@ export const LETTERHEAD = {
     },
     officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2",
 
+    /*
+     * Where a continuation page's text begins: the office symbol 1 inch from
+     * the top (para 2-5a), the subject on the line below (2-5b), and text on
+     * the third line below the subject (2-5c).
+     *
+     * This is half a line lower than page 1's body start, and a .docx section
+     * has one top margin. OOXML expresses the difference through the header:
+     * a header taller than the top margin pushes the body down by the excess,
+     * which is exactly the half line wanted. So the continuation header
+     * carries the 2-5c gap as trailing blank lines and the margin stays at
+     * page 1's position - see continuationBodyFrom() for the arithmetic, and
+     * memo-docx.js for why nothing cleverer works.
+     */
+    continuationBodyCite: "AR 25-50, paras 2-5a through 2-5c",
+
+    /**
+     * Where the body starts on a continuation page, computed the way Word
+     * computes it: the top margin, or the bottom of the header when the header
+     * is taller. `headerLines` counts the running head's own lines.
+     */
+    continuationBodyFrom(headerLines) {
+        const line = this.lineHeightPt / 72;
+        return Math.max(this.officeSymbolTopIn, 1.0 + headerLines * line);
+    },
+
     // Letterhead point size.
     //
     // AR 25-50 does not publish one. Para 1-19 delegates the choice: "Army
