@@ -805,26 +805,43 @@ const FIG_2_1 = {
 
     // One uniform size, letterhead included. Para 1-19 leaves the size to the
     // organization, and this one sets 12 pt throughout.
-    check("type: the letterhead title is 12 pt, like everything else",
-        LETTERHEAD.titleSizePt, T.fontSizePt, LETTERHEAD.letterheadSizeCite);
-    check("type: the letterhead organization block is 12 pt",
-        LETTERHEAD.addressSizePt, T.fontSizePt, LETTERHEAD.letterheadSizeCite);
+    /*
+     * The letterhead is printed stationery, not typed text, and figure 2-1
+     * measures it at 10 pt for the title and 8 pt for the organization block.
+     * Setting it to the body's 12 pt makes the block 0.22 in taller, which
+     * pushes it down the page and closes up the gap above the office symbol -
+     * the geometry that is asserted against the figure further down.
+     */
+    check("type: the letterhead title is 10 pt, as figure 2-1 measures it",
+        LETTERHEAD.titleSizePt, 10, LETTERHEAD.letterheadSizeCite);
+    check("type: the letterhead organization block is 8 pt",
+        LETTERHEAD.addressSizePt, 8, LETTERHEAD.letterheadSizeCite);
 
-    // Twelve point is the *only* size in the file - body, letterhead, running
-    // heads, and every latent style Word ships. Not "nothing above 12": one
-    // size, everywhere.
-    const {LEGACY_LETTERHEAD_SIZES} = await import("./ar25-50.js");
+    /*
+     * Twelve point is the ceiling and the body's only size. The rule the user
+     * set is "Arial 12, never higher", so this asserts both halves: nothing in
+     * the file is above 12, and everything a writer types is exactly 12. The
+     * letterhead's 10 and 8 are the only sizes below it, and they are named
+     * rather than tolerated.
+     */
+    const letterheadSizes = [LETTERHEAD.titleSizePt, LETTERHEAD.addressSizePt];
     for (const [type, sizes] of Object.entries(inventory)) {
-        check(`type: ${type} contains exactly one type size, and it is 12 pt`,
-            sizes, [T.fontSizePt], T.maxSizeCite);
+        checkTrue(`type: nothing in ${type} is above 12 pt`,
+            sizes.every((s) => s <= T.maxSizePt), T.maxSizeCite);
+        check(`type: ${type} carries only body 12 pt and the letterhead's own sizes`,
+            sizes.filter((s) => s !== T.fontSizePt && !letterheadSizes.includes(s)),
+            [], T.maxSizeCite);
+        checkTrue(`type: ${type} sets the body at 12 pt`,
+            sizes.includes(T.fontSizePt), T.maxSizeCite);
     }
 
-    // The older template's smaller letterhead is still available, and still
+    // A letterhead set in the body's 12 pt is still available, and still
     // below the ceiling.
-    checkTrue("type: the legacy letterhead sizes remain available and compliant",
-        LEGACY_LETTERHEAD_SIZES.titleSizePt < T.maxSizePt
-        && LEGACY_LETTERHEAD_SIZES.addressSizePt < T.maxSizePt,
-        LEGACY_LETTERHEAD_SIZES.cite);
+    const {UNIFORM_LETTERHEAD_SIZES} = await import("./ar25-50.js");
+    checkTrue("type: a uniform 12 pt letterhead remains available and compliant",
+        UNIFORM_LETTERHEAD_SIZES.titleSizePt <= T.maxSizePt
+        && UNIFORM_LETTERHEAD_SIZES.addressSizePt <= T.maxSizePt,
+        UNIFORM_LETTERHEAD_SIZES.cite);
 
     // Asking for larger type is an error, not an advisory.
     checkTrue("type: a request for type above the ceiling is rejected",
@@ -1151,35 +1168,39 @@ const FIELD_TEMPLATE = {
         convertInchesToTwip(LH.officeSymbolTopIn), LH.officeSymbolTopCite);
 
     /*
-     * The office symbol's position is a relationship, not an absolute: "the
-     * second line below the seal" (para 2-4a(1)). It is derived from the
-     * letterhead's own height so that relationship holds no matter what the
-     * letterhead contains - an absolute inch chosen independently cannot, and
-     * an earlier one did not.
+     * The office symbol's position used to be derived - "the second line below
+     * the seal" (para 2-4a(1)), counted in the body's 13.8 pt lines. That was
+     * wrong, and wrong in a way that could not be caught by rendering: the
+     * letterhead is not set in the body's 12 pt, so its four lines are not four
+     * body lines, and the derived position came out half a line high. The same
+     * bad line height was then used to check it, and it agreed with itself.
+     *
+     * So the position is measured off the figure instead, and asserted against
+     * the figure - see the rendered-page block near the end of this file, which
+     * puts our ink tops next to figure 2-1's. What is asserted here is that the
+     * letterhead block ends above the office symbol with room to spare, which
+     * is the relationship that has to survive an office supplying long lines.
      */
     const lineIn = LH.lineHeightPt / 72;
-    const letterheadEndsIn = LH.sealTopIn + (1 + LH.letterheadLines) * lineIn;
-    check("the office symbol is the 2d line below the letterhead",
-        Number(((LH.officeSymbolTopIn - letterheadEndsIn) / lineIn).toFixed(3)) + 1, 2,
-        "AR 25-50, para 2-4a(1) and fig 2-2");
+    const letterheadEndsIn = LH.letterheadTopIn
+        + (LETTERHEAD.titleSizePt + 3 * LETTERHEAD.addressSizePt) * 1.15 / 72;
+    checkTrue("the letterhead block clears the office symbol",
+        letterheadEndsIn < LH.officeSymbolTopIn, LH.officeSymbolTopCite);
+    checkTrue("and the seal clears it too - it is the lowest thing in the letterhead",
+        LH.sealTopIn + LH.sealDiameterIn < LH.officeSymbolTopIn, LH.sealGeometryCite);
 
     /*
      * A continuation page's text belongs on the third line below the subject
-     * (para 2-5c), which is half a line lower than where page 1's body starts.
-     * One section carries one top margin, so OOXML expresses the difference
-     * the only way it can: the running head is taller than the margin, and
-     * Word pushes the body down by exactly the excess.
+     * (para 2-5c). One section carries one top margin, so page 1's office
+     * symbol and a continuation page's text have to live at the same height.
      *
-     * That is asserted here rather than on a rendered page because LibreOffice
-     * rounds the push to a whole line and Word does not, and Word is what the
-     * file is for. Page 1 - where no header overflows anything, so the two
-     * renderers cannot disagree - is measured on the rendered page instead.
-     *
-     * Two alternatives were tried and rejected. Setting the margin to the
-     * continuation position and shortening the running head puts page 1's
-     * office symbol half a line low. Pulling it back with negative
-     * space-before is valid OOXML, and made LibreOffice drop page 1's body
-     * altogether. Relying on the header overflow is what OOXML is for.
+     * They now do, to within a fifteenth of a line, which is the happy result
+     * of measuring page 1 rather than deriving it: 1.78 in against 1.767. When
+     * page 1 was derived at 1.670 these were half a line apart and the
+     * difference had to be smuggled in through header overflow - Word pushing
+     * the body down by the excess. That is no longer needed, and the two
+     * alternatives tried back then are recorded in memo-docx.js so nobody
+     * reaches for them again.
      */
     const {SPACING: SP} = await import("./ar25-50.js");
     const runningHeadLines = 2 + (SP.continuationSubjectToText.linesBelow - 1);
@@ -1188,12 +1209,10 @@ const FIELD_TEMPLATE = {
     check("the running head is the office symbol, the subject, and the 2-5c gap",
         runningHeadLines, 4, "AR 25-50, paras 2-5a through 2-5c");
     check("continuation text lands on the 3d line below the subject",
-        Number(((contBody - (1.0 + lineIn)) / lineIn).toFixed(2)), 3,
-        "AR 25-50, para 2-5c");
-    checkTrue("which requires the running head to overflow the top margin",
-        contBody > LH.officeSymbolTopIn, "AR 25-50, paras 2-5a through 2-5c");
-    check("by exactly the half line the two positions differ by",
-        Number(((contBody - LH.officeSymbolTopIn) / lineIn).toFixed(2)), 0.5,
+        Math.round((contBody - (1.0 + lineIn)) / lineIn), 3, "AR 25-50, para 2-5c");
+    checkTrue("and within a fifteenth of a line of where page 1's body starts,"
+        + " so one top margin serves both",
+        Math.abs(contBody - LH.officeSymbolTopIn) / lineIn < 0.07,
         "AR 25-50, paras 2-4a(1) and 2-5c");
 }
 
@@ -3018,9 +3037,44 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
             [Number(page.w.toFixed(2)), Number(page.h.toFixed(2))], [8.5, 11], "AR 25-50, para 2-3a");
         checkTrue("rendered: the body sits at the 1-inch left margin",
             near(lineLeft("Weapons qualification"), 1.0, 0.02), "AR 25-50, para 2-3c");
-        checkTrue("rendered: the office symbol is 2 lines below the last letterhead line",
-            near((at("ATZB-RC").y - at("CITY, STATE").y) / LINE, 2, 0.15),
-            "AR 25-50, para 2-4a(1)");
+        /*
+         * The letterhead and the office symbol are checked against figure 2-1
+         * itself, in absolute inches, rather than as a count of body lines.
+         *
+         * A line count was what went wrong before: the letterhead is 10 pt and
+         * 8 pt, so counting its four lines as four 13.8 pt body lines put the
+         * office symbol half a line high, and the check counted them the same
+         * wrong way and agreed. An absolute position measured off the figure
+         * cannot agree with a mistake in the model that produced it.
+         *
+         * Figure 2-1 rasterised at 150 px/in and calibrated on the seal - a
+         * known 0.95 in square 0.52 in from the top and left edges of the page,
+         * so it is a ruler printed on the figure. The calibration checks out
+         * against a value the regulation does state: it puts the left margin at
+         * 1.005 in. These are ink tops, in inches from the top edge.
+         */
+        const FIG_2_1 = {
+            letterheadTitle: 0.580,
+            lastLetterheadLine: 0.992,
+            // 1.809 as measured; figure 2-1's office symbol line carries
+            // "(ARIMS Record Number)", and Arial's parenthesis rises about
+            // 0.006 in above cap height, so a line of plain capitals starts
+            // there.
+            officeSymbol: 1.815,
+        };
+        const inkTop = (sub) => {
+            const r = at(sub);
+            return r.y - 0.716 * r.s / 72;      // Arial cap height is 0.716 em
+        };
+        const FIG_CITE = "measured from AR 25-50, fig 2-1";
+
+        checkTrue("rendered: the letterhead title is where figure 2-1 puts it",
+            near(inkTop("DEPARTMENT OF THE ARMY"), FIG_2_1.letterheadTitle, 0.02), FIG_CITE);
+        checkTrue("rendered: the last letterhead line is where figure 2-1 puts it",
+            near(inkTop("CITY, STATE"), FIG_2_1.lastLetterheadLine, 0.02), FIG_CITE);
+        checkTrue("rendered: the office symbol is where figure 2-1 puts it",
+            near(inkTop("ATZB-RC"), FIG_2_1.officeSymbol, 0.03),
+            `${FIG_CITE}; para 2-4a(1)`);
         checkTrue("rendered: MEMORANDUM FOR is the 3d line below the office symbol",
             near((at("MEMORANDUM FOR").y - at("ATZB-RC").y) / LINE, 3, 0.15),
             "AR 25-50, para 2-4a(5)");
@@ -3037,8 +3091,16 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
             "AR 25-50, para 2-4c(3)");
         checkTrue("rendered: a subparagraph indents a quarter inch",
             near(lineLeft("Submit a revised") - 1.0, 0.25, 0.02), "AR 25-50, fig 2-1");
-        check("rendered: one type size on the page",
-            [...new Set(page.runs.map((r) => Math.round(r.s)))], [12], TYPE_CITE);
+        // "Arial 12, never higher." Nothing on the page is above 12, the text
+        // is 12, and the only sizes below it are the letterhead's own.
+        const onPage = [...new Set(page.runs.map((r) => Math.round(r.s)))].sort((a, b) => a - b);
+        check("rendered: the page carries body 12 pt and the letterhead's 10 and 8",
+            onPage, [LETTERHEAD.addressSizePt, LETTERHEAD.titleSizePt, TYPE.fontSizePt]
+                .sort((a, b) => a - b), TYPE_CITE);
+        checkTrue("rendered: nothing on the page is above 12 pt",
+            onPage.every((s) => s <= TYPE.maxSizePt), TYPE_CITE);
+        checkTrue("rendered: the memorandum's own text is 12 pt",
+            Math.round(at("Weapons qualification").s) === TYPE.fontSizePt, TYPE_CITE);
 
         await fsp.rm(dir, {recursive: true, force: true});
     }

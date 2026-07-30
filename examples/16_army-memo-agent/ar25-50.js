@@ -201,30 +201,37 @@ export const LETTERHEAD = {
     sealLeftIn: 0.52,
     sealGeometryCite: "measured from AR 25-50, figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
 
-    // Where the body starts on page 1.
+    // Where the letterhead block itself begins, and where the body starts on
+    // page 1.
     //
     // "Type the office symbol on the second line below the seal." - para
     // 2-4a(1), and "Type the OFFICE SYMBOL at the left margin, two lines below
-    // the seal" - fig 2-2. So this is stated, not a matter of taste.
+    // the seal" - fig 2-2.
     //
-    // It is derived from the letterhead rather than measured off the figures,
-    // because what the rule fixes is a *relationship*: the office symbol sits
-    // two lines below the last thing above it. An absolute inch set
-    // independently of where the letterhead actually ends cannot hold that
-    // relationship, and did not - rendering the .docx and measuring the page
-    // put the office symbol 2.66 lines below the last letterhead line instead
-    // of 2.
+    // Both numbers are measured off the figures, not derived from a line count,
+    // and there is a history behind that. Deriving them assumed the letterhead
+    // was set in the body's 12 pt, so its four lines were taken to be four 13.8
+    // pt lines. They are not: the letterhead is 10 pt and 8 pt (see
+    // titleSizePt below), so the derived office symbol landed half a line high
+    // - 1.670 in against the 1.775 in figure 2-1 actually shows. Rendering the
+    // page could not catch it either, because the same wrong line height was
+    // used to check it.
     //
-    // The letterhead block begins at the seal's own top offset and occupies
-    // one line for the seal plus one for each letterhead line; "second line
-    // below" then means one blank line after it.
+    // Rasterising figure 2-1 at 150 px/in and calibrating on the seal - which
+    // is a known 0.95 in square 0.52 in from the top and left edges, so it is a
+    // ruler printed on every letterhead figure - gives, as line-box tops:
+    //
+    //     letterhead title     0.554 in    (ink top 0.580)
+    //     office symbol        1.775 in    (ink top 1.809)
+    //     left margin          1.005 in    - a known value, so the calibration
+    //                                        checks out against the regulation
+    //
+    // These are that measurement, rounded to a hundredth.
+    letterheadTopIn: 0.55,
+    officeSymbolTopIn: 1.78,
     letterheadLines: 4,
     lineHeightPt: 13.8,          // Word single spacing for 12 pt Arial
-    get officeSymbolTopIn() {
-        const line = this.lineHeightPt / 72;
-        return this.sealTopIn + (1 + this.letterheadLines + 1) * line;
-    },
-    officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2",
+    officeSymbolTopCite: "measured from AR 25-50, fig 2-1; para 2-4a(1) and fig 2-2",
 
     /*
      * Where a continuation page's text begins: the office symbol 1 inch from
@@ -270,10 +277,32 @@ export const LETTERHEAD = {
     //     closer than about 1.5 pt either way.
     //
     // Neither is a rule. Set `titleSizePt`/`addressSizePt` from
-    // LEGACY_LETTERHEAD_SIZES to follow the older template.
-    titleSizePt: 12,
-    addressSizePt: 12,
-    letterheadSizeCite: "AR 25-50, para 1-19 - the organization sets the size; 12 pt throughout by default",
+    // UNIFORM_LETTERHEAD_SIZES to set the letterhead in the body's 12 pt.
+    //
+    // Resolved by measurement. The note above was written from a 70 px/in
+    // render, at which the figures genuinely cannot pin a point size. At 150
+    // px/in they can: rasterising figure 2-1 and measuring cap heights against
+    // the seal gives 0.106 in for the title and 0.080 in for the three address
+    // lines, and Arial's cap height is 0.716 em, so
+    //
+    //     title    0.106 / 0.716 = 0.148 in = 10.7 pt
+    //     address  0.080 / 0.716 = 0.112 in =  8.1 pt
+    //
+    // and the line pitches agree: 0.153 in between the title and the first
+    // address line (an 11.5 pt line, so 10 pt type), 0.129 in between the
+    // address lines (a 9.2 pt line, so 8 pt). That lands on the 2009 template's
+    // 10 and 8 exactly, from two independent measurements, so the two sources
+    // are not in conflict after all.
+    //
+    // This is not the body type and para 1-19 does not govern it: the
+    // letterhead is printed stationery, and every line of the memorandum a
+    // writer actually types stays at 12 pt. Setting it to 12 makes the
+    // letterhead block 0.22 in taller than the regulation's - about one and a
+    // sixth lines - which pushes the whole block down and closes up the gap
+    // above the office symbol.
+    titleSizePt: 10,
+    addressSizePt: 8,
+    letterheadSizeCite: "measured from AR 25-50, fig 2-1; para 1-19 leaves body type to the organization",
 
     // The 2009 template also carries "REPLY TO / ATTENTION OF" at 6 pt. Para
     // 1-16b(1) says that block is not required, so it is not rendered.
@@ -289,16 +318,17 @@ export const LETTERHEAD = {
 };
 
 /**
- * The smaller letterhead sizes measured from the 2009 field template, for an
- * office that still sets its letterhead that way. Not a rule - para 1-19
- * leaves the size to the organization.
+ * A letterhead set in the body's 12 pt throughout, for an office that wants it
+ * that way. Not what the figures show - see LETTERHEAD.titleSizePt - and it
+ * makes the letterhead block 0.22 in taller, which moves everything above the
+ * office symbol down with it.
  *
- *   renderDocx(memo, {letterhead: LEGACY_LETTERHEAD_SIZES})
+ *   renderDocx(memo, {letterhead: UNIFORM_LETTERHEAD_SIZES})
  */
-export const LEGACY_LETTERHEAD_SIZES = {
-    titleSizePt: 10,
-    addressSizePt: 8,
-    cite: "measured from an Army unit memorandum template (HHC/ESB, 9 December 2009)",
+export const UNIFORM_LETTERHEAD_SIZES = {
+    titleSizePt: 12,
+    addressSizePt: 12,
+    cite: "AR 25-50, para 1-19 - the organization sets the size",
 };
 
 /**

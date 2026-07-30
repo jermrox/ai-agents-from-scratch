@@ -81,8 +81,17 @@ function tabRun() {
 const xmlEscape = (t) => String(t).replace(/[&<>]/g,
     (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
 
-/** The run properties every run in this document carries. - paras 1-19, 1-20 */
-const RUN_PROPS = `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE.fontFamily}" w:cs="${TYPE.fontFamily}"/><w:sz w:val="${TYPE.fontSizePt * 2}"/><w:szCs w:val="${TYPE.fontSizePt * 2}"/></w:rPr>`;
+/**
+ * The run properties a run carries. - paras 1-19, 1-20
+ *
+ * The size is a parameter only because the letterhead is set smaller than the
+ * body (LETTERHEAD.titleSizePt). Every run a writer types is TYPE.fontSizePt.
+ */
+const runProps = (sizePt = TYPE.fontSizePt) =>
+    `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE.fontFamily}" w:cs="${TYPE.fontFamily}"/>` +
+    `<w:sz w:val="${sizePt * 2}"/><w:szCs w:val="${sizePt * 2}"/></w:rPr>`;
+
+const RUN_PROPS = runProps();
 
 /**
  * A hand-written XML fragment, as a component the document can hold.
@@ -140,21 +149,22 @@ function slotId(prompt) {
  * content" and offers to repair the file - LibreOffice accepts it either way,
  * so a rendered page cannot catch this. It is asserted in verify.js instead.
  */
-function slot(value, prompt) {
+function slot(value, prompt, sizePt = TYPE.fontSizePt) {
     const text = value == null ? "" : String(value).trim();
-    if (text) return run(text);
+    if (text) return run(text, sizePt === TYPE.fontSizePt ? {} : {size: sizePt * 2});
 
+    const props = runProps(sizePt);
     return importXml(
         `<w:sdt>` +
         `<w:sdtPr>` +
-        RUN_PROPS +
+        props +
         `<w:alias w:val="${xmlEscape(prompt)}"/>` +
         `<w:tag w:val="${xmlEscape(prompt)}"/>` +
         `<w:id w:val="${slotId(prompt)}"/>` +
         `<w:showingPlcHdr/>` +
         `<w:text/>` +
         `</w:sdtPr>` +
-        `<w:sdtContent><w:r>${RUN_PROPS}<w:t xml:space="preserve">${xmlEscape(prompt)}</w:t></w:r></w:sdtContent>` +
+        `<w:sdtContent><w:r>${props}<w:t xml:space="preserve">${xmlEscape(prompt)}</w:t></w:r></w:sdtContent>` +
         `</w:sdt>`,
         "w:sdt");
 }
@@ -205,43 +215,45 @@ function letterheadHeader(memo, sealImage) {
         {text: upper(lh.cityStateZip), prompt: "CITY, STATE ZIP+4", sizePt: LETTERHEAD.addressSizePt},
     ];
 
-    const children = [];
+    /*
+     * The seal is anchored to the page, not laid out in the flow, so the
+     * centred text block is not pushed off centre by it - the figures centre
+     * the organization block on the page, not on the space beside the seal.
+     *
+     * It rides in the *first letterhead paragraph* rather than one of its own.
+     * A paragraph of its own still occupies a line, even though the image in it
+     * is floating, and that line pushed the whole letterhead 0.19 in down the
+     * page for no reason - figure 2-1 puts the title at 0.554 in and it was
+     * landing at 0.747.
+     */
+    const sealRun = sealImage ? [new ImageRun({
+        data: sealImage,
+        type: "png",
+        // Exactly 0.95 inch square at the measured offsets - the artwork is
+        // placed, never scaled to taste.
+        // Not rounded: 0.95 in is 91.2 px, and rounding to 91 would render the
+        // seal 0.002 in small.
+        transformation: {
+            width: LETTERHEAD.sealDiameterIn * PX_PER_IN,
+            height: LETTERHEAD.sealDiameterIn * PX_PER_IN,
+        },
+        floating: {
+            horizontalPosition: {offset: Math.round(LETTERHEAD.sealLeftIn * EMU_PER_IN)},
+            verticalPosition: {offset: Math.round(LETTERHEAD.sealTopIn * EMU_PER_IN)},
+            behindDocument: false,
+        },
+    })] : [];
 
-    // The seal is anchored so the centred text block is not pushed off centre
-    // by it - the figures centre the organization block on the page, not on
-    // the space beside the seal.
-    if (sealImage) {
-        children.push(new Paragraph({
-            spacing: {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO},
-            children: [new ImageRun({
-                data: sealImage,
-                type: "png",
-                // Exactly 0.95 inch square at the measured offsets - the
-                // artwork is placed, never scaled to taste.
-                // Not rounded: 0.95 in is 91.2 px, and rounding to 91 would
-                // render the seal 0.002 in small.
-                transformation: {
-                    width: LETTERHEAD.sealDiameterIn * PX_PER_IN,
-                    height: LETTERHEAD.sealDiameterIn * PX_PER_IN,
-                },
-                floating: {
-                    horizontalPosition: {offset: Math.round(LETTERHEAD.sealLeftIn * EMU_PER_IN)},
-                    verticalPosition: {offset: Math.round(LETTERHEAD.sealTopIn * EMU_PER_IN)},
-                    behindDocument: false,
-                },
-            })],
-        }));
-    }
-
-    for (const l of lines) {
-        children.push(new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO},
-            children: [l.text
+    const children = lines.map((l, i) => new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: {before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO},
+        children: [
+            ...(i === 0 ? sealRun : []),
+            l.text
                 ? new TextRun({text: l.text, font: TYPE.fontFamily, size: l.sizePt * 2, bold: true})
-                : slot(null, l.prompt)],
-        }));
-    }
+                : slot(null, l.prompt, l.sizePt),
+        ],
+    }));
 
     return new Header({children});
 }
@@ -261,7 +273,7 @@ function continuationHeader(memo) {
         return new Header({
             children: [
                 new Paragraph({
-                    spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.sealTopIn)},
+                    spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.letterheadTopIn)},
                     children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")],
                 }),
                 ...blankParagraph(SPACING.continuationSubjectToText.linesBelow - 1),
@@ -274,7 +286,7 @@ function continuationHeader(memo) {
     return new Header({
         children: [
             new Paragraph({
-                spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.sealTopIn)},
+                spacing: {...SINGLE, before: IN(1.0 - LETTERHEAD.letterheadTopIn)},
                 children: [run(symbol)],
             }),
             new Paragraph({spacing: SINGLE, children: [run("SUBJECT: "), slot(memo.subject, "SUBJECT")]}),
@@ -843,7 +855,7 @@ export async function renderDocx(memo, options = {}) {
                     top: IN(hasLetterhead
                         ? (options.letterheadHeightIn ?? LETTERHEAD.officeSymbolTopIn)
                         : 1.0),
-                    header: IN(LETTERHEAD.sealTopIn),
+                    header: IN(LETTERHEAD.letterheadTopIn),
                     footer: IN(LAYOUT.marginBottomIn - LINE_HEIGHT_IN),
                 },
             },

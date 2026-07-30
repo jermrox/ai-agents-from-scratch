@@ -279,13 +279,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-553 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+569 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 553/553 checks passed.
+# AR 25-50 layout verification: 569/569 checks passed.
 ```
 
 ---
@@ -473,15 +473,11 @@ The signature column landing on 4.25 in independently is the one worth noting: p
 
 ## 16) Type: Arial 12, and only Arial 12
 
-Para 1-19a: *"A font with a point size of 12 is recommended."* Para 1-19 also delegates the choice — *"Army senior leaders will determine the font size and type his or her organization will use"* — so the size is the organization's call, and this one sets **12 pt throughout, letterhead included**.
+Para 1-19a: *"A font with a point size of 12 is recommended."* Para 1-19 also delegates the choice — *"Army senior leaders will determine the font size and type his or her organization will use"* — so the size of the **body** is the organization's call, and this one sets 12 pt for every line a writer types.
 
-Twelve is therefore both the size and the ceiling. `verify.js` asserts the strong form: not "nothing above 12", but **12 is the only type size present in the file** — body, letterhead, running heads, and every latent style.
+Twelve is the size and the ceiling. `verify.js` asserts both halves: **nothing in the file is above 12 pt**, and **the memorandum's own text is exactly 12 pt** — body, running heads, and every latent style Word ships.
 
-```
-standard  every size in the file: [12.0]
-record    every size in the file: [12.0]
-decision  every size in the file: [12.0]
-```
+The letterhead is the one thing below it, and that is measured, not chosen. See the next section.
 
 **Getting there took removing two layers of Word's defaults.** `docx-js` ships `Title` at 28 pt and `Heading 1`/`Heading 2` at 16/13 pt in every document, plus footnote and endnote styles at 10 pt. Nothing in a memorandum applied any of them, so the rendered page always looked right — which is exactly why it went unnoticed. But under a formatting lock that deliberately permits text editing, an oversized latent style is a live route to a non-compliant document: one click in the style gallery. All of them are now levelled:
 
@@ -493,20 +489,48 @@ footnoteText: {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
 endnoteText:  {run: {font: TYPE.fontFamily, size: TYPE.fontSizePt * 2}},
 ```
 
-**What the older sources show, kept for reference.** Two independent sources set the letterhead *smaller* than the body:
+**The letterhead is 10 pt and 8 pt, and that is a measurement.** This was wrong for a long time, and the reason it stayed wrong is worth recording: the figures were read at ~70 px/inch, at which they genuinely cannot pin a point size closer than ±1.5 pt, so the note said "not a rule" and the letterhead was set to a uniform 12 pt like everything else.
 
-| Source | Title line | Organization block |
-| --- | --- | --- |
-| 2009 field template (embedded font data) | 10 pt | 8 pt |
-| AR 25-50 figures (measured ink height) | visibly smaller than body — but at ~70 px/inch these cannot pin a size closer than ±1.5 pt |
+Rasterised at 150 px/inch they can. Calibrating on the seal — a known 0.95 inch square 0.52 inch from the top and left edges, so it is a ruler printed on every letterhead figure — figure 2-1 gives cap heights of 0.106 in for the title and 0.080 in for the three address lines. Arial's cap height is 0.716 em:
 
-Neither is a rule; AR 25-50 publishes no letterhead point size. They are preserved as `LEGACY_LETTERHEAD_SIZES` for an office that still sets its letterhead that way:
+| | measured ink | ÷ 0.716 | line pitch | implies |
+| --- | --- | --- | --- | --- |
+| Title | 0.106 in | 10.7 pt | 0.153 in (11.5 pt line) | **10 pt** |
+| Organization block | 0.080 in | 8.1 pt | 0.129 in (9.2 pt line) | **8 pt** |
+
+Two independent measurements — cap height and line pitch — landing on the 2009 field template's 10 and 8 exactly. The two sources were never in conflict; the render was just too coarse to see it. The calibration checks out against a value the regulation *does* state: it puts the left margin at 1.005 in.
+
+This is not the body type and para 1-19 does not govern it. The letterhead is printed stationery; every line a writer types stays at 12 pt. A uniform 12 pt letterhead is still one line away for an office that wants it:
 
 ```javascript
-renderDocx(memo, {letterhead: LEGACY_LETTERHEAD_SIZES})
+renderDocx(memo, {letterhead: UNIFORM_LETTERHEAD_SIZES})
 ```
 
+— but it costs 0.22 inch of extra height, which pushes the whole block down the page and closes up the gap above the office symbol. That is the next section.
+
 Asking for type above the ceiling is an **error**. The only non-Arial run in any document is the decision memorandum's checkbox glyph, which Word implements in `MS Gothic`.
+
+---
+
+## 16a) The office symbol, and what a derived measurement cost
+
+Para 2-4a(1) says the office symbol goes *"on the second line below the seal"*, and for a while this code took that literally and **derived** the position: the seal's top offset, plus one line for the seal, plus one for each of the four letterhead lines, plus one more. Clean, self-consistent, and wrong — because "line" was taken to be the body's 13.8 pt, and the letterhead's lines are 11.5 pt and 9.2 pt. The derived answer came out **1.670 in** where figure 2-1 shows **1.775 in**: half a line high.
+
+What makes this worth writing down is that *nothing could catch it*. The rendered-page check counted body lines from the last letterhead line and got 2.00 — because the renderer and the check shared the same wrong line height and agreed with each other. A measurement derived from a model can only ever confirm the model.
+
+Both numbers are now measured off the figure and asserted against the figure, in absolute inches from the top edge of the page:
+
+| | figure 2-1 | ours |
+| --- | --- | --- |
+| Letterhead title | 0.580 in | 0.580 in |
+| Organization | 0.733 in | 0.733 in |
+| Street address | 0.866 in | 0.860 in |
+| City, state, ZIP | 0.992 in | 0.993 in |
+| Office symbol | 1.809 in | 1.827 in |
+
+The office symbol's last 0.018 in is the parentheses in figure 2-1's *"OFFICE SYMBOL (ARIMS Record Number)"*, which rise about 0.006 in above cap height; against a line of plain capitals the gap is 0.012 in, a sixteenth of a line.
+
+Two smaller things fell out of fixing it. The seal used to sit in a paragraph of its own, and an empty paragraph still occupies a line even when the image in it is floating — that line was pushing the whole letterhead 0.19 in down the page. It now rides in the first letterhead paragraph. And page 1's body start (1.78 in) and a continuation page's (1.767 in) are now a fifteenth of a line apart instead of half a line, so one section's top margin serves both and the header-overflow trick documented below is no longer load-bearing.
 
 ---
 
@@ -616,7 +640,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 553 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 569 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
