@@ -38,6 +38,7 @@ import {
     EXCLUSIVE_FOR,
     PERSONAL_ADDRESS_TYPES,
     normalizeZipSpacing,
+    MFR_ABBREVIATED,
 } from "./ar25-50.js";
 
 import {breakLines, measureTextIn} from "./text-metrics.js";
@@ -228,6 +229,14 @@ function officeSymbolLine(memo) {
 function buildHeading(memo, opts) {
     const out = [];
 
+    // The abbreviated MFR is written at the foot of somebody else's page, so
+    // it has no office symbol and no subject line - just the acronym, with the
+    // text on the second line below it. - fig 2-17 note 7
+    if (memo.type === "record" && memo.abbreviated) {
+        out.push(line(MFR_ABBREVIATED.keyword, {role: "memorandum-for"}));
+        return out;
+    }
+
     // Suspense date: flush right, bold, two lines above the date line. - 2-4a(4)
     if (memo.suspenseDate) {
         out.push(line("", {right: `S: ${memo.suspenseDate}`, bold: true, role: "suspense"}));
@@ -245,6 +254,21 @@ function buildHeading(memo, opts) {
         role: "subject",
     }));
     return out;
+}
+
+/**
+ * The gap between the heading and the first line of text.
+ *
+ * Normally that is measured from the subject line - "Begin the first line of
+ * text on the third line below the last line of the subject" (para 2-4b(1)).
+ * The abbreviated MFR has no subject line to measure from, so note 7 of figure
+ * 2-17 measures from the acronym instead: "Begin typing the text two lines
+ * below MFR."
+ */
+function headingToBody(memo) {
+    return memo.type === "record" && memo.abbreviated
+        ? MFR_ABBREVIATED.keywordToText
+        : SPACING.subjectToBody;
 }
 
 /**
@@ -747,7 +771,7 @@ function paginate(headingLines, bodyBlocks, closingLines, memo, opts) {
     };
 
     push(headingLines);
-    push(blank(SPACING.subjectToBody.linesBelow - 1));
+    push(blank(headingToBody(memo).linesBelow - 1));
 
     bodyBlocks.forEach((block, i) => {
         const remaining = capacity - current.length;
@@ -853,7 +877,7 @@ export function layoutMemo(memo, options = {}) {
     // than against pages - a page break must not be able to invalidate them.
     const flow = [
         ...heading,
-        ...blank(SPACING.subjectToBody.linesBelow - 1),
+        ...blank(headingToBody(memo).linesBelow - 1),
         ...bodyBlocks.flatMap((b, i) =>
             i < bodyBlocks.length - 1
                 ? [...b.lines, ...blank(SPACING.betweenParagraphs.linesBelow - 1)]

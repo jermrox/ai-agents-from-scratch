@@ -58,6 +58,7 @@ import {
     countHqdaPrincipals,
     SEPARATE_COVER,
     bodyMentionsEnclosure,
+    MFR_ABBREVIATED,
 } from "./ar25-50.js";
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
@@ -92,7 +93,7 @@ const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
 // ---------------------------------------------------------------------------
 
 function checkHeading(memo, out) {
-    if (!memo.officeSymbol && !isAgreement(memo)) {
+    if (!memo.officeSymbol && !isAgreement(memo) && !memo.abbreviated) {
         out.push(error("content", "office-symbol-missing",
             "The heading has no office symbol. It identifies the writer's office and is the first element of the heading.",
             "AR 25-50, para 2-4a(1)"));
@@ -102,13 +103,19 @@ function checkHeading(memo, out) {
             "AR 25-50, para 2-4a(1)"));
     }
 
-    if (!memo.arimsRecordNumber && !isAgreement(memo)) {
+    if (!memo.arimsRecordNumber && !isAgreement(memo) && !memo.abbreviated) {
         out.push(warn("content", "arims-missing",
             "No ARIMS record number. Agencies place the appropriate Army record number in parentheses one space after the office symbol (for example, ISES-RM (25-50a)).",
             "AR 25-50, paras 1-5 and 2-4a(2)"));
     }
 
-    if (!memo.date) {
+    // The abbreviated MFR of figure 2-17 note 7 omits the office symbol, and
+    // para 2-4a(3)(b) puts the date "on the same line as the office symbol" -
+    // so removing that line removes the date's line with it. The correspondence
+    // the MFR is written on carries the date.
+    if (memo.abbreviated) {
+        // no date line to check
+    } else if (!memo.date) {
         out.push(error("content", "date-missing",
             "Memorandums must be dated.",
             "AR 25-50, para 2-4a(3)(a)"));
@@ -292,6 +299,10 @@ function checkProtocol(addressees, out) {
 }
 
 function checkSubject(memo, out) {
+    // "Omit the office symbol and subject line." - fig 2-17 note 7
+    if (memo.abbreviated) {
+        return;
+    }
     const subject = (memo.subject ?? "").trim();
     if (!subject) {
         out.push(error("content", "subject-missing", "The memorandum has no subject line.",
@@ -697,6 +708,33 @@ function checkInternalAddressing(memo, out) {
             `${principals} of the addressees are HQDA principal officials. Figure 2-8 addresses them as one line, "${HQDA_PRINCIPALS_COLLECTIVE.text}", which para B-2 defines as all the positions in figure B-2.`,
             HQDA_PRINCIPALS_COLLECTIVE.cite));
     }
+}
+
+/**
+ * The abbreviated MFR of figure 2-17 note 7 - written at the foot of somebody
+ * else's correspondence. It is the only memorandum in chapter 2 that carries
+ * neither an office symbol nor a subject line, so the ordinary heading checks
+ * would demand both.
+ */
+function checkAbbreviatedMfr(memo, out) {
+    if (!memo.abbreviated) return;
+
+    if (memo.type !== "record") {
+        out.push(error("content", "abbreviated-not-mfr",
+            `Only a memorandum for record has an abbreviated form; this is a ${memo.type} memorandum.`,
+            MFR_ABBREVIATED.cite));
+        return;
+    }
+    for (const field of MFR_ABBREVIATED.omits) {
+        if (memo[field] && !hasPlaceholders(memo[field])) {
+            out.push(error("content", "abbreviated-mfr-extra-field",
+                `An abbreviated MFR omits the ${field === "officeSymbol" ? "office symbol" : "subject line"}; "${memo[field]}" was supplied.`,
+                MFR_ABBREVIATED.cite));
+        }
+    }
+    out.push(warn("content", "abbreviated-mfr-placement",
+        `An abbreviated MFR begins ${MFR_ABBREVIATED.linesBelowPrecedingCorrespondence} lines below the last line of the correspondence it is written on. Nothing above it belongs to this memorandum.`,
+        MFR_ABBREVIATED.cite));
 }
 
 function checkPostscript(paragraphs, out) {
@@ -1108,6 +1146,7 @@ export function validateMemo(memo, options = {}) {
     checkDigitalSignature(memo, out);
     checkTabbing(memo, out);
     checkInternalAddressing(memo, out);
+    checkAbbreviatedMfr(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

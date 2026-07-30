@@ -1185,6 +1185,29 @@ export const APPENDIX_F = {
 export const DATE_AFTER_SIGNATURE_CITE = "AR 25-50, para 2-4a(3)(b)";
 
 /**
+ * The abbreviated memorandum for record, from note 7 of figure 2-17:
+ *
+ *   "Use an abbreviated form when MFRs are placed on the bottom of a piece of
+ *    existing correspondence. Begin typing two lines below the last line of the
+ *    preceding correspondence and abbreviate MEMORANDUM FOR RECORD by typing
+ *    the acronym MFR. Omit the office symbol and subject line. Begin typing the
+ *    text two lines below MFR."
+ *
+ * It is the one memorandum in chapter 2 with no office symbol and no subject
+ * line, and the only place the acronym MFR is authorized in the document
+ * itself rather than in prose about it. Nothing above it belongs to this
+ * memorandum - it is written on somebody else's page - so the renderer starts
+ * at the top of its own block and the two-line gap is the drafter's to leave.
+ */
+export const MFR_ABBREVIATED = {
+    keyword: "MFR",
+    linesBelowPrecedingCorrespondence: 2,
+    keywordToText: {linesBelow: 2, cite: "AR 25-50, fig 2-17 note 7"},
+    omits: ["officeSymbol", "subject"],
+    cite: "AR 25-50, fig 2-17 note 7",
+};
+
+/**
  * Chapter 3 defines a second vehicle - the letter - and para 3-2 assigns it a
  * fixed audience:
  *

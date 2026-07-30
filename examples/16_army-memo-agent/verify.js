@@ -2356,6 +2356,111 @@ const FIELD_TEMPLATE = {
 }
 
 // ---------------------------------------------------------------------------
+// The memorandum for record, both forms
+// ---------------------------------------------------------------------------
+
+/*
+ * Figure 2-17 states its own rules in its own body text, so each check below
+ * quotes the numbered paragraph of the figure it comes from rather than a
+ * reading of it.
+ */
+{
+    const {MFR_ABBREVIATED} = await import("./ar25-50.js");
+
+    const mfr = {
+        type: "record",
+        officeSymbol: "OFFICE SYMBOL", arimsRecordNumber: "ARIMS Record Number",
+        date: "3 March 2020",
+        subject: "Preparing a Memorandum for Record",
+        paragraphs: [{text: "Type the MFR on plain white paper."},
+                     {text: "My point of contact is Mr. Smith, 719-555-0142, a@army.mil."}],
+        signature: {name: "NAME", gradeAndBranch: "Major, AG", title: "Chief, Reassignment Branch"},
+        enclosures: ["One enclosure"],
+    };
+    const doc = layoutMemo(mfr);
+    const at = (role) => doc.flow.findIndex((l) => l.role === role);
+
+    // fig 2-17 para 1: "Type the MFR on plain white paper."
+    check("fig 2-17: an MFR is on plain white paper", doc.hasLetterhead, false, "AR 25-50, fig 2-17");
+
+    // fig 2-17 para 2: "Type the words MEMORANDUM FOR RECORD in uppercase at
+    // the left margin on the third line below the office symbol."
+    check("fig 2-17: MEMORANDUM FOR RECORD is on the 3d line below the office symbol",
+        at("memorandum-for") - at("office-symbol"), 3, "AR 25-50, fig 2-17");
+    check("fig 2-17: and is uppercase at the left margin",
+        [doc.flow[at("memorandum-for")].text, doc.flow[at("memorandum-for")].indentIn],
+        ["MEMORANDUM FOR RECORD", 0], "AR 25-50, fig 2-17");
+
+    // fig 2-17 para 3: "Type SUBJECT: in uppercase at the left margin on the
+    // second line below MEMORANDUM FOR RECORD. Type the subject of the MFR
+    // beginning one space after the colon."
+    check("fig 2-17: SUBJECT is on the 2d line below MEMORANDUM FOR RECORD",
+        at("subject") - at("memorandum-for"), 2, "AR 25-50, fig 2-17");
+    check("fig 2-17: the subject begins one space after the colon",
+        doc.flow[at("subject")].text, "SUBJECT: Preparing a Memorandum for Record",
+        "AR 25-50, fig 2-17");
+    checkTrue("fig 2-17: the subject itself is not forced to uppercase",
+        doc.flow[at("subject")].text.includes("Preparing a Memorandum for Record"),
+        "AR 25-50, fig 2-17");
+
+    // fig 2-17 para 4: "Begin the text on the third line below the last line
+    // of the subject."
+    check("fig 2-17: the text begins on the 3d line below the subject",
+        at("paragraph") - at("subject"), 3, "AR 25-50, fig 2-17");
+
+    // fig 2-17 para 6: "Do not use an authority line."
+    checkTrue("fig 2-17: an MFR carries no authority line",
+        doc.flow.every((l) => l.role !== "authority-line"), "AR 25-50, fig 2-17");
+
+    // The figure's own margin numerals: 1..5 to the signature block, with the
+    // digital signature placeholder on 3 and Encl beside NAME on 5.
+    const lastText = doc.flow.map((l, i) => (l.role === "paragraph" ? i : -1)).filter((i) => i >= 0).pop();
+    const sigRow = doc.flow.findIndex((l) => l.role === "enclosure-label" || l.role === "signature");
+    check("fig 2-17: the signature block is on the 5th line below the last line of text",
+        sigRow - lastText, 5, "AR 25-50, fig 2-17");
+    check("fig 2-17: Encl sits at the left margin beside the signer's name",
+        [doc.flow[sigRow].text, doc.flow[sigRow].indentIn, doc.flow[sigRow].sameLine?.text],
+        ["Encl", 0, "NAME"], "AR 25-50, fig 2-17 and para 2-4c(3)");
+
+    /*
+     * fig 2-17 note 7, the abbreviated form:
+     *   "Use an abbreviated form when MFRs are placed on the bottom of a piece
+     *    of existing correspondence. Begin typing two lines below the last line
+     *    of the preceding correspondence and abbreviate MEMORANDUM FOR RECORD
+     *    by typing the acronym MFR. Omit the office symbol and subject line.
+     *    Begin typing the text two lines below MFR."
+     */
+    const short = layoutMemo({
+        type: "record", abbreviated: true,
+        paragraphs: mfr.paragraphs, signature: mfr.signature,
+    });
+    check("fig 2-17 note 7: the abbreviated form opens with the acronym",
+        short.flow[0].text, MFR_ABBREVIATED.keyword, MFR_ABBREVIATED.cite);
+    checkTrue("fig 2-17 note 7: it omits the office symbol",
+        short.flow.every((l) => l.role !== "office-symbol"), MFR_ABBREVIATED.cite);
+    checkTrue("fig 2-17 note 7: it omits the subject line",
+        short.flow.every((l) => l.role !== "subject"), MFR_ABBREVIATED.cite);
+    check("fig 2-17 note 7: the text begins two lines below MFR",
+        short.flow.findIndex((l) => l.role === "paragraph"), 2, MFR_ABBREVIATED.cite);
+
+    checkTrue("an abbreviated MFR raises no errors",
+        validateMemo({type: "record", abbreviated: true,
+                      paragraphs: mfr.paragraphs, signature: mfr.signature})
+            .errors.length === 0, MFR_ABBREVIATED.cite);
+    checkTrue("supplying an office symbol to an abbreviated MFR is reported",
+        validateMemo({type: "record", abbreviated: true, officeSymbol: "AXYZ-BC",
+                      paragraphs: mfr.paragraphs, signature: mfr.signature})
+            .errors.some((f) => f.rule === "abbreviated-mfr-extra-field"), MFR_ABBREVIATED.cite);
+    checkTrue("only a memorandum for record has an abbreviated form",
+        validateMemo({...FIG_2_1, abbreviated: true})
+            .errors.some((f) => f.rule === "abbreviated-not-mfr"), MFR_ABBREVIATED.cite);
+    checkTrue("where an abbreviated MFR starts on the page is reported to the drafter",
+        validateMemo({type: "record", abbreviated: true,
+                      paragraphs: mfr.paragraphs, signature: mfr.signature})
+            .warnings.some((f) => f.rule === "abbreviated-mfr-placement"), MFR_ABBREVIATED.cite);
+}
+
+// ---------------------------------------------------------------------------
 // The drafting model
 // ---------------------------------------------------------------------------
 
