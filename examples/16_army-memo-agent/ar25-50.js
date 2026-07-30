@@ -207,20 +207,24 @@ export const LETTERHEAD = {
     // 2-4a(1), and "Type the OFFICE SYMBOL at the left margin, two lines below
     // the seal" - fig 2-2. So this is stated, not a matter of taste.
     //
-    // The same ten figures put the seal's lower edge at 1.450 in and the office
-    // symbol at 1.792 in (sd 0.029) from the top of the page. Deriving it
-    // instead - seal bottom plus two 13.8 pt lines - gives 1.853 in, which
-    // overshoots because the seal's edge is not a line boundary and the
-    // measurement reads the top of the glyphs rather than the line box. The
-    // figures win.
+    // It is derived from the letterhead rather than measured off the figures,
+    // because what the rule fixes is a *relationship*: the office symbol sits
+    // two lines below the last thing above it. An absolute inch set
+    // independently of where the letterhead actually ends cannot hold that
+    // relationship, and did not - rendering the .docx and measuring the page
+    // put the office symbol 2.66 lines below the last letterhead line instead
+    // of 2.
     //
-    // It also has to clear the continuation-page running head, which is the
-    // office symbol 1 inch from the top (para 2-5a), the subject on the next
-    // line (2-5b), and text on the third line below that (2-5c): 1.0 + 4 lines
-    // = 1.767 in. The two agree to within four hundredths of an inch, because
-    // the regulation means text to resume at the same height on every page.
-    officeSymbolTopIn: 1.79,
-    officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2; measured from figs 2-1, 2-3 through 2-7, and 2-11 through 2-14",
+    // The letterhead block begins at the seal's own top offset and occupies
+    // one line for the seal plus one for each letterhead line; "second line
+    // below" then means one blank line after it.
+    letterheadLines: 4,
+    lineHeightPt: 13.8,          // Word single spacing for 12 pt Arial
+    get officeSymbolTopIn() {
+        const line = this.lineHeightPt / 72;
+        return this.sealTopIn + (1 + this.letterheadLines + 1) * line;
+    },
+    officeSymbolTopCite: "AR 25-50, para 2-4a(1) and fig 2-2",
 
     // Letterhead point size.
     //

@@ -22,6 +22,7 @@ import {
     MEMO_DATE_PATTERN,
 } from "./ar25-50.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
+import path from "path";
 import {TYPE} from "./ar25-50.js";
 const TYPE_CITE = TYPE.cite;
 import {buildParagraphTree} from "./army-memo-agent.js";
@@ -959,16 +960,18 @@ const FIELD_TEMPLATE = {
         doc.flow.filter((l) => l.role === "distribution").at(-1).indentIn, 0,
         "AR 25-50, para 2-4a(5)(c)");
 
-    // Where the template departs from the 2020 regulation, the regulation wins
-    // and the difference is explained rather than followed.
-    //
-    // Its office symbol sits at 1.915 in rather than 1.792 in because its
-    // letterhead carries a "REPLY TO / ATTENTION OF" block at 1.403-1.511 in
-    // that para 1-16b(1) says is not required. Removing that block accounts
-    // for the difference.
-    checkTrue("the template's lower office symbol is explained by its extra letterhead block",
-        T.officeSymbol > LETTERHEAD_TOP && T.officeSymbol - LETTERHEAD_TOP < 0.2,
-        "AR 25-50, para 1-16b(1)");
+    /*
+     * Where the template departs from the 2020 regulation, the regulation
+     * wins and the difference is explained rather than followed.
+     *
+     * Its office symbol sits at 1.915 in against this module's 1.670 in
+     * because its letterhead carries a "REPLY TO / ATTENTION OF" block at
+     * 1.403-1.511 in that para 1-16b(1) does not require. That block is a
+     * line and a bit; removing it accounts for the whole difference.
+     */
+    const lowerByLines = (T.officeSymbol - LETTERHEAD_TOP) / (13.8 / 72);
+    checkTrue("the template's lower office symbol is its extra letterhead block, about a line",
+        lowerByLines > 0.5 && lowerByLines < 2.0, "AR 25-50, para 1-16b(1)");
 }
 
 // ---------------------------------------------------------------------------
@@ -1081,13 +1084,18 @@ const FIELD_TEMPLATE = {
         Number(/<w:pgMar w:top="(\d+)"/.exec(docx.document)?.[1]),
         convertInchesToTwip(LH.officeSymbolTopIn), LH.officeSymbolTopCite);
 
-    // That position must also clear the continuation running head: the office
-    // symbol 1 inch down (2-5a), the subject on the next line (2-5b), and text
-    // on the third line below it (2-5c).
-    const headHeightIn = 1.0 + 4 * (13.8 / 72);
-    checkTrue("docx: the top margin clears the continuation running head",
-        LH.officeSymbolTopIn >= headHeightIn,
-        "AR 25-50, paras 2-5a through 2-5c");
+    /*
+     * The office symbol's position is a relationship, not an absolute: "the
+     * second line below the seal" (para 2-4a(1)). It is derived from the
+     * letterhead's own height so that relationship holds no matter what the
+     * letterhead contains - an absolute inch chosen independently cannot, and
+     * an earlier one did not.
+     */
+    const lineIn = LH.lineHeightPt / 72;
+    const letterheadEndsIn = LH.sealTopIn + (1 + LH.letterheadLines) * lineIn;
+    check("the office symbol is the 2d line below the letterhead",
+        Number(((LH.officeSymbolTopIn - letterheadEndsIn) / lineIn).toFixed(3)) + 1, 2,
+        "AR 25-50, para 2-4a(1) and fig 2-2");
 }
 
 {
@@ -2704,6 +2712,108 @@ function hasPlaceholdersDeep(value) {
     if (Array.isArray(value)) return value.some(hasPlaceholdersDeep);
     if (typeof value === "object") return Object.values(value).some(hasPlaceholdersDeep);
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// The page as it actually renders
+// ---------------------------------------------------------------------------
+
+/*
+ * Everything above asserts the line model or the OOXML. This renders the .docx
+ * and measures the printed page, which is the only thing that answers "is it
+ * actually right" - and the only check that would have caught the office
+ * symbol sitting 2.66 lines below the letterhead instead of 2, because both
+ * the line model and the OOXML said 1.79 and agreed with each other.
+ *
+ * Skipped when LibreOffice is absent, so the suite still runs anywhere.
+ */
+{
+    const {execFile} = await import("child_process");
+    const {promisify} = await import("util");
+    const os = await import("os");
+    const fsp = await import("fs/promises");
+    const run = promisify(execFile);
+
+    const soffice = await run("which", ["soffice"]).then((r) => r.stdout.trim()).catch(() => null);
+
+    if (!soffice) {
+        console.log("  (LibreOffice not installed - skipping the rendered-page measurements)");
+    } else {
+        const {renderDocx} = await import("./memo-docx.js");
+        const {assembleMemo} = await import("./memo-intent.js");
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "ar2550-render-"));
+
+        const memo = assembleMemo({
+            subject: "Rescheduled Weapons Qualification",
+            addressees: ["Commander, Company A, 2d Battalion, 8th Infantry Regiment"],
+            paragraphs: [
+                {level: 0, text: "Weapons qualification moves to the week of 17 August 2026."},
+                {level: 0, text: "Company commanders will complete the following actions:"},
+                {level: 1, text: "Submit a revised roster by 1200 on 8 August 2026."},
+                {level: 1, text: "Confirm ammunition forecasts against the new date."},
+                {level: 0, text: "My point of contact is Mr. Okonkwo, 719-555-0142, a@army.mil."},
+            ],
+        }, {officeSymbol: "ATZB-RC", date: "30 July 2026", enclosures: ["Revised Range Schedule"]});
+
+        await fsp.writeFile(path.join(dir, "m.docx"), await renderDocx(memo));
+        await run(soffice, ["--headless", "--norestore", "--convert-to", "pdf",
+                            "--outdir", dir, path.join(dir, "m.docx")], {timeout: 180_000});
+
+        // Measure the printed page with the same reader the PDF audit used.
+        const script = `
+import sys, json
+from pypdf import PdfReader
+r = PdfReader(sys.argv[1]); pg = r.pages[0]
+H = float(pg.mediabox.height); W = float(pg.mediabox.width)
+runs = []
+def v(t, cm, tm, font, size):
+    if t.strip():
+        runs.append({"t": t.strip(), "x": tm[4]/72, "y": (H-tm[5])/72, "s": size})
+pg.extract_text(visitor_text=v)
+print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
+`;
+        await fsp.writeFile(path.join(dir, "m.py"), script);
+        const {stdout} = await run("python3", [path.join(dir, "m.py"), path.join(dir, "m.pdf")]);
+        const page = JSON.parse(stdout);
+        const at = (sub) => page.runs.find((r) => r.t.includes(sub));
+        // A numbered paragraph is two runs: the label at the margin and the
+        // text at the tab stop. Margin and indent rules govern the label, so
+        // measure the leftmost run sharing that baseline.
+        const lineLeft = (sub) => {
+            const y = at(sub).y;
+            return Math.min(...page.runs.filter((r) => Math.abs(r.y - y) < 0.02).map((r) => r.x));
+        };
+        const LINE = 13.8 / 72;
+        const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+        check("rendered: the page is 8.5 by 11 inches",
+            [Number(page.w.toFixed(2)), Number(page.h.toFixed(2))], [8.5, 11], "AR 25-50, para 2-3a");
+        checkTrue("rendered: the body sits at the 1-inch left margin",
+            near(lineLeft("Weapons qualification"), 1.0, 0.02), "AR 25-50, para 2-3c");
+        checkTrue("rendered: the office symbol is 2 lines below the last letterhead line",
+            near((at("ATZB-RC").y - at("CITY, STATE").y) / LINE, 2, 0.15),
+            "AR 25-50, para 2-4a(1)");
+        checkTrue("rendered: MEMORANDUM FOR is the 3d line below the office symbol",
+            near((at("MEMORANDUM FOR").y - at("ATZB-RC").y) / LINE, 3, 0.15),
+            "AR 25-50, para 2-4a(5)");
+        checkTrue("rendered: SUBJECT is the 2d line below the address",
+            near((at("SUBJECT:").y - at("Commander, Company A").y) / LINE, 2, 0.15),
+            "AR 25-50, para 2-4a(6)");
+        checkTrue("rendered: the text is the 3d line below the subject",
+            near((at("Weapons qualification").y - at("SUBJECT:").y) / LINE, 3, 0.15),
+            "AR 25-50, para 2-4b(1)");
+        checkTrue("rendered: the signature block is at the centre of the page",
+            near(at("SIGNER NAME").x, 4.25, 0.05), "AR 25-50, para 2-4c(2)(a)");
+        checkTrue("rendered: the enclosure listing shares the signature block's line",
+            near(at("Encl").y, at("SIGNER NAME").y, 0.02) && near(at("Encl").x, 1.0, 0.02),
+            "AR 25-50, para 2-4c(3)");
+        checkTrue("rendered: a subparagraph indents a quarter inch",
+            near(lineLeft("Submit a revised") - 1.0, 0.25, 0.02), "AR 25-50, fig 2-1");
+        check("rendered: one type size on the page",
+            [...new Set(page.runs.map((r) => Math.round(r.s)))], [12], TYPE_CITE);
+
+        await fsp.rm(dir, {recursive: true, force: true});
+    }
 }
 
 // ---------------------------------------------------------------------------
