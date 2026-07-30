@@ -85,6 +85,20 @@ const xmlEscape = (t) => String(t).replace(/[&<>]/g,
 const RUN_PROPS = `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE.fontFamily}" w:cs="${TYPE.fontFamily}"/><w:sz w:val="${TYPE.fontSizePt * 2}"/><w:szCs w:val="${TYPE.fontSizePt * 2}"/></w:rPr>`;
 
 /**
+ * A stable, positive `w:id` for a content control.
+ *
+ * Word writes an id on every control. It is optional in the schema, but every
+ * slot in a memorandum has a distinct prompt, so hashing the prompt gives ids
+ * that are distinct within the document and identical from one run of the
+ * generator to the next - the file stays byte-reproducible.
+ */
+function slotId(prompt) {
+    let h = 0;
+    for (const ch of prompt) h = (Math.imul(h, 31) + ch.codePointAt(0)) | 0;
+    return (h & 0x7fffffff) || 1;
+}
+
+/**
  * A value, or a click-to-type slot where one belongs.
  *
  * A supplied value is an ordinary run. An unsupplied one becomes a plain-text
@@ -96,6 +110,12 @@ const RUN_PROPS = `<w:rPr><w:rFonts w:ascii="${TYPE.fontFamily}" w:hAnsi="${TYPE
  *
  * `w:lock="sdtContentLocked"` is deliberately NOT set: the point is that these
  * are the parts you fill in. What is locked is the formatting, not the text.
+ *
+ * The children of `w:sdtPr` are an xsd:sequence (ECMA-376 Part 1, para
+ * 17.5.2.38): rPr, alias, tag, id, lock, placeholder, temporary, showingPlcHdr,
+ * then the type. Emit them in any other order and Word answers with "unreadable
+ * content" and offers to repair the file - LibreOffice accepts it either way,
+ * so a rendered page cannot catch this. It is asserted in verify.js instead.
  */
 function slot(value, prompt) {
     const text = value == null ? "" : String(value).trim();
@@ -104,9 +124,10 @@ function slot(value, prompt) {
     return ImportedXmlComponent.fromXmlString(
         `<w:sdt>` +
         `<w:sdtPr>` +
+        RUN_PROPS +
         `<w:alias w:val="${xmlEscape(prompt)}"/>` +
         `<w:tag w:val="${xmlEscape(prompt)}"/>` +
-        RUN_PROPS +
+        `<w:id w:val="${slotId(prompt)}"/>` +
         `<w:showingPlcHdr/>` +
         `<w:text/>` +
         `</w:sdtPr>` +
@@ -759,9 +780,28 @@ export async function renderDocx(memo, options = {}) {
 
     const multiPage = doc.pages.length > 1;
 
-    const headers = {};
-    if (hasLetterhead) headers.first = letterheadHeader(memo, sealImage);
-    if (multiPage || !hasLetterhead) headers.default = continuationHeader(memo);
+    /*
+     * Page 1 never carries the continuation heading. Para 2-5b puts the office
+     * symbol and subject at the top of *continuation* pages; on page 1 they are
+     * already in the heading, and repeating them there is not a cosmetic
+     * duplicate - the running head overflows the 1-inch top margin and pushes
+     * the text down with it, so a plain-paper memorandum started 0.92 inch low
+     * against the 1 inch para 2-5a gives it.
+     *
+     * That needs `titlePage` on whether or not there is a letterhead: it is
+     * what separates the first-page header from the rest. Without a letterhead
+     * page 1's header is empty, which is the point.
+     *
+     * The continuation header is set even when this document measures one page,
+     * because Word does its own line breaking and may not agree; a second page
+     * that appears in Word still has to carry its heading.
+     */
+    const headers = {
+        first: hasLetterhead
+            ? letterheadHeader(memo, sealImage)
+            : new Header({children: [new Paragraph({spacing: SINGLE})]}),
+        default: continuationHeader(memo),
+    };
 
     const section = {
         properties: {
@@ -783,7 +823,7 @@ export async function renderDocx(memo, options = {}) {
                     footer: IN(LAYOUT.marginBottomIn - LINE_HEIGHT_IN),
                 },
             },
-            titlePage: hasLetterhead,
+            titlePage: true,
         },
         headers,
         children,
@@ -880,11 +920,63 @@ async function lockFormatting(buffer) {
     if (xml.includes("w:documentProtection")) return buffer;
 
     const protection = '<w:documentProtection w:formatting="1" w:enforcement="1"/>';
-    // The element is schema-ordered near the top of w:settings.
-    xml = xml.replace(/(<w:settings[^>]*>)/, `$1${protection}`);
+    xml = insertSetting(xml, "documentProtection", protection);
 
     zip.file(settingsPath, xml);
     return zip.generateAsync({type: "nodebuffer", compression: "DEFLATE"});
+}
+
+/**
+ * The children of `w:settings` that follow `w:documentProtection`.
+ *
+ * `w:settings` is an xsd:sequence (ECMA-376 Part 1, para 17.15.1.78): each
+ * child has one legal position. `w:documentProtection` sits after
+ * `w:doNotTrackFormatting` and before `w:autoFormatOverride` - which puts it
+ * *after* the `w:displayBackgroundShape` the generator already writes, so
+ * splicing it in behind the opening tag produced an out-of-order part. Word
+ * reports that as unreadable content; LibreOffice does not care, which is why
+ * this went unnoticed through a rendered page.
+ *
+ * Listed from `w:documentProtection` onward, in schema order.
+ */
+const SETTINGS_AFTER_PROTECTION = [
+    "autoFormatOverride", "styleLockTheme", "styleLockQFSet", "defaultTabStop",
+    "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone",
+    "doNotHyphenateCaps", "showEnvelope", "summaryLength", "clickAndTypeStyle",
+    "defaultTableStyle", "evenAndOddHeaders", "bookFoldRevPrinting",
+    "bookFoldPrinting", "bookFoldPrintingSheets", "drawingGridHorizontalSpacing",
+    "drawingGridVerticalSpacing", "displayHorizontalDrawingGridEvery",
+    "displayVerticalDrawingGridEvery", "doNotUseMarginsForDrawingGridOrigin",
+    "drawingGridHorizontalOrigin", "drawingGridVerticalOrigin",
+    "doNotShadeFormData", "noPunctuationKerning", "characterSpacingControl",
+    "printTwoOnOne", "strictFirstAndLastChars", "noLineBreaksAfter",
+    "noLineBreaksBefore", "savePreviewPicture", "doNotValidateAgainstSchema",
+    "saveInvalidXml", "ignoreMixedContent", "alwaysShowPlaceholderText",
+    "doNotDemarcateInvalidXml", "saveXmlDataOnly", "useXSLTWhenSaving",
+    "saveThroughXslt", "showXMLTags", "alwaysMergeEmptyNamespace",
+    "updateFields", "hdrShapeDefaults", "footnotePr", "endnotePr", "compat",
+    "docVars", "rsids", "mathPr", "themeFontLang", "clrSchemeMapping",
+    "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures", "forceUpgrade",
+    "captions", "readModeInkLockDown", "smartTagType", "schemaLibrary",
+    "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol", "listSeparator",
+];
+
+/**
+ * Splice an element into `word/settings.xml` at its schema position.
+ *
+ * It goes before the earliest element that outranks it, or at the end of the
+ * part when none is present. Elements that precede it are left alone, so this
+ * holds as the generator's own settings change.
+ */
+function insertSetting(xml, name, element) {
+    if (name !== "documentProtection") throw new Error(`no schema order for w:${name}`);
+
+    let at = xml.indexOf("</w:settings>");
+    for (const after of SETTINGS_AFTER_PROTECTION) {
+        const found = xml.search(new RegExp(`<w:${after}[ />]`));
+        if (found !== -1 && found < at) at = found;
+    }
+    return at === -1 ? xml : xml.slice(0, at) + element + xml.slice(at);
 }
 
 /**

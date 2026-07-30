@@ -277,13 +277,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-539 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+551 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 539/539 checks passed.
+# AR 25-50 layout verification: 551/551 checks passed.
 ```
 
 ---
@@ -309,6 +309,10 @@ The two renderers agree because both measure Arial the same way. A document of f
 
 **Running heads.** The first-page header is the letterhead; the default header repeats the office symbol and subject for continuation pages (paras 2-5a to 2-5c). Word then handles page breaks itself, which is why `keepLines` and `widowControl` carry the para 2-5c rules rather than hard-coded breaks. `titlePage: true` is what makes the two headers distinct.
 
+That last sentence is load-bearing, and for a while the code did not honour it: `titlePage` was set only when there was a letterhead. A memorandum without one — every memorandum for record, and any memorandum on plain bond — had no first-page header to separate, so Word applied the *continuation* header to page 1. On a rendered one-page MFR that put the office symbol and subject at the top of the page, directly above the heading that already carries them, and the overflow pushed the text to 1.92 in against the 1 in para 2-5a gives it. The fix is to separate page 1 always and give a letterhead-less memorandum an empty first-page header. An empty header is not a wasted part: it is the thing that keeps the running head off page 1.
+
+The continuation header is now written even when the layout measures one page. Word does its own line breaking and may not agree with the line model; a second page that appears in Word still has to carry its heading.
+
 **Formatting lock.** The user requirement was that nothing may change the font, size, spacing, or format. `settings.xml` gets:
 
 ```xml
@@ -316,6 +320,13 @@ The two renderers agree because both measure Arial the same way. A document of f
 ```
 
 Text stays fully editable - that is the point of shipping Word - but formatting cannot be changed from inside the application. Adding `w:edit="readOnly"` would lock the text too. This is a deterrent rather than a security control: unpassworded protection is removable from the Review tab, which is the right level for a document a staff officer still has to finish.
+
+**Schema order is not a style question.** `w:settings` and `w:sdtPr` are both `xsd:sequence` (ECMA-376 Part 1, paras 17.15.1.78 and 17.5.2.38): every child has exactly one legal position. Word validates the parts it opens, and a child out of place is not a nuance — it is *"Word found unreadable content"* and an offer to repair the file. LibreOffice accepts either order, so neither of these could be caught on a rendered page:
+
+- `w:documentProtection` belongs after `w:doNotTrackFormatting`, which puts it behind the `w:displayBackgroundShape` the generator already writes. It was being spliced in behind the opening tag. `insertSetting()` now places it before the first element that outranks it, so it stays correct as the generator's own settings change.
+- `w:sdtPr` is `rPr, alias, tag, id, lock, placeholder, temporary, showingPlcHdr`, then the type. Every content control now emits in that order, with a `w:id` hashed from the prompt — distinct within the document, and identical from one run to the next so the file stays reproducible.
+
+Both are asserted on the XML in `verify.js`, and both assertions were confirmed by reintroducing the fault and watching them fail.
 
 ---
 
@@ -579,7 +590,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 539 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 551 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

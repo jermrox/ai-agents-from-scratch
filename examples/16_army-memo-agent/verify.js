@@ -61,6 +61,31 @@ function lastIndexOf(doc, roles) {
     return -1;
 }
 
+/**
+ * The header part a section references, by reference type.
+ *
+ * `word/header1.xml` is not the first-page header - it is whichever header the
+ * generator happened to write first, and that changes when the set of headers
+ * changes. The document says which is which: `w:headerReference w:type="first"`
+ * carries a relationship id, and the relationships part maps it to a file.
+ * Following that link is the only way to assert something about the page the
+ * reader will actually see.
+ *
+ * Returns null when the section declares no header of that type.
+ */
+async function headerPart(zip, type) {
+    const document = await zip.file("word/document.xml").async("string");
+    const ref = new RegExp(`<w:headerReference w:type="${type}" r:id="([^"]+)"`).exec(document);
+    if (!ref) return null;
+
+    const rels = await zip.file("word/_rels/document.xml.rels").async("string");
+    const target = new RegExp(`Id="${ref[1]}"[^>]*Target="([^"]+)"`).exec(rels);
+    if (!target) return null;
+
+    const file = zip.file(`word/${target[1]}`);
+    return file ? file.async("string") : null;
+}
+
 // ---------------------------------------------------------------------------
 // Figure 2-1 - "Using and preparing a memorandum with digital signature"
 // ---------------------------------------------------------------------------
@@ -994,6 +1019,7 @@ const FIELD_TEMPLATE = {
         const zip = await JSZip.loadAsync(await renderDocx(memo));
         const read = async (p) => (zip.file(p) ? zip.file(p).async("string") : null);
         return {
+            zip,
             document: await read("word/document.xml"),
             styles: await read("word/styles.xml"),
             settings: await read("word/settings.xml"),
@@ -1071,8 +1097,48 @@ const FIELD_TEMPLATE = {
     checkTrue("docx: the text itself stays editable",
         !/w:edit="readOnly"/.test(docx.settings), "editable deliverable");
 
-    checkTrue("docx: a letterhead memorandum carries a first-page header",
-        docx.names.includes("word/header1.xml"), "AR 25-50, para 2-3a(1)");
+    /*
+     * Page 1 gets the letterhead; every page after it gets the running head of
+     * para 2-5b. They are different headers, and `w:titlePage` is what keeps
+     * them apart - without it the running head prints on page 1 as well, over
+     * the heading that already says the same thing, and its overflow pushes the
+     * text down the page.
+     */
+    checkTrue("docx: page 1 is a separate header from the pages after it",
+        /<w:titlePg\/>/.test(docx.document), "AR 25-50, paras 2-3a(1) and 2-5b");
+    const firstHeader = await headerPart(docx.zip, "first");
+    const restHeader = await headerPart(docx.zip, "default");
+    checkTrue("docx: page 1's header is the letterhead",
+        firstHeader?.includes(LETTERHEAD.lines[0]) && /<w:drawing>/.test(firstHeader),
+        "AR 25-50, para 2-3a(1)");
+    checkTrue("docx: page 1's header is not the continuation heading",
+        !/SUBJECT:/.test(firstHeader), "AR 25-50, para 2-5b");
+    checkTrue("docx: the pages after it carry the continuation heading",
+        /SUBJECT:/.test(restHeader) && !/<w:drawing>/.test(restHeader),
+        "AR 25-50, para 2-5b");
+
+    /*
+     * A memorandum not on letterhead - every memorandum for record, and any
+     * memorandum on plain bond - still gets page 1 to itself. Its first-page
+     * header is empty, which is the whole point: para 2-5a starts the text at
+     * the 1-inch top margin, and a running head there would carry it lower.
+     */
+    {
+        const plain = await open(createTemplate("record"));
+        const first = await headerPart(plain.zip, "first");
+        // On the document, not on the header reference: the reference is
+        // written either way, and it is `w:titlePg` that decides whether Word
+        // honours it. Without this the running head reaches page 1 and every
+        // check above still passes.
+        checkTrue("docx: an MFR separates page 1 too",
+            /<w:titlePg\/>/.test(plain.document), "AR 25-50, para 2-5a");
+        checkTrue("docx: an MFR carries no letterhead", !/<w:drawing>/.test(first ?? ""),
+            "AR 25-50, fig 2-17");
+        checkTrue("docx: and no continuation heading on page 1",
+            !/SUBJECT:/.test(first ?? ""), "AR 25-50, para 2-5a");
+        checkTrue("docx: but its continuation pages still carry one",
+            /SUBJECT:/.test(await headerPart(plain.zip, "default") ?? ""), "AR 25-50, para 2-5b");
+    }
 
     // "Type the office symbol on the second line below the seal." - para
     // 2-4a(1). Page 1's body therefore starts where the figures put it.
@@ -1141,7 +1207,7 @@ const FIELD_TEMPLATE = {
     const {OFFLINE_CONTENT, OFFLINE_CONTEXT, assembleMemo} = await import("./army-memo-agent.js");
 
     const zip = await JSZip.loadAsync(await renderDocx(assembleMemo(OFFLINE_CONTENT, OFFLINE_CONTEXT)));
-    const header = await zip.file("word/header1.xml").async("string");
+    const header = await headerPart(zip, "first");
     const EMU = 914400;
 
     const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(header);
@@ -2433,6 +2499,56 @@ const FIELD_TEMPLATE = {
                 .matchAll(/<w:alias w:val="([^"]+)"/g)].map((m) => m[1])
                 .includes("SUBJECT") === false,
             "AR 25-50, para 2-4a(6)");
+
+        /*
+         * Word is what this file is for, and Word validates the parts it opens
+         * against the ECMA-376 schema. Both of these are xsd:sequences - a
+         * child in the wrong place is not a nuance, it is "Word found
+         * unreadable content in <name>.docx" and an offer to repair. Neither
+         * shows up in a LibreOffice render, which accepts either order, so the
+         * ordering is asserted on the XML itself.
+         */
+        const SDT_PR_ORDER = ["rPr", "alias", "tag", "id", "lock", "placeholder",
+            "temporary", "showingPlcHdr", "dataBinding", "label", "tabIndex"];
+        const inSchemaOrder = (names, order) => {
+            let at = -1;
+            for (const name of names) {
+                const rank = order.indexOf(name);
+                if (rank === -1) continue;          // the trailing type element
+                if (rank <= at) return false;
+                at = rank;
+            }
+            return true;
+        };
+        const sdtProps = [...bareXml.matchAll(/<w:sdtPr>(.*?)<\/w:sdtPr>/g)]
+            .map((m) => [...m[1].matchAll(/<w:([a-zA-Z]+)[ />]/g)].map((c) => c[1]));
+        checkTrue("every slot's properties are in ECMA-376 order, so Word opens the file",
+            sdtProps.length === slots.length
+                && sdtProps.every((names) => inSchemaOrder(names, SDT_PR_ORDER)),
+            "ECMA-376 Part 1, para 17.5.2.38");
+        checkTrue("the type element closes each slot's properties",
+            sdtProps.every((names) => names[names.length - 1] === "text"),
+            "ECMA-376 Part 1, para 17.5.2.38");
+        const slotIds = [...bareXml.matchAll(/<w:sdtPr>.*?<w:id w:val="(\d+)"/g)].map((m) => m[1]);
+        check("every slot carries a distinct id, as Word writes them",
+            [slotIds.length, new Set(slotIds).size], [slots.length, slots.length],
+            "ECMA-376 Part 1, para 17.5.2.38");
+        checkTrue("and the same document twice produces the same ids",
+            (await (await zipOf(await renderDocxFn(
+                {paragraphs: [{text: "Range 14 closes for maintenance in August 2026."}]})))
+                .file("word/document.xml").async("string"))
+                .includes(`<w:id w:val="${slotIds[0]}"/>`),
+            "ECMA-376 Part 1, para 17.5.2.38");
+
+        // Only the settings this generator actually writes, in schema order.
+        const SETTINGS_ORDER = ["displayBackgroundShape", "documentProtection",
+            "evenAndOddHeaders", "compat"];
+        checkTrue("the formatting lock sits at its schema position in w:settings",
+            inSchemaOrder(
+                [...settings.matchAll(/<w:([a-zA-Z]+)[ />]/g)].map((m) => m[1])
+                    .filter((n) => SETTINGS_ORDER.includes(n)),
+                SETTINGS_ORDER),
+            "ECMA-376 Part 1, para 17.15.1.78");
     }
 
     const spec = await (await post("/spec")).json();
