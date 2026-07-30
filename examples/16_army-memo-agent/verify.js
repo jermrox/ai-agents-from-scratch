@@ -1115,6 +1115,41 @@ const FIELD_TEMPLATE = {
         !/w:edit="readOnly"/.test(docx.settings), "editable deliverable");
 
     /*
+     * Every tab carries its own stop.
+     *
+     * A tab with no stop defined on its paragraph falls through to Word's
+     * default grid, which is half an inch when `w:defaultTabStop` is absent -
+     * twice the quarter inch para 1-39b(10) sets, and enough to put a
+     * paragraph's text or a signature block visibly wrong. This is checked
+     * across every type because the stops are computed per paragraph from the
+     * subdivision depth, so a new depth is exactly where one would go missing.
+     */
+    {
+        const {TEMPLATES} = await import("./templates.js");
+        let withTab = 0, without = 0;
+        for (const type of Object.keys(TEMPLATES)) {
+            const zip = (await open(createTemplate(type))).zip;
+            const parts = Object.keys(zip.files).filter((n) => /word\/(document|header\d*)\.xml/.test(n));
+            for (const part of parts) {
+                const xml = await zip.file(part).async("string");
+                for (const m of xml.matchAll(/<w:p>(?:(?!<\/w:p>).)*<\/w:p>/gs)) {
+                    const tabs = (m[0].match(/<w:tab\/>/g) ?? []).length;
+                    if (!tabs) continue;
+                    withTab++;
+                    const stops = (m[0].match(/<w:tab w:val="[a-z]+" w:pos="\d+"/g) ?? []).length;
+                    if (stops < tabs) without++;
+                }
+            }
+        }
+        checkTrue("docx: every tab in every type has its own stop",
+            withTab > 0 && without === 0, "AR 25-50, para 1-39b(10)");
+    }
+    const {convertInchesToTwip: toTwip} = await import("docx");
+    check("docx: and a tab the writer types lands on the quarter-inch grid",
+        Number(/<w:defaultTabStop w:val="(\d+)"\/>/.exec(docx.settings)?.[1]),
+        toTwip(LAYOUT.labelGapIn), "AR 25-50, para 1-39b(10)");
+
+    /*
      * Page 1 gets the letterhead; every page after it gets the running head of
      * para 2-5b. They are different headers, and `w:titlePage` is what keeps
      * them apart - without it the running head prints on page 1 as well, over

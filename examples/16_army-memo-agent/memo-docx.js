@@ -958,6 +958,16 @@ async function lockFormatting(buffer) {
     const protection = '<w:documentProtection w:formatting="1" w:enforcement="1"/>';
     xml = insertSetting(xml, "documentProtection", protection);
 
+    /*
+     * Every tab this generator emits carries its own stop, so Word's default
+     * grid never places one. It does place the tabs a *writer* types, and
+     * Word's default when the element is absent is half an inch - off the
+     * quarter-inch grid para 1-39b(10) sets. Naming it puts an edited
+     * memorandum on the same grid as a generated one.
+     */
+    xml = insertSetting(xml, "defaultTabStop",
+        `<w:defaultTabStop w:val="${IN(LAYOUT.labelGapIn)}"/>`);
+
     zip.file(settingsPath, xml);
     return zip.generateAsync({type: "nodebuffer", compression: "DEFLATE"});
 }
@@ -1002,13 +1012,18 @@ const SETTINGS_AFTER_PROTECTION = [
  *
  * It goes before the earliest element that outranks it, or at the end of the
  * part when none is present. Elements that precede it are left alone, so this
- * holds as the generator's own settings change.
+ * holds as the generator's own settings change - including as this function's
+ * own earlier insertions accumulate.
  */
 function insertSetting(xml, name, element) {
-    if (name !== "documentProtection") throw new Error(`no schema order for w:${name}`);
+    const rank = SETTINGS_AFTER_PROTECTION.indexOf(name);
+    const outranked = name === "documentProtection"
+        ? SETTINGS_AFTER_PROTECTION
+        : (rank === -1 ? null : SETTINGS_AFTER_PROTECTION.slice(rank + 1));
+    if (!outranked) throw new Error(`no schema order for w:${name}`);
 
     let at = xml.indexOf("</w:settings>");
-    for (const after of SETTINGS_AFTER_PROTECTION) {
+    for (const after of outranked) {
         const found = xml.search(new RegExp(`<w:${after}[ />]`));
         if (found !== -1 && found < at) at = found;
     }
