@@ -156,6 +156,29 @@ export const nationalGuardDesignation = (state) => `${String(state ?? "").toUppe
 export const NATIONAL_GUARD_CITE = "AR 25-50, paras 6-5c(10) and 6-5c(11)";
 
 /**
+ * Para 6-5c(11) adds a second requirement for three categories, and gives no
+ * example of it:
+ *
+ *   "General officers, chaplains, and warrant officers will also use the
+ *    four-letter State or territory office symbol."
+ *
+ * The two-letter form is shown - "KSARNG (Kansas Army National Guard)" - but
+ * the four-letter office symbol is not, and none of the appendix D figures in
+ * the supplied pages is an ARNG block. So this is reported to the drafter
+ * rather than constructed: a four-letter symbol invented here would look
+ * exactly as authoritative as a correct one.
+ */
+export const ARNG_OFFICE_SYMBOL_CATEGORIES = ["general officer", "chaplain", "warrant officer"];
+export const ARNG_OFFICE_SYMBOL_CITE = "AR 25-50, para 6-5c(11)";
+
+/**
+ * "Do not use the '(P)' (meaning the signer is promotable) as part of a
+ *  signature block in Army correspondence unless it benefits or enhances the
+ *  image of the Army." - para 6-5c(2)
+ */
+export const PROMOTABLE = {pattern: /\(P\)/, cite: "AR 25-50, para 6-5c(2)"};
+
+/**
  * "The person signing will write his or her own name and add the word 'for' in
  *  front of the typed name in the signature block." - para 6-3c
  *
@@ -258,6 +281,20 @@ export function buildSignature(signer, correspondence = "memorandum") {
             });
         }
         component = nationalGuardDesignation(signer.state);
+
+        // Three categories owe a second element the regulation does not
+        // illustrate anywhere in the supplied pages. - para 6-5c(11)
+        const category = isGeneralOfficer(signer.grade) ? "general officer"
+            : signer.chaplain ? "chaplain"
+            : isWarrantOfficer(signer.grade) ? "warrant officer"
+            : null;
+        if (category && !signer.stateOfficeSymbol) {
+            findings.push({
+                rule: "arng-office-symbol-required",
+                message: `An Army National Guard ${category} not on active duty also uses the four-letter State or territory office symbol. AR 25-50 gives no example of its form, so it is not constructed here - supply it as \`stateOfficeSymbol\`.`,
+                cite: ARNG_OFFICE_SYMBOL_CITE,
+            });
+        }
     }
 
     // Designation, in the order the regulation resolves conflicts: retired
@@ -344,6 +381,14 @@ export function buildSignature(signer, correspondence = "memorandum") {
         gradeAndBranch = `Chaplain (${abbr ?? signer.grade}) ${chaplainComponent}`;
     } else {
         gradeAndBranch = [gradeText, designation, trailing].filter(Boolean).join(", ");
+    }
+
+    if (PROMOTABLE.pattern.test(gradeAndBranch)) {
+        findings.push({
+            rule: "promotable-in-signature",
+            message: "Do not use \"(P)\" in a signature block unless it benefits or enhances the image of the Army.",
+            cite: PROMOTABLE.cite,
+        });
     }
 
     if (signer.signingForAnother) {

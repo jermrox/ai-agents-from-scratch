@@ -1724,6 +1724,35 @@ const FIELD_TEMPLATE = {
             .findings.some((f) => f.rule === "arng-state-missing"),
         "AR 25-50, para 6-5c(11)");
 
+    // Para 6-5c(11) requires a four-letter State office symbol of three
+    // categories and illustrates none of them, so it is reported, not invented.
+    for (const [what, signer] of [
+        ["general officer", {name: "N", grade: "MG", title: "Cdr"}],
+        ["warrant officer", {name: "N", grade: "CW3", title: "Chief"}],
+        ["chaplain", {name: "N", grade: "MAJ", chaplain: true, title: "Chaplain"}],
+    ]) {
+        checkTrue(`para 6-5c(11): an ARNG ${what} is told the State office symbol is missing`,
+            buildSignature({...signer, nationalGuardNotOnActiveDuty: true, state: "KS"})
+                .findings.some((f) => f.rule === "arng-office-symbol-required"),
+            "AR 25-50, para 6-5c(11)");
+    }
+    checkTrue("para 6-5c(11): an ARNG NCO owes no office symbol",
+        buildSignature({name: "N", grade: "SFC", nationalGuardNotOnActiveDuty: true,
+                        state: "KS", title: "Plt Sgt"})
+            .findings.every((f) => f.rule !== "arng-office-symbol-required"),
+        "AR 25-50, para 6-5c(11)");
+    checkTrue("para 6-5c(11): supplying it clears the finding",
+        buildSignature({name: "N", grade: "MG", nationalGuardNotOnActiveDuty: true,
+                        state: "KS", stateOfficeSymbol: "NGKS", title: "Cdr"})
+            .findings.every((f) => f.rule !== "arng-office-symbol-required"),
+        "AR 25-50, para 6-5c(11)");
+
+    // para 6-5c(2): "(P)" is not used unless it benefits the Army's image.
+    checkTrue("para 6-5c(2): \"(P)\" in a signature block is reported",
+        buildSignature({name: "N", grade: "LTC", branch: "AG (P)", title: "Dir"})
+            .findings.some((f) => f.rule === "promotable-in-signature"),
+        "AR 25-50, para 6-5c(2)");
+
     // Joint commands and contract surgeons - paras 6-5c(8) and 6-8b.
     check("para 6-5c(8): an officer at a Joint command uses only USA",
         block({name: "Name", grade: "LTC", branch: "IN", jointCommand: true, title: "J3 Plans"}),
