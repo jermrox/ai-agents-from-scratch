@@ -1126,6 +1126,39 @@ const FIELD_TEMPLATE = {
         !/w:edit="readOnly"/.test(docx.settings), "editable deliverable");
 
     /*
+     * No memorandum prints a figure's annotation.
+     *
+     * The figures caption themselves. "[place digital signature block here]"
+     * in figures 2-1, 2-14 and 2-17 points at the space a signature occupies;
+     * "[insert text box here]" and "[insert digital signature box here]" in
+     * figure 2-11 point at the boxes appendix F describes for a THRU
+     * addressee. None of it is text a memorandum carries, and rendering any of
+     * it puts an instruction to the typist into a signed document. One of them
+     * was being rendered, in every type, until it was reported.
+     */
+    {
+        const {TEMPLATES} = await import("./templates.js");
+        const annotations = [
+            [/place digital signature/i, "AR 25-50, figs 2-1, 2-14 and 2-17"],
+            [/insert text box/i, "AR 25-50, fig 2-11"],
+            [/insert digital signature box/i, "AR 25-50, figs 2-11 and 2-12"],
+        ];
+        const printed = [];
+        for (const type of Object.keys(TEMPLATES)) {
+            const zip = (await open(createTemplate(type))).zip;
+            for (const part of Object.keys(zip.files)
+                .filter((n) => /word\/(document|header\d*)\.xml/.test(n))) {
+                const xml = await zip.file(part).async("string");
+                for (const [pattern] of annotations) {
+                    if (pattern.test(xml)) printed.push(`${type}:${part}`);
+                }
+            }
+        }
+        check("docx: no type prints a figure's own annotation", printed, [],
+            annotations.map(([, cite]) => cite).join("; "));
+    }
+
+    /*
      * Every tab carries its own stop.
      *
      * A tab with no stop defined on its paragraph falls through to Word's
@@ -1354,13 +1387,23 @@ const FIELD_TEMPLATE = {
         boxes, 3, "AR 25-50, fig 2-19");
 
     // The wet-signature form of the same memorandum uses the X of fig 2-18.
+    const {DECISION_APPROVAL} = await import("./ar25-50.js");
     const wet = createTemplate("decision");
     wet.digitalSignature = false;
     const wetXml = await (await JSZip.loadAsync(await renderDocx(wet)))
         .file("word/document.xml").async("string");
     checkTrue("docx: a wet-signature decision memorandum uses X, not checkboxes",
-        !/<w14:checkbox>/.test(wetXml) && /APPROVED {2}X/.test(wetXml),
+        !/<w14:checkbox>/.test(wetXml) && /APPROVED {2}</.test(wetXml),
         "AR 25-50, fig 2-18");
+    /*
+     * And the X is underlined. Figure 2-18 rules a line under each one: it is
+     * the space the approver strikes, not a letter of text, and an X sitting
+     * on nothing reads as a decision already taken.
+     */
+    checkTrue("docx: and each X is underlined, because it marks a blank",
+        (wetXml.match(/<w:u w:val="single"\/>[^]{0,200}?<w:t[^>]*>X<\/w:t>/g) ?? []).length
+            === DECISION_APPROVAL.options.length,
+        DECISION_APPROVAL.wetCite);
 }
 
 {

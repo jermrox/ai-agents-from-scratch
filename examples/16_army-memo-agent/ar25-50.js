@@ -1362,8 +1362,21 @@ export const ALARACT = {
  */
 export const DECISION_APPROVAL = {
     options: ["APPROVED", "DISAPPROVED", "SEE ME"],
-    wetMark: "X",
+
+    /*
+     * The mark on a memorandum that will be signed by hand: an underlined X.
+     *
+     * Figure 2-18 prints it that way at 150 px/in - the X carries a rule under
+     * it, and the rule is the point. It is the space the approver strikes, so
+     * the X is a marker sitting on a blank rather than a letter of text. An
+     * underscore in the source, the same convention the underlined paragraph
+     * headings of the decision memorandum use.
+     */
+    wetMark: "_X_",
     wetCite: "AR 25-50, fig 2-18",
+
+    // Figure 2-19 replaces it with a checkbox on a digitally signed
+    // memorandum - one the approver clicks rather than strikes.
     digitalCite: "AR 25-50, fig 2-19",
 };
 

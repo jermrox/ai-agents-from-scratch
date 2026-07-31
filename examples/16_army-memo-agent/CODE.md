@@ -281,13 +281,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-577 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+579 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 577/577 checks passed.
+# AR 25-50 layout verification: 579/579 checks passed.
 ```
 
 ---
@@ -520,7 +520,22 @@ Two things came off the page here, both because a figure's *annotation* had been
 
 **`[place digital signature block here]` is not text.** Figures 2-1, 2-14 and 2-17 all print it on the third line below the authority line, and it had been rendered literally — so every generated memorandum carried an instruction to the typist into a signed document. It is the regulation pointing at the space a digital signature occupies. That space is already there: para 2-4c(2)(a) begins the signature block on the fifth line, so a signature applied over it lands exactly where the figures put the annotation. Nothing needs to be emitted to reserve it.
 
+The figures caption themselves in more than one place — figure 2-11 also carries `[insert text box here]` and `[insert digital signature box here]` on the THRU line, pointing at the boxes appendix F describes. `verify.js` now sweeps every type for all three, because the failure mode is silent: the page still lays out correctly, it just has an instruction printed on it.
+
 **The authority line is conditional, not default.** Para 2-4c(1): *"The authority line is used by individuals properly designated as having the authority to sign for the commander or head of an office."* If the signer is the commander, there is no authority line — and figure 2-17 note 6 says of the MFR outright: **"Do not use an authority line."** The templates no longer ship `FOR THE COMMANDER:`; a memorandum that needs one supplies it, and the five lines are then counted from it instead of from the last line of text, which para 2-4c(2)(a) spells out as two separate cases.
+
+---
+
+## 15c) The decision memorandum's approval line
+
+Figures 2-18 and 2-19 are the same memorandum in two forms, and they differ in one place:
+
+| | Mark |
+| --- | --- |
+| Figure 2-18, signed by hand | `APPROVED` then an **underlined X** — the rule is the blank the approver strikes |
+| Figure 2-19, signed digitally | `APPROVED` then a **checkbox** the approver clicks |
+
+Both are emitted; `digitalSignature: false` selects the first. The underline was missing at first — a bare `X` sitting on nothing, which reads as a decision already taken rather than a space to mark. The figure prints the rule at 150 px/in and the source now carries `_X_`, the same underscore convention the decision memorandum's own underlined headings use.
 
 ---
 
@@ -664,7 +679,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 577 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 579 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
