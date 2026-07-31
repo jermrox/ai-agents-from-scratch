@@ -116,6 +116,7 @@ function parseArgs(argv) {
         offline: false, html: null, text: null, docx: null, request: null,
         template: null, spec: null, emitSpec: null, seal: null, list: false,
         serve: false, port: undefined, host: undefined, model: null,
+        unit: null, saveUnit: null,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -132,6 +133,8 @@ function parseArgs(argv) {
         else if (a === "--port") args.port = Number(argv[++i]);
         else if (a === "--host") args.host = argv[++i];
         else if (a === "--model") args.model = argv[++i];
+        else if (a === "--unit") args.unit = argv[++i];
+        else if (a === "--save-unit") args.saveUnit = argv[++i];
         else args.request = args.request ? `${args.request} ${a}` : a;
     }
     return args;
@@ -215,6 +218,22 @@ async function main() {
  * drafting path and the template path so both go through the same validation.
  */
 async function emit(memo, args) {
+    /*
+     * A unit's own details - its organization block, office symbol and signature
+     * block - are the same on every memorandum it writes, so they are supplied
+     * once and kept. The memorandum's details are not, and are never read from a
+     * profile. See unit-profile.js.
+     */
+    const {applyProfile, profileFrom, validateProfile, outstandingFields} =
+        await import("./unit-profile.js");
+
+    if (args.unit) {
+        const profile = JSON.parse(await fs.readFile(args.unit, "utf8"));
+        const bad = validateProfile(profile);
+        for (const f of bad) console.error(`  ${args.unit}: ${f.message}  [${f.cite}]`);
+        memo = applyProfile(memo, profile);
+    }
+
     const text = renderText(memo);
     console.log(text);
     console.log("\n" + "-".repeat(72) + "\n");
@@ -241,6 +260,35 @@ async function emit(memo, args) {
         const {writeDocx} = await import("./memo-docx.js");
         await writeDocx(memo, args.docx, args.seal ? {seal: args.seal} : {});
         console.log(`Wrote ${args.docx}`);
+    }
+    if (args.saveUnit) {
+        const profile = profileFrom(memo);
+        await fs.writeFile(args.saveUnit, JSON.stringify(profile, null, 2) + "\n", "utf8");
+        console.log(`Wrote ${args.saveUnit} - reuse it with --unit ${args.saveUnit}`);
+    }
+
+    /*
+     * What is still to be supplied, asked as questions rather than reported as
+     * faults: a memorandum with every slot empty is a template, and the slots
+     * are the point. Each one names the field, says where it sits, and cites the
+     * paragraph that puts it there.
+     */
+    const unitOutstanding = outstandingFields(memo, "unit");
+    const memoOutstanding = outstandingFields(memo, "memorandum").filter((f) => !f.optional);
+    if (unitOutstanding.length || memoOutstanding.length) {
+        console.log("\nStill to be supplied - each is a click-to-type slot in the .docx,");
+        console.log("editable as text with the formatting locked:\n");
+        for (const [scope, fields] of [["your unit", unitOutstanding],
+                                       ["this memorandum", memoOutstanding]]) {
+            if (!fields.length) continue;
+            console.log(`  ${scope}`);
+            for (const f of fields) console.log(`    ${f.label.padEnd(20)} ${f.hint}  [${f.cite}]`);
+        }
+        if (unitOutstanding.length) {
+            console.log("\n  Your unit's details do not change between memorandums.");
+            console.log("  Fill them in once and keep them with --save-unit unit.json,");
+            console.log("  then pass --unit unit.json next time.");
+        }
     }
 }
 

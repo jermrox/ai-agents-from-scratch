@@ -37,6 +37,7 @@ import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
 import {createTemplate, describeTemplates, recordFieldPlaceholders, RECORD_FIELDS} from "./templates.js";
 import {detectMemoType, assembleMemo, runMemoAgent} from "./memo-intent.js";
 import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
+import {outstandingFields, unitFields, memorandumFields} from "./unit-profile.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -259,19 +260,26 @@ Range Control will complete the following work:
     <textarea id="copiesFurnished" name="copiesFurnished" style="min-height:48px"></textarea>
   </fieldset>
 
-  <fieldset>
-    <legend>Matters of record</legend>
-    <p>Leave these blank and they come out as bracketed placeholders you type over in Word. Nothing on the page moves when you do — no measurement depends on what they say. The date is normally one of them: para 2-4a(3)(b) puts it on <em style="display:inline">after</em> the memorandum has been signed.</p>
+  <fieldset id="unitfields">
+    <legend>Your unit</legend>
+    <p>These are the office's own, and they are the same on the next memorandum and the one after that. Fill them in once and this page will remember them on this browser; <b>Forget</b> clears them. Leave any of them blank and it comes out as a click-to-type slot in Word — editable as text, with the formatting locked, so nothing moves when you fill it in.</p>
+    ${field("organization", "Letterhead organization", "paras 1-16b and 1-18")}
+    ${field("streetAddress", "Street address", "para 1-18")}
+    ${field("cityStateZip", "City, State ZIP+4", "two spaces before the ZIP — para 5-10b")}
     ${field("officeSymbol", "Office symbol", "para 2-4a(1)")}
+    ${field("signerName", "Signer name", "para 6-4c")}
+    ${field("signerGrade", "Grade and branch", "paras 6-4f and 6-5c")}
+    ${field("signerTitle", "Duty title", "para 6-4c")}
+    <p class="detected" id="unitnote"></p>
+    <button type="button" class="secondary" id="forget">Forget this unit</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>This memorandum</legend>
+    <p>These change every time, so they are never remembered. The date is normally left blank: para 2-4a(3)(b) puts it on <em style="display:inline">after</em> the memorandum has been signed.</p>
     ${field("date", "Date", `para 2-4a(3)(b) — today is ${formatMemoDate()}`)}
     ${field("suspenseDate", "Suspense date", "optional, para 2-4a(4)")}
-    ${field("organization", "Letterhead organization", "paras 1-16 and 1-18")}
-    ${field("streetAddress", "Street address")}
-    ${field("cityStateZip", "City, State ZIP+4", "para 5-10b")}
-    ${field("authorityLine", "Authority line", "optional, para 6-2")}
-    ${field("signerName", "Signer name", "para 6-4a(1)")}
-    ${field("signerGrade", "Grade and branch", "paras 6-4f and 6-5c")}
-    ${field("signerTitle", "Duty title", "para 6-4a(2)")}
+    ${field("authorityLine", "Authority line", "only when signing for the commander — para 2-4c(1)")}
   </fieldset>
 
   <button type="submit" id="go">Generate</button>
@@ -280,7 +288,8 @@ Range Control will complete the following work:
 </form>
 
 <section id="out">
-  <div id="report"><p class="empty">Fill in what you have and press Generate. Everything you leave blank comes out as a placeholder.</p></div>
+  <div id="report"><p class="empty">Fill in what you have and press Generate. Everything you leave blank comes out as a click-to-type slot in Word.</p></div>
+  <div id="outstanding"></div>
   <iframe id="frame" title="Memorandum preview"></iframe>
 </section>
 </main>
@@ -288,6 +297,52 @@ Range Control will complete the following work:
 <script>
 const $ = (id) => document.getElementById(id);
 const formData = () => Object.fromEntries(new FormData($("f")).entries());
+
+/*
+ * The unit's own details, kept on this browser.
+ *
+ * AR 25-50 is one regulation but a memorandum is not interchangeable between
+ * offices: the organization block, the office symbol and the signature block
+ * belong to the unit and repeat on every memorandum it writes. The subject,
+ * the addressee and the date do not, and are deliberately never stored.
+ */
+const UNIT_KEY = "ar2550.unit";
+const UNIT_IDS = ["organization", "streetAddress", "cityStateZip", "officeSymbol",
+                  "signerName", "signerGrade", "signerTitle"];
+
+function loadUnit() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(UNIT_KEY) || "{}"); } catch (e) { saved = {}; }
+  let filled = 0;
+  for (const id of UNIT_IDS) {
+    if (saved[id] && !$(id).value) { $(id).value = saved[id]; filled++; }
+  }
+  noteUnit(filled ? filled + " remembered from last time." : "");
+}
+
+function saveUnit() {
+  const unit = {};
+  for (const id of UNIT_IDS) if ($(id).value.trim()) unit[id] = $(id).value.trim();
+  try {
+    if (Object.keys(unit).length) localStorage.setItem(UNIT_KEY, JSON.stringify(unit));
+    else localStorage.removeItem(UNIT_KEY);
+  } catch (e) { /* private browsing - the memorandum still works */ }
+  return unit;
+}
+
+function noteUnit(text) { $("unitnote").textContent = text; }
+
+$("forget").addEventListener("click", () => {
+  try { localStorage.removeItem(UNIT_KEY); } catch (e) {}
+  for (const id of UNIT_IDS) $(id).value = "";
+  noteUnit("Forgotten. These will come out as slots you fill in in Word.");
+});
+for (const id of UNIT_IDS) {
+  window.addEventListener("DOMContentLoaded", () => $(id).addEventListener("change", () => {
+    const n = Object.keys(saveUnit()).length;
+    noteUnit(n ? n + " of " + UNIT_IDS.length + " remembered on this browser." : "");
+  }));
+}
 
 async function post(path, body) {
   const r = await fetch(path, {method:"POST", headers:{"content-type":"application/json"},
@@ -309,6 +364,23 @@ function renderReport(d) {
     (errs ? ' · <span style="color:var(--err)">' + errs + ' error' + (errs===1?'':'s') + '</span>' : '') + '</p>' + list;
 }
 
+/*
+ * What is still to be supplied, asked rather than complained about. Every one
+ * is a click-to-type slot in the .docx: fill it in here or fill it in in Word,
+ * and either way the formatting is locked so the page cannot move.
+ */
+function renderOutstanding(o) {
+  const group = (title, fields, tail) => !fields.length ? "" :
+    '<p class="detected"><b>' + title + '</b></p><ul class="findings">' +
+    fields.map((f) => '<li class="advisory"><span class="rule">' + escapeHtml(f.label) +
+      "</span> " + escapeHtml(f.hint) + '<br><span class="cite">' + escapeHtml(f.cite) +
+      "</span></li>").join("") + "</ul>" + (tail || "");
+  $("outstanding").innerHTML =
+    group("Still to be supplied \u2014 your unit", o.unit,
+          '<p class="detected">Fill these in above and this browser will remember them.</p>') +
+    group("Still to be supplied \u2014 this memorandum", o.memorandum, "");
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 }
@@ -319,6 +391,7 @@ async function generate() {
     const d = await (await post("/generate", formData())).json();
     $("detected").textContent = "Reading this as: " + d.title;
     renderReport(d);
+    renderOutstanding(d.outstanding || {unit: [], memorandum: []});
     $("frame").srcdoc = d.html;
   } catch (e) {
     $("report").innerHTML = '<p style="color:var(--err)">' + escapeHtml(e.message) + "</p>";
@@ -377,6 +450,8 @@ $("request").addEventListener("blur", async () => {
   const d = await (await post("/detect", {request: $("request").value})).json();
   $("detected").textContent = "Reading this as: " + d.title + " (" + d.cite + ")";
 });
+
+loadUnit();
 </script>
 </body></html>`;
 
@@ -515,6 +590,15 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
 
             if (req.url === "/generate") {
                 const result = validateMemo(memo);
+                /*
+                 * What is still to be supplied, split by whose it is. The
+                 * unit's own details repeat on every memorandum it writes and
+                 * are worth remembering; this memorandum's do not. Neither is
+                 * a fault - a memorandum with all of them blank is a template,
+                 * and each one is a click-to-type slot in the .docx.
+                 */
+                const field = ({label, hint, cite, prompt, optional}) =>
+                    ({label, hint, cite, prompt, optional: Boolean(optional)});
                 return json(res, 200, {
                     type: memo.type,
                     title: meta.title,
@@ -522,8 +606,26 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     pages: result.pages,
                     findings: result.findings.map(({severity, rule, message, cite}) =>
                         ({severity, rule, message, cite})),
+                    outstanding: {
+                        unit: outstandingFields(memo, "unit").map(field),
+                        memorandum: outstandingFields(memo, "memorandum")
+                            .filter((f) => !f.optional).map(field),
+                    },
                     html: renderHtmlDocument(withServedSeal(memo, req.headers.host)),
                     text: renderText(memo),
+                });
+            }
+            if (req.url === "/fields") {
+                // The whole question list for a type, whether or not it is
+                // answered - so a caller can build its own form.
+                return json(res, 200, {
+                    type: memo.type,
+                    unit: unitFields(memo).map(({when, ...f}) => f),
+                    memorandum: memorandumFields(memo).map(({when, ...f}) => f),
+                    outstanding: {
+                        unit: outstandingFields(memo, "unit"),
+                        memorandum: outstandingFields(memo, "memorandum"),
+                    },
                 });
             }
             if (req.url === "/spec") {

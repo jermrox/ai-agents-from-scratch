@@ -1,6 +1,6 @@
 # Code explanation: `army-memo-agent.js`
 
-Thirteen files, each with one job:
+Fourteen files, each with one job:
 
 | File | Responsibility |
 | --- | --- |
@@ -15,6 +15,7 @@ Thirteen files, each with one job:
 | `memo-drafter.js` | The drafting model as a service: loaded once, one job at a time, no context bleed. |
 | `memo-server.js` | **The front end.** A page that takes a request and returns a checked memorandum and a Word file. |
 | `army-memo-agent.js` | The CLI. |
+| `unit-profile.js` | Which fields belong to the *unit* and which to the memorandum, so an office is asked for its own details once. |
 | `verify.js` | Asserts the renderer *and the .docx* against the regulation's own figures. |
 | `validate-ooxml.py` | Validates the .docx against ISO/IEC 29500-4 - the schema Word itself enforces. |
 
@@ -58,6 +59,8 @@ node examples/16_army-memo-agent/army-memo-agent.js --docx memo.docx \
 | `--serve` | Open the front end on http://localhost:4250 (`--port`, `--host` to change) |
 | `--model <path>` | A GGUF to draft with; `MEMO_MODEL_PATH` does the same |
 | `--offline` | Skip the model |
+| `--unit <file.json>` | Apply a saved unit profile - organization block, office symbol, signature block |
+| `--save-unit <file.json>` | Write this memorandum's unit details out for reuse |
 
 The live path needs `models/Qwen3-1.7B-Q8_0.gguf` (see [DOWNLOAD.md](../../DOWNLOAD.md)). Everything except the drafting step runs without a model, which is the point - the parts that must be exactly right are the parts that do not need one.
 
@@ -281,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-579 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+596 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 579/579 checks passed.
+# AR 25-50 layout verification: 596/596 checks passed.
 ```
 
 ---
@@ -514,6 +517,40 @@ Asking for type above the ceiling is an **error**. The only non-Arial run in any
 
 ---
 
+## 14a) The unit's fields, and the memorandum's
+
+AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
+
+| | Fields | Lifetime |
+| --- | --- | --- |
+| **The unit's** | organization, street address, city/State/ZIP, office symbol, signer name, grade and branch, duty title | the same on the next memorandum, and the one after |
+| **The memorandum's** | subject, MEMORANDUM FOR, MEMORANDUM THRU, date | different every time |
+
+`unit-profile.js` is the one place that knows the difference. Nothing in it is a rule about *format* — the layout is identical whatever these say, which is the entire point of the slots — so what it encodes is **who each field belongs to**, with the paragraph that puts it on the page.
+
+It also knows which questions do not apply. An MFR is on plain white paper (fig 2-17), so it is never asked for a letterhead; it has no addressee either. An MOU carries no office symbol (para 2-6c). The abbreviated MFR of note 7 omits the office symbol *and* the subject. Asking for a field a memorandum does not have is its own kind of wrong.
+
+**A placeholder counts as outstanding.** `[FULL NAME]` is what a template puts where a name goes — a blank wearing a disguise — so it is asked for, and `profileFrom()` refuses to save one. A profile that stored the regulation's own example text would hand the next memorandum a field that looks filled in and is not.
+
+**A profile fills blanks; it never overwrites.** One office sometimes signs for another, and the memorandum in hand is the more specific statement.
+
+Three ways to supply them, and they agree because they read the same list:
+
+```bash
+# once
+node army-memo-agent.js --template standard --save-unit unit.json
+# thereafter
+node army-memo-agent.js --unit unit.json --docx memo.docx "..."
+```
+
+- the **CLI**, with `--unit` / `--save-unit`
+- the **front end**, which splits the form into *Your unit* and *This memorandum*, remembers the first on the browser, and has a **Forget** button
+- **Word itself** — every field left blank is a click-to-type content control, editable as text with the formatting locked (§15 and §16)
+
+The check worth having is the negative one. `verify.js` asserts that the page's remembered list is exactly the unit-scoped fields, and names `subject`, `addressees`, `thru`, `date` and the rest individually to assert they are *not* remembered. A subject carried over from the last memorandum and quietly filled into the next is how the wrong office receives something that looks right.
+
+---
+
 ## 15a) The closing: what a memorandum carries and what the figure only points at
 
 Two things came off the page here, both because a figure's *annotation* had been read as a figure's *content*.
@@ -679,7 +716,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 579 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 596 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
