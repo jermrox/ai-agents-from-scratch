@@ -96,10 +96,30 @@ export const LAYOUT = {
     indentByLevelIn: [0, 0.25, 0.5, 0.5],
     indentCite: "AR 25-50, fig 2-1",
 
-    // "Space 1/4 inch to the right of the parenthesis when numbering
-    //  subparagraphs." - 1-39b(10)
+    // The quarter-inch grid the *indents* sit on: "a." a quarter inch in,
+    // "(1)" a half - fig 2-1 states both outright. It is also the tab grid a
+    // writer types on. - para 1-39b(10)
     labelGapIn: 0.25,
     labelGapCite: "AR 25-50, para 1-39b(10)",
+
+    /*
+     * The gap between a paragraph's number and its text: one space.
+     *
+     * Para 1-39b(10) reads "Space 1/4 inch to the right of the parenthesis when
+     * numbering subparagraphs", and taking that as the gap puts the text on the
+     * quarter-inch grid - which is where the figures measure it: across figures
+     * 2-3, 2-4, 2-7, 2-10, 2-11, 2-12 and 2-14, 37 numbered paragraphs, the
+     * text starts a median 0.251 in from the margin.
+     *
+     * It is set to one space on instruction, which is a deliberate departure
+     * from that measurement and is recorded as one. The reading is not
+     * unreasonable: 1-39b(10) is about where a *subparagraph* begins, and
+     * fig 2-17 note 3 uses "one space after the colon" for the subject, so one
+     * space after a number is the same convention. Set labelSpaces to null to
+     * go back to the quarter-inch grid.
+     */
+    labelSpaces: 1,
+    labelSpacesCite: "set on instruction; cf. AR 25-50, para 1-39b(10) and fig 2-17 note 3",
 
     // Continuation lines of every paragraph return to the left margin - the
     // first line carries the indent, the wrap does not. Visible throughout

@@ -39,7 +39,7 @@ import {
     MAX_SUBDIVISION_DEPTH, ADDRESS_LIMITS, buildEnclosureListing, COPY_MARKERS,
     normalizePunctuationSpacing, formatMemoDate, AGREEMENT_FORMAT, LISTING,
     agreementParties, DECISION_APPROVAL, EXCLUSIVE_FOR, PERSONAL_ADDRESS_TYPES,
-    normalizeZipSpacing,
+    normalizeZipSpacing, MFR_ABBREVIATED,
 } from "./ar25-50.js";
 import {layoutMemo, usesLetterhead} from "./memo-formatter.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
@@ -480,6 +480,25 @@ function listingParagraph(entry) {
 
 function buildHeadingParagraphs(memo) {
     const out = [];
+
+    /*
+     * The abbreviated MFR - fig 2-17 note 7. "Abbreviate MEMORANDUM FOR RECORD
+     * by typing the acronym MFR. Omit the office symbol and subject line."
+     *
+     * It is written at the foot of somebody else's page, so nothing above it
+     * belongs to this memorandum: no letterhead, no office symbol, no date
+     * line, no subject. The two lines below the preceding correspondence are
+     * the drafter's to leave, because this renderer does not own that page.
+     */
+    if (memo.type === "record" && memo.abbreviated) {
+        out.push(new Paragraph({spacing: SINGLE, children: [run(MFR_ABBREVIATED.keyword)]}));
+        // "Begin typing the text two lines below MFR" - not the three lines
+        // below the subject a full memorandum gets, because there is no
+        // subject line to measure from.
+        out.push(...gapParagraphs(MFR_ABBREVIATED.keywordToText));
+        return out;
+    }
+
     // ZIP two spaces after the State - para 5-10b.
     const styleAddress = (a) => normalizeZipSpacing(
         memo.addressStyle === "uppercase" ? String(a).toUpperCase() : String(a));
@@ -603,9 +622,22 @@ function bodyParagraphs(memo, doc) {
             }
 
             if (label) {
-                const textStartIn = tabStopAfter(indentIn + measureTextIn(label, TYPE.fontSizePt));
-                tabStops = [{type: TabStopType.LEFT, position: IN(textStartIn)}];
-                children.push(run(label), tabRun());
+                /*
+                 * One space between the number and the text - see
+                 * LAYOUT.labelSpaces for why, and for the measurement it
+                 * departs from. A space, not a tab: a tab to a stop a space
+                 * wide would collapse the moment the label's width changed,
+                 * and Word would silently advance to the next stop instead.
+                 * With labelSpaces null this goes back to the quarter-inch
+                 * grid, which does need the stop.
+                 */
+                if (LAYOUT.labelSpaces == null) {
+                    const textStartIn = tabStopAfter(indentIn + measureTextIn(label, TYPE.fontSizePt));
+                    tabStops = [{type: TabStopType.LEFT, position: IN(textStartIn)}];
+                    children.push(run(label), tabRun());
+                } else {
+                    children.push(run(label + " ".repeat(LAYOUT.labelSpaces)));
+                }
             }
             if (node.approvalLine && memo.digitalSignature !== false) {
                 // "Preparing a digital decision memorandum" - fig 2-19 - shows
@@ -682,17 +714,9 @@ function closingParagraphs(memo) {
         ? SPACING.authorityLineToSignature.linesBelow
         : SPACING.textToSignature.linesBelow;
 
-    if (memo.digitalSignature !== false) {
-        out.push(...blankParagraph(SPACING.authorityLineToDigitalSignature.linesBelow - 1));
-        out.push(new Paragraph({
-            spacing: SINGLE,
-            tabStops: sigTab,
-            children: [tabRun(), run(memo.digitalSignaturePlaceholder ?? "[place digital signature block here]")],
-        }));
-        out.push(...blankParagraph(total - SPACING.authorityLineToDigitalSignature.linesBelow - 1));
-    } else {
-        out.push(...blankParagraph(total - 1));
-    }
+    // No "[place digital signature block here]" line - that is the figures'
+    // annotation, not text a memorandum carries. See memo-formatter.js.
+    out.push(...blankParagraph(total - 1));
 
     // Two columns on the same lines: enclosure listing left, signature block
     // beginning at the centre of the page. - paras 2-4c(2)(a) and 2-4c(3)

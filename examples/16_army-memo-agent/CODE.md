@@ -141,7 +141,9 @@ function tabStopAfter(positionIn) {
 }
 ```
 
-So `1.` at the left margin puts its text at 0.25 in, `a.` at the 0.25 in indent puts its text at 0.5 in, and `(1)` at 0.5 in puts its text at 0.75 in - one rhythm across all four levels. `verify.js` asserts each of these.
+That grid is what the **indents** sit on: `a.` a quarter inch in, `(1)` a half, both stated outright in figure 2-1, and it is the grid a writer's own tab key lands on (`w:defaultTabStop`). `verify.js` asserts each of these.
+
+The gap between a number and its own text is a separate question, and it is now **one space** rather than the grid — see [15b](#15b-one-space-after-the-paragraph-number) for the measurement that says otherwise and why it was set this way anyway.
 
 ---
 
@@ -279,13 +281,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-571 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+577 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 571/571 checks passed.
+# AR 25-50 layout verification: 577/577 checks passed.
 ```
 
 ---
@@ -512,6 +514,28 @@ Asking for type above the ceiling is an **error**. The only non-Arial run in any
 
 ---
 
+## 15a) The closing: what a memorandum carries and what the figure only points at
+
+Two things came off the page here, both because a figure's *annotation* had been read as a figure's *content*.
+
+**`[place digital signature block here]` is not text.** Figures 2-1, 2-14 and 2-17 all print it on the third line below the authority line, and it had been rendered literally — so every generated memorandum carried an instruction to the typist into a signed document. It is the regulation pointing at the space a digital signature occupies. That space is already there: para 2-4c(2)(a) begins the signature block on the fifth line, so a signature applied over it lands exactly where the figures put the annotation. Nothing needs to be emitted to reserve it.
+
+**The authority line is conditional, not default.** Para 2-4c(1): *"The authority line is used by individuals properly designated as having the authority to sign for the commander or head of an office."* If the signer is the commander, there is no authority line — and figure 2-17 note 6 says of the MFR outright: **"Do not use an authority line."** The templates no longer ship `FOR THE COMMANDER:`; a memorandum that needs one supplies it, and the five lines are then counted from it instead of from the last line of text, which para 2-4c(2)(a) spells out as two separate cases.
+
+---
+
+## 15b) One space after the paragraph number
+
+Para 1-39b(10) reads *"Space ¼ inch to the right of the parenthesis when numbering subparagraphs"*, and the figures bear the quarter inch out: across figures 2-3, 2-4, 2-7, 2-10, 2-11, 2-12 and 2-14 — 37 numbered paragraphs — the text starts a median **0.251 in** from the left margin.
+
+It is nevertheless set to **one space**, on instruction, and `LAYOUT.labelSpaces` records that it is a departure and what it departs from. The reading is defensible: 1-39b(10) is about where a *subparagraph* begins, and figure 2-17 note 3 uses *"one space after the colon"* for the subject line, so one space after a number is the same convention. Set `labelSpaces` to `null` and the quarter-inch grid comes back.
+
+The *indents* are untouched — `a.` at a quarter inch, `(1)` at a half, both stated outright in figure 2-1. Only the gap between a number and its own text changed.
+
+One implementation note: the number and its space are a single run, `"1. "`, not a run plus a tab. A tab needs a stop, and a stop one space wide is not a grid position — change the label's width and Word advances to the next stop instead of holding the space.
+
+---
+
 ## 16a) The office symbol, and what a derived measurement cost
 
 Para 2-4a(1) says the office symbol goes *"on the second line below the seal"*, and for a while this code took that literally and **derived** the position: the seal's top offset, plus one line for the seal, plus one for each of the four letterhead lines, plus one more. Clean, self-consistent, and wrong — because "line" was taken to be the body's 13.8 pt, and the letterhead's lines are 11.5 pt and 9.2 pt. The derived answer came out **1.670 in** where figure 2-1 shows **1.775 in**: half a line high.
@@ -640,7 +664,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 571 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 577 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

@@ -144,14 +144,13 @@ function tabStopAfter(positionIn) {
  */
 function wrap(text, {firstIndentIn = 0, wrapIndentIn = 0, opts, role = "body", bold = false,
                      prefix = null}) {
-    // "Space 1/4 inch to the right of the parenthesis when numbering
-    //  subparagraphs" (para 1-39b(10)) describes a quarter-inch tab grid: the
-    //  text advances to the next quarter-inch stop past the label, which is
-    //  what puts "1." and "a." and "(1)" on the same rhythm in figure 2-1.
-    //  Adding a flat quarter inch to the label width instead would open a
-    //  visibly wider gap than the figures show.
+    // The gap between the number and the text - LAYOUT.labelSpaces, which
+    // records why it is a space rather than the quarter-inch grid. Falling back
+    // to the grid means advancing to the next quarter-inch stop past the label.
     const prefixWidthIn = prefix
-        ? tabStopAfter(firstIndentIn + measureTextIn(prefix, opts.fontSizePt)) - firstIndentIn
+        ? (LAYOUT.labelSpaces == null
+            ? tabStopAfter(firstIndentIn + measureTextIn(prefix, opts.fontSizePt)) - firstIndentIn
+            : measureTextIn(prefix + " ".repeat(LAYOUT.labelSpaces), opts.fontSizePt))
         : 0;
 
     const indentForLine = (i) => (i === 0 ? firstIndentIn : wrapIndentIn);
@@ -473,18 +472,18 @@ function buildClosing(memo, opts) {
         ? SPACING.authorityLineToSignature
         : SPACING.textToSignature;
 
-    if (memo.digitalSignature !== false) {
-        // The digital signature block occupies the third of the five lines.
-        const before = SPACING.authorityLineToDigitalSignature.linesBelow - 1;
-        out.push(...blank(before));
-        out.push(line(opts.digitalSignaturePlaceholder, {
-            indentIn: sigIndent,
-            role: "digital-signature",
-        }));
-        out.push(...blank(spacing.linesBelow - SPACING.authorityLineToDigitalSignature.linesBelow - 1));
-    } else {
-        out.push(...blank(spacing.linesBelow - 1));
-    }
+    /*
+     * "[place digital signature block here]" is not typed into a memorandum.
+     * It is the figures' own annotation - the way figures 2-1, 2-14 and 2-17
+     * point at the space a digital signature occupies - and printing it on the
+     * page puts an instruction to the typist into a signed document.
+     *
+     * The space it points at is the two lines above the signature block, which
+     * are already there: para 2-4c(2)(a) begins the block on the fifth line,
+     * so a signature applied over it lands exactly where the figures put the
+     * annotation. Nothing needs to be emitted to reserve it.
+     */
+    out.push(...blank(spacing.linesBelow - 1));
 
     // The closing runs as two columns on the same lines: the enclosure listing
     // at the left margin, the signature block beginning at the centre of the

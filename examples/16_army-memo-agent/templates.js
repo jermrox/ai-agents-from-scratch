@@ -135,7 +135,6 @@ function standard() {
             {text: "[MAIN POINT - the recommendation, conclusion, or most important information.]"},
             {text: POC},
         ],
-        authorityLine: "FOR THE COMMANDER:",
     });
 }
 
@@ -154,7 +153,6 @@ function thru() {
             {text: "[SUPPORTING INFORMATION the THRU addressee needs in order to comment or concur.]"},
             {text: POC},
         ],
-        authorityLine: "FOR THE COMMANDER:",
     });
 }
 

@@ -164,9 +164,12 @@ const FIG_2_1 = {
         indexOf(doc, "enclosure-label") - indexOf(doc, "authority-line"), 5,
         "AR 25-50, para 2-4c(2)(a)");
 
-    check("fig 2-1: digital signature block is the 3d line below the authority line",
-        indexOf(doc, "digital-signature") - indexOf(doc, "authority-line"), 3,
-        "AR 25-50, figs 2-1 through 2-5");
+    // The figures' "[place digital signature block here]" is an annotation
+    // pointing at the space above the signature block, not text a memorandum
+    // carries. The space is there because the block begins on the fifth line.
+    check("no memorandum prints the figures' digital-signature annotation",
+        doc.flow.filter((l) => /place digital signature/i.test(l.text ?? "")).length, 0,
+        "AR 25-50, figs 2-1, 2-14 and 2-17");
 
     // Labels and indents, read off the same figure.
     const labels = lines.filter((l) => l.prefix).map((l) => l.prefix);
@@ -180,21 +183,22 @@ const FIG_2_1 = {
     check("fig 2-1: third subdivision does not indent further", indentFor("(a)"), 0.5, "AR 25-50, fig 2-1");
     check("fig 2-1: main paragraphs sit at the left margin", indentFor("1."), 0, "AR 25-50, fig 2-1");
 
-    // "Space 1/4 inch to the right of the parenthesis when numbering
-    //  subparagraphs" - para 1-39b(10). Text lands on the quarter-inch grid,
-    //  so every label puts its text a quarter inch right of the label itself.
+    /*
+     * One space between the number and the text - LAYOUT.labelSpaces, which
+     * records the instruction and the measurement it departs from. Asserted as
+     * the label's own width plus exactly one space, at every level, so the gap
+     * cannot quietly become two or drift back onto the tab grid.
+     */
     const textStart = (label) => {
         const l = lines.find((x) => x.prefix === label);
         return Number((l.indentIn + l.prefixWidthIn).toFixed(4));
     };
-    check("text after '1.' starts on the 1/4-inch grid", textStart("1."), 0.25,
-        "AR 25-50, para 1-39b(10)");
-    check("text after 'a.' starts on the 1/4-inch grid", textStart("a."), 0.5,
-        "AR 25-50, para 1-39b(10)");
-    check("text after '(1)' starts on the 1/4-inch grid", textStart("(1)"), 0.75,
-        "AR 25-50, para 1-39b(10)");
-    check("text after '(a)' starts on the 1/4-inch grid", textStart("(a)"), 0.75,
-        "AR 25-50, para 1-39b(10)");
+    const oneSpaceAfter = (label, indentIn) => Number(
+        (indentIn + measureTextIn(label + " ", TYPE.fontSizePt)).toFixed(4));
+    for (const [label, indentIn] of [["1.", 0], ["a.", 0.25], ["(1)", 0.5], ["(a)", 0.5]]) {
+        check(`text after '${label}' starts one space after it`,
+            textStart(label), oneSpaceAfter(label, indentIn), LAYOUT.labelSpacesCite);
+    }
 
     // "Do not indent any further than the second subdivision" also means the
     // wrap of every paragraph returns to the left margin.
@@ -336,9 +340,9 @@ const FIG_2_1 = {
     check("without an authority line the signature block is the 5th line below the text",
         indexOf(doc, "enclosure-label") - lastIndexOf(doc, ["paragraph"]), 5,
         "AR 25-50, para 2-4c(2)(a)");
-    check("without an authority line the digital signature is the 3d line below the text",
-        indexOf(doc, "digital-signature") - lastIndexOf(doc, ["paragraph"]), 3,
-        "AR 25-50, figs 2-1 through 2-5");
+    checkTrue("and nothing is printed in the space above it",
+        doc.flow.filter((l) => /place digital signature/i.test(l.text ?? "")).length === 0,
+        "AR 25-50, figs 2-1, 2-14 and 2-17");
 
     // A wet-signature memorandum leaves the five lines empty.
     const wet = layoutMemo({...FIG_2_1, digitalSignature: false});
@@ -1073,12 +1077,19 @@ const FIELD_TEMPLATE = {
         /<w:spacing w:after="0" w:before="0" w:line="240" w:lineRule="auto"\/>/.test(docx.document),
         "AR 25-50, para 2-4b(2)");
 
-    // The quarter-inch grid: "1." puts its text at 0.25 in = 360 twips,
-    // "a." at 0.5 in = 720 twips. - para 1-39b(10)
-    checkTrue("docx: a main paragraph tabs to the quarter-inch grid",
-        /<w:tab w:val="left" w:pos="360"\/>/.test(docx.document), "AR 25-50, para 1-39b(10)");
-    checkTrue("docx: a first subdivision tabs to the half-inch grid",
-        /<w:tab w:val="left" w:pos="720"\/>/.test(docx.document), "AR 25-50, para 1-39b(10)");
+    /*
+     * The number and its text are one run - "1. " - not a run and a tab. A tab
+     * needs a stop, and a stop one space wide is not a grid position: change
+     * the label's width and Word advances to the next stop instead of holding
+     * the space. LAYOUT.labelSpaces records why the gap is a space at all.
+     */
+    checkTrue("docx: a main paragraph's number carries its own single space",
+        /<w:t xml:space="preserve">1\. <\/w:t>/.test(docx.document), LAYOUT.labelSpacesCite);
+    checkTrue("docx: and so does a subdivision's",
+        /<w:t xml:space="preserve">a\. <\/w:t>/.test(docx.document), LAYOUT.labelSpacesCite);
+    checkTrue("docx: no paragraph number is followed by a tab",
+        !/<w:t xml:space="preserve">1\.<\/w:t><\/w:r><w:r>[^<]*<w:tab\/>/.test(docx.document),
+        LAYOUT.labelSpacesCite);
     checkTrue("docx: a first subdivision indents its first line a quarter inch",
         /<w:ind w:left="0" w:firstLine="360"\/>/.test(docx.document), "AR 25-50, fig 2-1");
 
@@ -2732,6 +2743,41 @@ const FIELD_TEMPLATE = {
         short.flow.every((l) => l.role !== "subject"), MFR_ABBREVIATED.cite);
     check("fig 2-17 note 7: the text begins two lines below MFR",
         short.flow.findIndex((l) => l.role === "paragraph"), 2, MFR_ABBREVIATED.cite);
+
+    /*
+     * And the same in the .docx, because the deliverable is the Word file.
+     * Every assertion above passed while the .docx ignored `abbreviated`
+     * entirely and emitted the full heading - office symbol, date,
+     * MEMORANDUM FOR RECORD, subject and all. Checking the line model is not
+     * checking the document.
+     */
+    {
+        const {renderDocx} = await import("./memo-docx.js");
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(await renderDocx({
+            type: "record", abbreviated: true, officeSymbol: "ATZB-RC",
+            subject: "Telephone conversation", date: "31 July 2026",
+            paragraphs: mfr.paragraphs, signature: mfr.signature,
+        }));
+        const xml = await zip.file("word/document.xml").async("string");
+        const texts = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]);
+
+        check("docx: the abbreviated form opens with the acronym",
+            texts.find((t) => t.trim()), MFR_ABBREVIATED.keyword, MFR_ABBREVIATED.cite);
+        checkTrue("docx: it omits the office symbol even when one is supplied",
+            !texts.some((t) => t.includes("ATZB-RC")), MFR_ABBREVIATED.cite);
+        checkTrue("docx: it omits the subject line even when one is supplied",
+            !texts.some((t) => t.includes("SUBJECT") || t.includes("Telephone conversation")),
+            MFR_ABBREVIATED.cite);
+        checkTrue("docx: and the date line with it",
+            !texts.some((t) => t.includes("31 July 2026")), MFR_ABBREVIATED.cite);
+        // "Begin typing the text two lines below MFR" - one blank paragraph.
+        const paras = [...xml.matchAll(/<w:p>(?:(?!<\/w:p>).)*<\/w:p>/gs)].map((m) => m[0]);
+        const afterMfr = paras.findIndex((p) => />MFR</.test(p));
+        const firstText = paras.findIndex((p) => /<w:t[^>]*>1\. /.test(p));
+        check("docx: the text begins two lines below MFR",
+            firstText - afterMfr, 2, MFR_ABBREVIATED.cite);
+    }
 
     checkTrue("an abbreviated MFR raises no errors",
         validateMemo({type: "record", abbreviated: true,
