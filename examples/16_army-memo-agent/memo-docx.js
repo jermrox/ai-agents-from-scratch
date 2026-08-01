@@ -39,9 +39,9 @@ import {
     MAX_SUBDIVISION_DEPTH, ADDRESS_LIMITS, buildEnclosureListing, COPY_MARKERS,
     normalizePunctuationSpacing, formatMemoDate, AGREEMENT_FORMAT, LISTING,
     agreementParties, DECISION_APPROVAL, EXCLUSIVE_FOR, PERSONAL_ADDRESS_TYPES,
-    normalizeZipSpacing, MFR_ABBREVIATED,
+    normalizeZipSpacing, MFR_ABBREVIATED, LETTER,
 } from "./ar25-50.js";
-import {layoutMemo, usesLetterhead} from "./memo-formatter.js";
+import {layoutMemo, usesLetterhead, letterSignatureLines} from "./memo-formatter.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
 import {resolveSignature} from "./signature-blocks.js";
 
@@ -293,6 +293,130 @@ function continuationHeader(memo) {
             ...blankParagraph(SPACING.continuationSubjectToText.linesBelow - 1),
         ],
     });
+}
+
+// ---------------------------------------------------------------------------
+// The letter - chapter 3
+// ---------------------------------------------------------------------------
+
+/**
+ * Heading: the date centred two lines below the letterhead, the address five
+ * lines below that, the salutation two lines below the address, and the text
+ * two lines below the salutation. - paras 3-6a and 3-6b(1)
+ */
+function letterHeadingParagraphs(memo) {
+    const out = [];
+
+    out.push(...gapParagraphs(LETTER.letterheadToDate));
+    out.push(new Paragraph({
+        spacing: SINGLE,
+        alignment: AlignmentType.CENTER,
+        children: [slot(memo.date, "DATE")],
+    }));
+
+    // "Type the subject (if used) on the fourth line below the seal." - 3-6a(2)
+    if (memo.subject) {
+        out.push(...blankParagraph(1));
+        out.push(new Paragraph({spacing: SINGLE,
+            children: [run("SUBJECT:  "), run(String(memo.subject))]}));
+    }
+
+    out.push(...gapParagraphs(LETTER.dateToAddress));
+    const addressees = memo.addressees ?? [];
+    if (!addressees.length) {
+        out.push(new Paragraph({spacing: SINGLE, children: [slot(null, "ADDRESSEE")]}));
+    }
+    for (const a of addressees) {
+        for (const l of String(a).split("\n")) {
+            out.push(new Paragraph({spacing: SINGLE, children: [run(normalizeZipSpacing(l))]}));
+        }
+    }
+
+    out.push(...gapParagraphs(LETTER.addressToSalutation));
+    out.push(new Paragraph({spacing: SINGLE, children: [slot(memo.salutation, "SALUTATION")]}));
+    out.push(...gapParagraphs(LETTER.salutationToText));
+    return out;
+}
+
+/**
+ * Body. Paragraphs indent a quarter inch on the first line and wrap flush to
+ * the left margin, and they are not numbered - para 3-6b(5). Subparagraphs take
+ * a, b, c, d; a lone one takes a hyphen.
+ */
+function letterBodyParagraphs(memo) {
+    const out = [];
+    let first = true;
+
+    const emit = (node, depth, index, siblings) => {
+        if (!first) out.push(...blankParagraph(SPACING.betweenParagraphs.linesBelow - 1));
+        first = false;
+
+        const label = depth === 0 ? null
+            : (siblings === 1
+                ? LETTER.singleSubparagraphMark
+                : LETTER.subparagraphLabels[index] ?? LETTER.subparagraphLabels[3]);
+        const indentIn = depth === 0 ? LETTER.paragraphIndentIn : LETTER.subparagraphIndentIn;
+        const children = label
+            ? [run(label + " ".repeat(LAYOUT.labelSpaces ?? 1))]
+            : [];
+        children.push(...emphasize(normalizePunctuationSpacing(node.text ?? "")));
+
+        out.push(new Paragraph({
+            spacing: SINGLE,
+            keepLines: true,
+            widowControl: true,
+            // First line indented, wrap back to the left margin - fig 3-1.
+            indent: {left: 0, firstLine: IN(indentIn)},
+            children,
+        }));
+
+        const kids = node.children ?? [];
+        kids.forEach((c, i) => emit(c, depth + 1, i, kids.length));
+    };
+
+    (memo.paragraphs ?? []).forEach((p) => emit(p, 0, 0, 1));
+    return out;
+}
+
+/**
+ * Closing: complimentary close, signature block, "Enclosure", "cc:".
+ * - para 3-6c. No digital signature: para 3-6c(2)(b) forbids one on a letter.
+ */
+function letterClosingParagraphs(memo) {
+    const out = [];
+    const colIn = LAYOUT.signatureBlockIndentIn;
+    const colTab = [{type: TabStopType.LEFT, position: IN(colIn)}];
+    const atColumn = (children) => new Paragraph({
+        spacing: SINGLE, tabStops: colTab, children: [tabRun(), ...children]});
+
+    out.push(...gapParagraphs(LETTER.textToClose));
+    out.push(atColumn([run(memo.complimentaryClose || LETTER.complimentaryClose)]));
+
+    out.push(...gapParagraphs(LETTER.closeToSignature));
+    const sig = letterSignatureLines(memo);
+    if (sig.filter(Boolean).length === 0) {
+        for (const prompt of ["SIGNER NAME", "GRADE, U.S. ARMY", "DUTY TITLE"]) {
+            out.push(atColumn([slot(null, prompt)]));
+        }
+    } else {
+        for (const l of sig) out.push(atColumn([run(l)]));
+    }
+
+    // "Do not show the number of enclosures or list them." - 3-6c(3)
+    const enclosures = memo.enclosures ?? [];
+    if (enclosures.length) {
+        out.push(...gapParagraphs(LETTER.signatureToEnclosure));
+        out.push(new Paragraph({spacing: SINGLE, children: [
+            run(enclosures.length > 1 ? LETTER.enclosurePlural : LETTER.enclosureKeyword)]}));
+    }
+
+    const copies = memo.copiesFurnished ?? [];
+    if (copies.length) {
+        out.push(...gapParagraphs(LETTER.toCopies));
+        out.push(new Paragraph({spacing: SINGLE, children: [run(LETTER.copyKeyword)]}));
+        for (const c of copies) out.push(new Paragraph({spacing: SINGLE, children: [run(c)]}));
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -825,11 +949,15 @@ export async function renderDocx(memo, options = {}) {
     if (hasLetterhead) sealImage = await loadSeal(memo, options);
 
     const isAgreement = memo.type === "mou" || memo.type === "moa";
-    const children = [
-        ...(isAgreement ? agreementHeadingParagraphs(memo) : buildHeadingParagraphs(memo)),
-        ...bodyParagraphs(memo, doc),
-        ...(isAgreement ? agreementClosingParagraphs(memo) : closingParagraphs(memo)),
-    ];
+    const isLetter = memo.type === "letter";
+    const children = isLetter
+        ? [...letterHeadingParagraphs(memo), ...letterBodyParagraphs(memo),
+           ...letterClosingParagraphs(memo)]
+        : [
+            ...(isAgreement ? agreementHeadingParagraphs(memo) : buildHeadingParagraphs(memo)),
+            ...bodyParagraphs(memo, doc),
+            ...(isAgreement ? agreementClosingParagraphs(memo) : closingParagraphs(memo)),
+        ];
 
     // The complete listing on a page of its own. - fig 2-9
     if (memo.distributionOnSeparatePage && memo.distribution?.length) {
@@ -876,9 +1004,16 @@ export async function renderDocx(memo, options = {}) {
                     // second line below the seal" (para 2-4a(1)). A
                     // plain-paper memorandum starts at the 1-inch top margin
                     // instead (para 2-5a).
-                    top: IN(hasLetterhead
-                        ? (options.letterheadHeightIn ?? LETTERHEAD.officeSymbolTopIn)
-                        : 1.0),
+                    /*
+                     * A memorandum's body starts at the measured office-symbol
+                     * position; a letter's starts at the bottom of the
+                     * letterhead, because para 3-6a(1) puts its date two lines
+                     * below and nothing else intervenes. A plain-paper
+                     * memorandum starts at the 1-inch top margin (para 2-5a).
+                     */
+                    top: IN(!hasLetterhead ? 1.0
+                        : isLetter ? LETTER.bodyTopIn
+                        : (options.letterheadHeightIn ?? LETTERHEAD.officeSymbolTopIn)),
                     header: IN(LETTERHEAD.letterheadTopIn),
                     footer: IN(LAYOUT.marginBottomIn - LINE_HEIGHT_IN),
                 },

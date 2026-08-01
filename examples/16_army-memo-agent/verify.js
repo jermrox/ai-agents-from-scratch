@@ -2608,8 +2608,12 @@ const FIELD_TEMPLATE = {
         const source = homeHtml;
         const ids = /const UNIT_IDS = \[([^\]]*)\]/.exec(source);
         const stored = ids ? [...ids[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
-        check("the page remembers seven of the unit's fields", stored.length,
-            FIELDS.filter((f) => f.scope === "unit").length, "unit profile");
+        // Distinct paths, not entries: one path may have more than one entry
+        // when the vehicles word it differently - a memorandum's "GRADE,
+        // BRANCH" against a letter's "GRADE, U.S. ARMY" (paras 6-4f and 3-4).
+        const unitPaths = new Set(FIELDS.filter((f) => f.scope === "unit").map((f) => f.path));
+        check("the page remembers every one of the unit's fields",
+            stored.length, unitPaths.size, "unit profile");
         checkTrue("every remembered field is an input on the form",
             stored.every((id) => source.includes(`id="${id}"`)), "front end");
         // The per-memorandum ids, spelled out, so adding one to the stored list
@@ -3080,6 +3084,149 @@ function hasPlaceholdersDeep(value) {
     if (Array.isArray(value)) return value.some(hasPlaceholdersDeep);
     if (typeof value === "object") return Object.values(value).some(hasPlaceholdersDeep);
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// The letter - chapter 3, against figure 3-1
+// ---------------------------------------------------------------------------
+
+/*
+ * The letter is the regulation's other correspondence vehicle, and almost
+ * nothing chapter 2 says applies to it. Every position below is measured off
+ * figure 3-1, rasterised at 150 px/in and calibrated on the seal - the same
+ * 0.95 in square 0.52 in from the corner that calibrates the memorandum
+ * figures. The calibration puts figure 3-1's left margin at 1.00 in, a value
+ * the regulation states, so it checks out.
+ */
+{
+    const {LETTER, formatLetterDate, letterPageNumber} = await import("./ar25-50.js");
+    const {createTemplate: template} = await import("./templates.js");
+
+    const LETTER_FIG = {
+        // Ink tops in inches from the top edge, and x from the left edge.
+        dateBelowLetterhead: 1.96,      // lines - para 3-6a(1)
+        dateCentreIn: 4.29,             // centred on the page
+        addressBelowDate: 4.99,         // lines - fig 3-1's "general rule"
+        salutationBelowAddress: 2.02,   // lines - para 3-6a(4)
+        textBelowSalutation: 1.99,      // lines - para 3-6b(1)
+        paragraphIndentIn: 0.245,       // measured 0.243-0.249
+        subparagraphIndentIn: 0.245,
+        hyphenTextIn: 0.496,
+        closeColumnIn: 4.32,            // from the page edge - para 3-6c(1)
+        marginIn: 1.007,
+    };
+
+    const letter = {
+        ...template("letter"),
+        letterhead: {organization: "HQ, 4TH INFANTRY DIVISION", streetAddress: "1633 MEKONG ST",
+                     cityStateZip: "FORT CARSON, CO  80913-4321"},
+        date: formatLetterDate(new Date(2026, 7, 3)),
+        addressees: ["The Honorable Jane Roe\nGovernor of Texas\nAustin, TX  78711-2428"],
+        salutation: "Dear Governor Roe:",
+        paragraphs: [
+            {text: "Thank you for your letter about the range complex."},
+            {text: "The closure runs from August 3 through August 7.",
+             children: [{text: "Range 14 reopens on August 8."},
+                        {text: "Range 22 remains available."}]},
+        ],
+        signature: {name: "Marcus T. Hale", grade: "MG", title: "Commanding"},
+        enclosures: ["Range 14 Maintenance Schedule"],
+    };
+
+    const doc = layoutMemo(letter);
+    const at = (role) => doc.flow.findIndex((l) => l.role === role);
+    const lineAt = (role) => doc.flow[at(role)];
+
+    // Para 3-6a: date, subject if used, address, salutation - in that order.
+    checkTrue("letter: the heading runs date, address, salutation",
+        at("date") < at("letter-address") && at("letter-address") < at("salutation"),
+        "AR 25-50, para 3-6a");
+    check("letter: the date is centred", lineAt("date").align, "center",
+        LETTER.letterheadToDate.cite);
+    check("letter: the date is two lines below the letterhead",
+        LETTER.letterheadToDate.linesBelow, 2, LETTER.letterheadToDate.cite);
+    check("letter: the address is five lines below the date",
+        at("letter-address") - at("date"), 5, LETTER.dateToAddress.cite);
+    check("letter: the salutation is the 2d line below the last address line",
+        at("salutation") - doc.flow.map((l) => l.role).lastIndexOf("letter-address"), 2,
+        LETTER.addressToSalutation.cite);
+    check("letter: the text begins on the 2d line below the salutation",
+        at("paragraph") - at("salutation"), 2, LETTER.salutationToText.cite);
+
+    // "Indent paragraphs 1/4 inch. Do not number or letter paragraphs." - 3-6b(5)
+    check("letter: paragraphs indent a quarter inch",
+        lineAt("paragraph").indentIn, LETTER.paragraphIndentIn, LETTER.indentCite);
+    checkTrue("letter: and are measured where figure 3-1 puts them",
+        Math.abs(lineAt("paragraph").indentIn - LETTER_FIG.paragraphIndentIn) < 0.01,
+        "measured from AR 25-50, fig 3-1");
+    checkTrue("letter: no paragraph is numbered",
+        doc.flow.filter((l) => l.role === "paragraph").every((l) => !l.prefix),
+        "AR 25-50, para 3-6b(5)");
+    check("letter: subparagraphs take letters of the alphabet",
+        doc.flow.filter((l) => l.role === "subparagraph" && l.prefix).map((l) => l.prefix),
+        ["a.", "b."], LETTER.subparagraphCite);
+    checkTrue("letter: a paragraph's wrap returns to the left margin",
+        doc.flow.filter((l) => l.role === "paragraph")
+            .every((l, i, a) => l.indentIn === (a.indexOf(l) === i ? l.indentIn : 0)),
+        "AR 25-50, fig 3-1");
+
+    // "Start the closing on the second line below the last line of the letter.
+    //  Begin at the center of the page." - 3-6c(1)
+    check("letter: the complimentary close is the 2d line below the text",
+        LETTER.textToClose.linesBelow, 2, LETTER.textToClose.cite);
+    check("letter: it begins at the centre of the page",
+        lineAt("complimentary-close").indentIn, LAYOUT.signatureBlockIndentIn,
+        LETTER.closeCite);
+    check("letter: the signature block is the 5th line below the close",
+        at("signature") - at("complimentary-close"), 5, LETTER.closeToSignature.cite);
+    checkTrue("letter: measured where figure 3-1 puts it",
+        Math.abs(1.0 + lineAt("signature").indentIn - LETTER_FIG.closeColumnIn) < 0.08,
+        "measured from AR 25-50, fig 3-1");
+
+    /*
+     * "Military personnel will use their full grades" (para 3-4) and "Branch
+     * designations and 'General Staff' have no meaning to the general public"
+     * (fig 3-1 continued). A memorandum would render this signer "MG" over a
+     * branch; a letter spells it out and gives the component.
+     */
+    const sig = doc.flow.filter((l) => l.role === "signature").map((l) => l.text);
+    check("letter: the grade is spelled out with the component, not the branch",
+        sig[1], "Major General, U.S. Army", LETTER.signatureCite);
+    checkTrue("letter: the signature block is mixed case, not capitals",
+        sig[0] === "Marcus T. Hale" && sig[0] !== sig[0].toUpperCase(),
+        "AR 25-50, para 3-6c(2)(c)");
+
+    // "Do not show the number of enclosures or list them." - 3-6c(3)
+    const encl = doc.flow.filter((l) => l.role === "enclosure-label").map((l) => l.text);
+    check("letter: the enclosure line is the word alone", encl, ["Enclosure"],
+        LETTER.enclosureCite);
+    check("letter: two enclosures make it plural",
+        layoutMemo({...letter, enclosures: ["A", "B"]}).flow
+            .filter((l) => l.role === "enclosure-label").map((l) => l.text),
+        ["Enclosures"], LETTER.enclosureCite);
+
+    // Chapter 3's own date form, and the continuation page number.
+    check("letter: the date is civilian style", formatLetterDate(new Date(2020, 0, 3)),
+        "January 3, 2020", "AR 25-50, para 3-6a(1)");
+    check("letter: a continuation page is numbered with a hyphen each side",
+        letterPageNumber(2), "-2-", LETTER.continuationCite);
+
+    // The validator's chapter 3 rules.
+    const bad = (patch) => validateMemo({...letter, ...patch}).errors.map((f) => f.rule);
+    checkTrue("letter: a memorandum-style date is an error",
+        bad({date: "3 August 2026"}).includes("letter-date-style"), "AR 25-50, para 3-6a(1)");
+    checkTrue("letter: a digital signature is an error",
+        bad({digitalSignature: true}).includes("letter-digital-signature"),
+        LETTER.noDigitalSignatureCite);
+    checkTrue("letter: more than four subparagraphs is an error",
+        bad({paragraphs: [{text: "x", children: [{text: "a"}, {text: "b"}, {text: "c"},
+                                                 {text: "d"}, {text: "e"}]}]})
+            .includes("letter-too-many-subparagraphs"), LETTER.subparagraphCite);
+    checkTrue("letter: a hand-numbered paragraph is an error",
+        bad({paragraphs: [{text: "1.  Do not number a letter's paragraphs."}]})
+            .includes("letter-numbered-paragraph"), "AR 25-50, para 3-6b(5)");
+    check("letter: the template itself raises no errors",
+        validateMemo(template("letter")).errors.map((f) => f.rule), [], LETTER.cite);
 }
 
 // ---------------------------------------------------------------------------

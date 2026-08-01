@@ -84,6 +84,12 @@ export function assembleMemo(content, context = {}) {
         enclosures: context.enclosures ?? [],
         copiesFurnished: context.copiesFurnished ?? [],
         font: context.font,
+
+        // The letter's own heading elements - para 3-6a. A memorandum has
+        // neither, and carrying them as undefined keeps one spec shape for
+        // both vehicles rather than two.
+        salutation: context.salutation,
+        complimentaryClose: context.complimentaryClose,
     };
 }
 

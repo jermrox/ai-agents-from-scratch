@@ -33,7 +33,7 @@ import path from "path";
 import {renderText, renderHtmlDocument, DEFAULT_SEAL_PATH} from "./memo-formatter.js";
 import {validateMemo} from "./memo-validator.js";
 import {renderDocx} from "./memo-docx.js";
-import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
+import {MEMO_TYPES, formatMemoDate, formatLetterDate} from "./ar25-50.js";
 import {createTemplate, describeTemplates, recordFieldPlaceholders, RECORD_FIELDS} from "./templates.js";
 import {detectMemoType, assembleMemo, runMemoAgent} from "./memo-intent.js";
 import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
@@ -135,6 +135,22 @@ export function specFromForm(form = {}) {
         } : record.letterhead),
     };
     if (type === "record") context.authorityLine = null;
+
+    /*
+     * The letter is chapter 3, not chapter 2. Its date is civilian style, it
+     * carries no office symbol and no authority line, its salutation is part of
+     * the heading, and "digital signatures will not be used on letters" -
+     * para 3-6c(2)(b). None of that is a variation on the memorandum, so the
+     * memorandum's defaults are cleared rather than adjusted.
+     */
+    if (type === "letter") {
+        context.officeSymbol = null;
+        context.authorityLine = null;
+        context.digitalSignature = false;
+        context.salutation = filled(form.salutation, template.salutation);
+        context.complimentaryClose = filled(form.complimentaryClose, template.complimentaryClose);
+        context.date = filled(form.date, formatLetterDate());
+    }
 
     const memo = assembleMemo({
         subject: String(form.subject ?? "").trim(),
@@ -280,6 +296,7 @@ Range Control will complete the following work:
     ${field("date", "Date", `para 2-4a(3)(b) — today is ${formatMemoDate()}`)}
     ${field("suspenseDate", "Suspense date", "optional, para 2-4a(4)")}
     ${field("authorityLine", "Authority line", "only when signing for the commander — para 2-4c(1)")}
+    ${field("salutation", "Salutation", "letters only — para 3-6a(4)")}
   </fieldset>
 
   <button type="submit" id="go">Generate</button>

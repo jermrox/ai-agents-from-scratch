@@ -11,7 +11,7 @@
  * marker and nothing else, so emphasis stays deliberate (para 1-32).
  */
 
-import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
+import {MEMO_TYPES, formatMemoDate, formatLetterDate, LETTER} from "./ar25-50.js";
 
 /**
  * Placeholder syntax, so tooling and the validator agree on what is unfilled.
@@ -318,7 +318,41 @@ function agreement(type) {
     };
 }
 
+/**
+ * Letter - chapter 3, figures 3-1 through 3-5.
+ *
+ * Not a memorandum with different words: civilian-style date centred below the
+ * letterhead, an address in the body of the page, a salutation, indented and
+ * unnumbered paragraphs, a complimentary close, and a mixed-case signature
+ * block carrying the component rather than the branch. Para 3-2 fixes who it
+ * is written to.
+ */
+function letter() {
+    return base({
+        type: "letter",
+        // "Record numbers are not used on letters" (para 3-5d), and chapter 3's
+        // heading has no office symbol line at all (para 3-6a).
+        officeSymbol: null,
+        date: formatLetterDate(),
+        addressees: ["[NAME (Upper/Lower case)]\n[STREET ADDRESS]\n[CITY, STATE ZIP+4]"],
+        subject: null,                 // "if used" - para 3-6a(2)
+        salutation: "[Dear Mr./Ms./Title Name:]",
+        complimentaryClose: LETTER.complimentaryClose,
+        paragraphs: [
+            {text: "[OPENING - why you are writing, in one sentence.]"},
+            {text: "[THE SUBSTANCE. Indent each paragraph a quarter inch and do not number it; para 3-6b(5) allows up to four subparagraphs, lettered a through d.]"},
+            {text: "[CLOSING COURTESY, and the point of contact - para 3-5f.]"},
+        ],
+        signature: {name: "[Name (Upper/Lower case)]", gradeAndBranch: "[Grade, U.S. Army]", title: "[Title]"},
+        // "Digital signatures will not be used on letters." - para 3-6c(2)(b)
+        digitalSignature: false,
+        authorityLine: null,
+        enclosures: [],
+    });
+}
+
 export const TEMPLATES = {
+    letter,
     standard,
     thru,
     record,

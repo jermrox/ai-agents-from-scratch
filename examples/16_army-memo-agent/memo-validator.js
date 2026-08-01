@@ -24,6 +24,7 @@ import {
     MAX_SUBDIVISION_DEPTH,
     MAX_DEPTH_CITE,
     MEMO_DATE_PATTERN,
+    LETTER,
     MEMO_DATE_STAMP_PATTERN,
     DATE_FORMAT_CITE,
     TIME,
@@ -88,11 +89,29 @@ const warn = (...a) => finding("warning", ...a);
  */
 const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
 
+/**
+ * The letter is the other correspondence vehicle in the regulation - chapter 3
+ * - and almost nothing chapter 2 says about a memorandum applies to it. Guarding
+ * on this is what keeps a letter from being reported against a memorandum's
+ * rules; the letter's own rules are checkLetter().
+ */
+const isLetter = (memo) => memo?.type === "letter";
+
+/**
+ * A letter's date, in civilian style: "January 3, 2020". - para 3-6a(1).
+ * A memorandum's is "3 January 2020" (para 2-4a(3)(a)); the two never overlap,
+ * which is what lets one be reported as the other.
+ */
+const LETTER_DATE_PATTERN =
+    /^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}$/;
+
 // ---------------------------------------------------------------------------
 // Heading
 // ---------------------------------------------------------------------------
 
 function checkHeading(memo, out) {
+    if (isLetter(memo)) return checkLetterHeading(memo, out);
+
     if (!memo.officeSymbol && !isAgreement(memo) && !memo.abbreviated) {
         out.push(warn("content", "not-yet-supplied",
             "Office symbol. Its slot is on the first line of the heading, with the date flush right beside it.",
@@ -189,6 +208,107 @@ function checkHeading(memo, out) {
  *   "Because WASH DC and ALEX VA are abbreviations, do not use a comma between
  *    the city and the state."
  */
+/**
+ * The letter's heading - para 3-6a. A different set of elements from a
+ * memorandum's, so a different set of checks: the date is civilian style, the
+ * address stands on its own, and the salutation is required.
+ */
+function checkLetterHeading(memo, out) {
+    if (!memo.date) {
+        out.push(warn("content", "not-yet-supplied",
+            "Date. It is centred two lines below the letterhead, in civilian style.",
+            LETTER.letterheadToDate.cite));
+    } else if (!hasPlaceholders(memo.date) && !LETTER_DATE_PATTERN.test(memo.date)) {
+        out.push(MEMO_DATE_PATTERN.test(memo.date)
+            ? error("content", "letter-date-style",
+                `"${memo.date}" is a memorandum date. A letter's date is civilian style - `
+                + "for example January 3, 2020.",
+                "AR 25-50, para 3-6a(1)")
+            : error("content", "letter-date-format",
+                `"${memo.date}" is not a valid letter date. Use "January 3, 2020".`,
+                "AR 25-50, para 3-6a(1)"));
+    }
+
+    if (!(memo.addressees ?? []).length) {
+        out.push(warn("content", "not-yet-supplied",
+            "Address. It stands in the body of the page, evenly spaced below the date.",
+            "AR 25-50, para 3-6a(3)"));
+    }
+
+    if (!memo.salutation) {
+        out.push(warn("content", "not-yet-supplied",
+            "Salutation. It goes on the second line below the last line of the address.",
+            LETTER.addressToSalutation.cite));
+    }
+
+    // "Record numbers are not used on letters." - para 3-5d
+    if (memo.officeSymbol) {
+        out.push(warn("format", "letter-office-symbol",
+            "A letter carries no office symbol line; chapter 3's heading is the date, "
+            + "subject if used, address, and salutation.",
+            "AR 25-50, paras 3-5d and 3-6a"));
+    }
+}
+
+/**
+ * The letter's body and closing - paras 3-6b and 3-6c. Everything here is
+ * stated in chapter 3 and nowhere in chapter 2, which is why the letter needed
+ * a renderer of its own rather than a flag on the memorandum.
+ */
+function checkLetter(memo, out) {
+    if (!isLetter(memo)) return;
+
+    // "Do not number or letter paragraphs in a letter." - 3-6b(5)
+    for (const [i, p] of (memo.paragraphs ?? []).entries()) {
+        if (/^\s*(\d+\.|[a-z]\.|\(\d+\))\s/.test(p.text ?? "")) {
+            out.push(error("content", "letter-numbered-paragraph",
+                `paragraphs[${i}] begins with its own number or letter. A letter's `
+                + "paragraphs are not numbered; the renderer letters subparagraphs itself.",
+                "AR 25-50, para 3-6b(5)"));
+        }
+        const kids = p.children ?? [];
+        if (kids.length > LETTER.maxSubparagraphs) {
+            out.push(error("content", "letter-too-many-subparagraphs",
+                `paragraphs[${i}] has ${kids.length} subparagraphs. `
+                + `"Do not create more than ${LETTER.maxSubparagraphs}."`,
+                LETTER.subparagraphCite));
+        }
+        for (const k of kids) {
+            if ((k.children ?? []).length) {
+                out.push(error("content", "letter-subdivision-depth",
+                    `paragraphs[${i}] subdivides past the first level. A letter has one `
+                    + "level of subparagraph.",
+                    "AR 25-50, para 3-6b(5)"));
+                break;
+            }
+        }
+    }
+
+    // "Digital signatures will not be used on letters." - 3-6c(2)(b)
+    if (memo.digitalSignature === true) {
+        out.push(error("format", "letter-digital-signature",
+            "Digital signatures will not be used on letters.",
+            LETTER.noDigitalSignatureCite));
+    }
+
+    // "Do not show the number of enclosures or list them." - 3-6c(3)
+    // The renderer never lists them; this catches a caller writing the count in.
+    if (/^\s*\d/.test(String(memo.enclosureLabel ?? ""))) {
+        out.push(error("format", "letter-enclosure-count",
+            "A letter's enclosure line is the word alone - no number, no listing.",
+            LETTER.enclosureCite));
+    }
+
+    // "Military personnel will use their full grades." - para 3-4
+    const grade = memo.signature?.gradeAndBranch ?? "";
+    if (grade && !hasPlaceholders(grade) && /^[A-Z0-9]{2,4}(,|$)/.test(grade.trim())) {
+        out.push(warn("content", "letter-abbreviated-grade",
+            `"${grade}" is an abbreviated grade. A letter spells the grade out in full - `
+            + "for example major general - and uses U.S. Army rather than a branch.",
+            LETTER.signatureCite));
+    }
+}
+
 function checkAddressingStyle(addressees, out) {
     if (addressees.length < 2) return;
 
@@ -295,6 +415,10 @@ function checkProtocol(addressees, out) {
 }
 
 function checkSubject(memo, out) {
+    // A letter's subject line is optional - "Type the subject (if used) on the
+    // fourth line below the seal", para 3-6a(2) - so its absence is not a gap.
+    if (isLetter(memo) && !memo.subject) return;
+
     // "Omit the office symbol and subject line." - fig 2-17 note 7
     if (memo.abbreviated) {
         return;
@@ -1144,6 +1268,7 @@ export function validateMemo(memo, options = {}) {
     checkTabbing(memo, out);
     checkInternalAddressing(memo, out);
     checkAbbreviatedMfr(memo, out);
+    checkLetter(memo, out);
 
     const errors = out.filter((f) => f.severity === "error");
     const warnings = out.filter((f) => f.severity === "warning");

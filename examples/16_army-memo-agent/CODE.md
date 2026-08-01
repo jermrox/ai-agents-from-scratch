@@ -50,7 +50,7 @@ node examples/16_army-memo-agent/army-memo-agent.js --docx memo.docx \
 
 | Flag | Effect |
 | --- | --- |
-| `--template <type>` | Start from an editable skeleton: `standard`, `thru`, `record`, `decision`, `mou`, `moa` |
+| `--template <type>` | Start from an editable skeleton: `letter`, `standard`, `thru`, `record`, `decision`, `mou`, `moa` |
 | `--spec <file.json>` | Render a spec you have already filled in |
 | `--emit-spec <file.json>` | Write the spec out so you can edit it |
 | `--docx <path>` | Word deliverable |
@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-596 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+622 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 596/596 checks passed.
+# AR 25-50 layout verification: 622/622 checks passed.
 ```
 
 ---
@@ -517,6 +517,45 @@ Asking for type above the ceiling is an **error**. The only non-Arial run in any
 
 ---
 
+## 13a) The letter — chapter 3
+
+The memorandum is not the only correspondence vehicle in AR 25-50. Chapter 3 defines the **letter**, and para 3-2 fixes its audience: the President or Vice President, the White House staff, Members of Congress, Justices of the Supreme Court, heads of departments and agencies, State Governors, mayors, foreign government officials, and the public.
+
+For a long time the validator could *diagnose* this and nothing more — address a memorandum to a State Governor and it reported `wrong-vehicle`, "an audience the letter is used for, not the memorandum". It could tell you the vehicle was wrong and could not hand you the right one. Now it can.
+
+The letter is not a memorandum with different words. Nearly every structural element differs:
+
+| | Memorandum | Letter |
+| --- | --- | --- |
+| Date | `3 January 2020`, flush right beside the office symbol | `January 3, 2020`, **centred** two lines below the letterhead — 3-6a(1) |
+| Office symbol | first line of the heading | **none**; record numbers are not used — 3-5d |
+| Address | after `MEMORANDUM FOR` | stands in the body of the page, five lines below the date — 3-6a(3) |
+| Salutation | — | second line below the address — 3-6a(4) |
+| Paragraphs | numbered, flush left | **indented ¼ inch, never numbered** — 3-6b(5) |
+| Subparagraphs | `a.`, `(1)`, `(a)`, four levels | `a`–`d` only, **four at most**; a lone one takes a hyphen — 3-6b(5) |
+| Closing | authority line, left margin | **complimentary close** at the page centre — 3-6c(1) |
+| Signature | `NAME` in capitals, grade and branch | mixed case, grade **spelled out**, `U.S. Army` not the branch — 3-4, 3-6c(2)(c) |
+| Digital signature | normal | **forbidden** — 3-6c(2)(b) |
+| Enclosures | numbered and listed (chapter 4) | the word `Enclosure` alone, no count, no list — 3-6c(3) |
+| Copies | `CF:` | `cc:` — 3-6c(4) |
+| Continuation | office symbol and subject at the top | `-2-` centred an inch down, text on the 5th line below — 3-6b(3), (4) |
+
+Every position is measured off figure 3-1, rasterised at 150 px/in and calibrated on the seal — the same 0.95 in square 0.52 in from the corner that calibrates the memorandum figures. The calibration puts figure 3-1's left margin at 1.00 in, a value the regulation states, so it checks out:
+
+| | figure 3-1 | ours |
+| --- | --- | --- |
+| Date below letterhead | 1.96 lines | 1.94 |
+| Date centre | 4.29 in | 4.26 |
+| Address below date | 4.99 lines | 5.00 |
+| Salutation below address | 2.02 lines | 2.00 |
+| Text below salutation | 1.99 lines | 2.00 |
+| Paragraph indent | 0.243–0.249 in | 0.250 |
+| Signature column | 4.32 in | 4.25 |
+
+One thing the letter needed that the memorandum did not: its own top margin. A memorandum's body starts at the measured office-symbol position, which has a deliberate gap above it; a letter's date is two lines below the letterhead and nothing else intervenes, so `LETTER.bodyTopIn` is **derived** from the letterhead's own metrics — 1.093 in. That is the right way round: the office symbol's position is a measurement because the regulation gives no relationship for it, and the letter's is a relationship because the regulation states one.
+
+---
+
 ## 14a) The unit's fields, and the memorandum's
 
 AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
@@ -716,7 +755,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 596 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 622 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

@@ -57,15 +57,19 @@ export const FIELDS = [
         label: "Office symbol", prompt: "OFFICE SYMBOL",
         hint: "At the left margin on the first line of the heading.",
         cite: "AR 25-50, para 2-4a(1)",
-        // An MOU/MOA has no office symbol (para 2-6c), and the abbreviated MFR
-        // omits it outright (fig 2-17 note 7).
-        when: (memo) => !isAgreement(memo) && !memo.abbreviated,
+        // An MOU/MOA has no office symbol (para 2-6c), the abbreviated MFR
+        // omits it outright (fig 2-17 note 7), and a letter has no office
+        // symbol line at all - chapter 3's heading is the date, subject if
+        // used, address and salutation (paras 3-5d and 3-6a).
+        when: (memo) => !isAgreement(memo) && !memo.abbreviated && !isLetter(memo),
     },
     {
         path: "signature.name", scope: "unit",
         label: "Signer name", prompt: "SIGNER NAME",
-        hint: "In capitals, at the centre of the page.",
-        cite: "AR 25-50, para 6-4c",
+        // A memorandum's signature block is in capitals (para 6-4c); a
+        // letter's is mixed case (para 3-6c(2)(c)).
+        hint: "At the centre of the page.",
+        cite: "AR 25-50, paras 6-4c and 3-6c(2)(c)",
         when: (memo) => !isAgreement(memo),
     },
     {
@@ -73,7 +77,17 @@ export const FIELDS = [
         label: "Grade and branch", prompt: "GRADE, BRANCH",
         hint: "For example LTC, IN. A civilian leaves this blank and gives a title only.",
         cite: "AR 25-50, paras 6-4f and 6-5c",
-        when: (memo) => !isAgreement(memo),
+        when: (memo) => !isAgreement(memo) && !isLetter(memo),
+    },
+    {
+        // A letter spells the grade out and carries the component, not the
+        // branch: "Branch designations and 'General Staff' have no meaning to
+        // the general public." - fig 3-1 continued, and para 3-4.
+        path: "signature.gradeAndBranch", scope: "unit",
+        label: "Grade and component", prompt: "GRADE, U.S. ARMY",
+        hint: "Spelled out in full, then U.S. Army - for example Major General, U.S. Army.",
+        cite: "AR 25-50, paras 3-4 and 3-6c(2)(c)",
+        when: (memo) => isLetter(memo),
     },
     {
         path: "signature.title", scope: "unit",
@@ -84,36 +98,65 @@ export const FIELDS = [
     },
 
     {
+        // "Type the salutation on the second line below the last line of the
+        //  address." - para 3-6a(4). The letter's, and only the letter's.
+        path: "salutation", scope: "memorandum",
+        label: "Salutation", prompt: "SALUTATION",
+        hint: "For example Dear Governor Roe: - see appendix C for the correct form.",
+        cite: "AR 25-50, para 3-6a(4)",
+        when: (memo) => isLetter(memo),
+    },
+    {
         path: "subject", scope: "memorandum",
         label: "Subject", prompt: "SUBJECT",
         hint: "Ten words or less, one subject.",
         cite: "AR 25-50, para 2-4a(6)",
-        when: (memo) => !memo.abbreviated,
+        // A letter's subject line is optional - "if used", para 3-6a(2).
+        when: (memo) => !memo.abbreviated && !isLetter(memo),
     },
     {
         path: "addressees", scope: "memorandum", list: true,
         label: "MEMORANDUM FOR", prompt: "ADDRESSEE",
         hint: "The office expected to complete the action. One per line.",
         cite: "AR 25-50, para 2-4a(5)",
-        when: (memo) => memo.type !== "record" && !isAgreement(memo) && !memo.seeDistribution,
+        when: (memo) => memo.type !== "record" && !isAgreement(memo) && !memo.seeDistribution
+            && !isLetter(memo),
     },
     {
         path: "thru", scope: "memorandum", list: true, optional: true,
         label: "MEMORANDUM THRU", prompt: "THRU ADDRESSEE",
         hint: "Only when the action must be endorsed on the way. One per line, two at most.",
         cite: "AR 25-50, para 2-4a(5)(d)",
-        when: (memo) => memo.type !== "record" && !isAgreement(memo),
+        when: (memo) => memo.type !== "record" && !isAgreement(memo) && !isLetter(memo),
+    },
+    {
+        // A letter's address stands in the body of the page rather than after a
+        // keyword, and it is written out in full - para 3-6a(3).
+        path: "addressees", scope: "memorandum", list: true,
+        label: "Address", prompt: "ADDRESSEE",
+        hint: "Name, street, city and State, written out - no abbreviations except those in para 3-6a(3)(a).",
+        cite: "AR 25-50, para 3-6a(3)",
+        when: (memo) => isLetter(memo),
+    },
+    {
+        // A letter's date is civilian style and always shown - para 3-6a(1).
+        path: "date", scope: "memorandum",
+        label: "Date", prompt: "DATE",
+        hint: "Civilian style, centred two lines below the letterhead - for example January 3, 2020.",
+        cite: "AR 25-50, para 3-6a(1)",
+        when: (memo) => isLetter(memo),
     },
     {
         path: "date", scope: "memorandum", optional: true,
         label: "Date", prompt: "DATE",
         hint: "Normally left blank - para 2-4a(3)(b) puts it on after the memorandum is signed.",
         cite: "AR 25-50, para 2-4a(3)(b)",
-        when: (memo) => !memo.abbreviated,
+        when: (memo) => !memo.abbreviated && !isLetter(memo),
     },
 ];
 
 const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
+const isLetter = (memo) => memo?.type === "letter";
 
 /**
  * Whether this memorandum is written on letterhead at all. An MFR is on plain
@@ -122,6 +165,8 @@ const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
  */
 function usesLetterhead(memo) {
     if (memo?.type === "record" || isAgreement(memo)) return false;
+    // "Use computer-generated letterhead for the first page" - para 3-5b for a
+    // letter, para 2-3a(1) for a memorandum. Both.
     return memo?.letterhead !== null;
 }
 

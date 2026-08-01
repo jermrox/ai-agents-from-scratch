@@ -1102,6 +1102,9 @@ export const MEMO_TYPES = {
     exclusiveFor: {title: "Exclusive For Memorandum", cite: "AR 25-50, para 1-12"},
     appreciation: {title: "Memorandum of Appreciation", cite: "AR 25-50, paras 2-2 and 2-4a(5)"},
     commendation: {title: "Memorandum of Commendation", cite: "AR 25-50, paras 2-2 and 2-4a(5)"},
+
+    // The other correspondence vehicle, not a memorandum at all. - chapter 3
+    letter: {title: "Letter", cite: "AR 25-50, chapter 3"},
 };
 
 /**
@@ -1303,6 +1306,211 @@ export const MFR_ABBREVIATED = {
  * therefore not a formatting error to be corrected - it is the wrong vehicle,
  * and the only honest response is to say so rather than format it anyway.
  */
+/**
+ * The letter - chapter 3.
+ *
+ * The letter is not a memorandum with different words. It is the other
+ * correspondence vehicle in the regulation and it differs in almost every
+ * structural respect: the date is written in civilian style and centred, the
+ * address sits in the body of the page rather than after a keyword, paragraphs
+ * are indented and unnumbered, the closing is a complimentary close rather than
+ * an authority line, and the signature block is mixed case with the component
+ * rather than the branch. Para 3-2 fixes its audience (LETTER_AUDIENCES).
+ *
+ * Every measurement here is either stated in chapter 3 or measured off figure
+ * 3-1, rasterised at 150 px/in and calibrated on the seal - the same 0.95 in
+ * square 0.52 in from the corner that calibrates the memorandum figures. The
+ * calibration puts figure 3-1's left margin at 1.00 in, which is a value the
+ * regulation states, so it checks out.
+ */
+export const LETTER = {
+    // "Use the standard paper size for a letter (8 1/2 by 11 inches)" and
+    // "Allow left and right margins of 1 inch. Do not justify right margins."
+    // - paras 3-5a and 3-5c. Same page and margins as a memorandum.
+    paperCite: "AR 25-50, paras 3-5a and 3-5c",
+
+    // "Use computer-generated letterhead for the first page and plain white
+    //  paper for all continuing pages." - para 3-5b
+    letterheadCite: "AR 25-50, para 3-5b",
+
+    // "Record numbers are not used on letters." - para 3-5d
+    noRecordNumber: true,
+    noRecordNumberCite: "AR 25-50, para 3-5d",
+
+    // "Express the date in civilian style (for example, January 3, 2020)
+    //  centered two lines below the last line of the letterhead." - 3-6a(1).
+    // Measured: figure 3-1's date centres at 4.29 in on an 8.5 in page, and
+    // sits 1.96 lines below the last letterhead line.
+    dateCentred: true,
+    letterheadToDate: {linesBelow: 2, cite: "AR 25-50, para 3-6a(1)"},
+
+    /*
+     * Where a letter's body begins: the bottom of the letterhead block.
+     *
+     * A memorandum's body starts at LETTERHEAD.officeSymbolTopIn, which is a
+     * measured position with a deliberate gap above it. A letter has no such
+     * gap - its date is two lines below the letterhead and nothing else, so the
+     * body starts where the letterhead stops and the one blank line of
+     * `letterheadToDate` puts the date on the second line.
+     *
+     * Derived from the letterhead's own metrics rather than measured, because
+     * unlike the office symbol this *is* a relationship: whatever height the
+     * organization block turns out to be, the date follows it.
+     */
+    get bodyTopIn() {
+        const line = (pt) => pt * 1.15 / 72;    // single spacing
+        return LETTERHEAD.letterheadTopIn
+            + line(LETTERHEAD.titleSizePt)
+            + 3 * line(LETTERHEAD.addressSizePt);
+    },
+    bodyTopCite: "AR 25-50, para 3-6a(1) and fig 3-1",
+
+    // "Type the subject (if used) on the fourth line below the seal." - 3-6a(2)
+    subjectLinesBelowSeal: 4,
+    subjectCite: "AR 25-50, para 3-6a(2) and fig 3-4",
+
+    /*
+     * "Evenly space the letter on the page. No set number of lines is required
+     * between the seal and the address." - 3-6a(3)(b). Figure 3-1 gives the
+     * working rule in its own words: "The general rule is five lines when the
+     * letter is two or more pages", and measures at 4.99 lines below the date.
+     * So this is a default to be centred on, not a fixed offset.
+     */
+    dateToAddress: {linesBelow: 5, cite: "AR 25-50, fig 3-1"},
+    evenlySpaced: true,
+    evenlySpacedCite: "AR 25-50, para 3-6a(3)(b)",
+
+    // "Type the salutation on the second line below the last line of the
+    //  address." - 3-6a(4). Measured at 2.02 lines.
+    addressToSalutation: {linesBelow: 2, cite: "AR 25-50, para 3-6a(4)"},
+
+    // "Type the first line of the body of the letter on the second line below
+    //  the salutation." - 3-6b(1). Measured at 1.99 lines.
+    salutationToText: {linesBelow: 2, cite: "AR 25-50, para 3-6b(1)"},
+
+    /*
+     * "Indent paragraphs 1/4 inch. Do not number or letter paragraphs." -
+     * fig 3-1 and para 3-6b(5). This is the letter's largest departure from the
+     * memorandum, which numbers every paragraph and indents none.
+     *
+     * Measured on figure 3-1: first lines at 0.243-0.249 in from the margin,
+     * continuation lines at 0.995 - flush to the left margin, as in a
+     * memorandum.
+     */
+    paragraphIndentIn: 0.25,
+    numberParagraphs: false,
+    indentCite: "AR 25-50, fig 3-1 and para 3-6b(5)",
+
+    /*
+     * "When more than one subparagraph is needed, use letters of the alphabet
+     * (a, b, c, d)... Do not create more than four subparagraphs. If only one
+     * subparagraph is needed, use a hyphen." - 3-6b(5)
+     *
+     * Measured: "a." and "b." at 0.245 in, the hyphen at 0.242 with its text at
+     * 0.496 - so the mark sits at the paragraph indent and a lone hyphen's text
+     * at a half inch.
+     */
+    subparagraphIndentIn: 0.25,
+    subparagraphLabels: ["a.", "b.", "c.", "d."],
+    maxSubparagraphs: 4,
+    singleSubparagraphMark: "-",
+    singleSubparagraphTextIn: 0.5,
+    subparagraphCite: "AR 25-50, para 3-6b(5) and fig 3-1",
+
+    // "Use single spacing even when a letter contains only one paragraph. For
+    //  effective paragraphs, do not use more than 7 lines." - 3-6b(5)
+    maxLinesPerParagraph: 7,
+    paragraphLengthCite: "AR 25-50, para 3-6b(5)",
+
+    /*
+     * The closing. "Start the closing on the second line below the last line of
+     * the letter. Begin at the center of the page." - 3-6c(1), and "Type the
+     * signature block on the fifth line below the closing, beginning at the
+     * center of the page." - 3-6c(2)(a). Measured at 4.32 in from the page
+     * edge, the same column the memorandum's signature block uses.
+     */
+    textToClose: {linesBelow: 2, cite: "AR 25-50, para 3-6c(1)"},
+    closeToSignature: {linesBelow: 5, cite: "AR 25-50, para 3-6c(2)(a)"},
+    complimentaryClose: "Sincerely,",
+    closeCite: "AR 25-50, para 3-6c(1) and fig 3-1",
+
+    /*
+     * "Type the signature block in uppercase and lowercase letters." - 3-6c(2)(c).
+     * A memorandum's is in capitals (para 6-4c); a letter's is not.
+     *
+     * "Military personnel will use 'U.S. Army' following their grade. Branch
+     * designations and 'General Staff' have no meaning to the general public."
+     * - fig 3-1 continued. And para 3-4: "Military personnel will use their
+     * full grades (for example, lieutenant general, major general, captain, and
+     * sergeant first class)" - so the grade is spelled out, not abbreviated.
+     */
+    signatureCase: "mixed",
+    signatureComponent: "U.S. Army",
+    omitBranch: true,
+    spellOutGrade: true,
+    signatureCite: "AR 25-50, paras 3-4 and 3-6c(2)(c), and fig 3-1",
+
+    // "Digital signatures will not be used on letters." - 3-6c(2)(b)
+    noDigitalSignature: true,
+    noDigitalSignatureCite: "AR 25-50, para 3-6c(2)(b)",
+
+    /*
+     * "Type 'Enclosure' at the left margin on the second line below the
+     * signature block. Do not show the number of enclosures or list them...
+     * For more than one enclosure, show the plural form 'Enclosures.'" -
+     * 3-6c(3). A memorandum lists and numbers them (chapter 4); a letter does
+     * neither.
+     */
+    enclosureKeyword: "Enclosure",
+    enclosurePlural: "Enclosures",
+    listEnclosures: false,
+    signatureToEnclosure: {linesBelow: 2, cite: "AR 25-50, para 3-6c(3)"},
+    enclosureCite: "AR 25-50, para 3-6c(3)",
+
+    // "Type 'cc:' on the second line below the last line of the signature
+    //  block or enclosure listing, whichever is lower." - 3-6c(4). Lowercase,
+    //  where a memorandum uses "CF:" (para 2-4c(5)).
+    copyKeyword: "cc:",
+    toCopies: {linesBelow: 2, cite: "AR 25-50, para 3-6c(4)"},
+
+    /*
+     * Continuation pages. "Center the page number 1 inch from the top edge of
+     * the paper, typing a hyphen on each side of the page number", "Start the
+     * first line of text on the fifth line below the number of the page", and
+     * "type a minimum of two lines on the continuation page". - 3-6b(3) and (4)
+     */
+    pageNumberFromTopIn: 1.0,
+    pageNumberMark: "-",
+    pageNumberToText: {linesBelow: 5, cite: "AR 25-50, para 3-6b(4)"},
+    minLinesOnContinuation: 2,
+    continuationCite: "AR 25-50, paras 3-6b(3) and 3-6b(4)",
+
+    // "Do not use abbreviations in the address. Exceptions include..."
+    // - 3-6a(3)(a)
+    addressAbbreviationsAllowed: ["DC", "U.S.", "P.O. Box", "Mr.", "Mrs.", "Ms.",
+        "Dr.", "Jr.", "Sr.", "2d.", "II", "III", "Ret.", "NE", "NW", "SE", "SW"],
+    addressAbbreviationCite: "AR 25-50, para 3-6a(3)(a)",
+
+    cite: "AR 25-50, chapter 3",
+};
+
+/** The page number of a letter's continuation page: "-2-". - para 3-6b(3) */
+export function letterPageNumber(n) {
+    return `${LETTER.pageNumberMark}${n}${LETTER.pageNumberMark}`;
+}
+
+/**
+ * A letter's date, in civilian style: "January 3, 2020". - para 3-6a(1)
+ *
+ * The memorandum's own date is military style, "3 January 2020" (para
+ * 2-4a(3)(a)), so the two vehicles never share a date format.
+ */
+export function formatLetterDate(date = new Date()) {
+    const d = typeof date === "string" ? new Date(date) : date;
+    if (Number.isNaN(d?.getTime?.())) return String(date);
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
 export const LETTER_AUDIENCES = {
     cite: "AR 25-50, para 3-2",
     tests: [

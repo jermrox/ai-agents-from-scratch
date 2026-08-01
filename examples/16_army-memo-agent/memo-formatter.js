@@ -38,11 +38,11 @@ import {
     EXCLUSIVE_FOR,
     PERSONAL_ADDRESS_TYPES,
     normalizeZipSpacing,
-    MFR_ABBREVIATED,
+    MFR_ABBREVIATED, LETTER, formatLetterDate, letterPageNumber,
 } from "./ar25-50.js";
 
 import {breakLines, measureTextIn} from "./text-metrics.js";
-import {resolveSignature} from "./signature-blocks.js";
+import {resolveSignature, spellOutGradeForSignature} from "./signature-blocks.js";
 
 /**
  * Rendering options. `charsPerInch` only affects the plain-text backend; the
@@ -265,6 +265,11 @@ function buildHeading(memo, opts) {
  * below MFR."
  */
 function headingToBody(memo) {
+    // A letter's heading already carries its own spacing down to the first line
+    // of text - the salutation is the last thing in it and para 3-6b(1) puts
+    // the text two lines below that. - LETTER.salutationToText
+    if (memo.type === "letter") return {linesBelow: 1};
+
     return memo.type === "record" && memo.abbreviated
         ? MFR_ABBREVIATED.keywordToText
         : SPACING.subjectToBody;
@@ -624,6 +629,153 @@ function listingEntry(entry) {
 // MOU / MOA heading (para 2-6c)
 // ---------------------------------------------------------------------------
 
+/* -------------------------------------------------------------------------
+ * The letter - chapter 3
+ *
+ * A different document, not a memorandum with different words. See LETTER in
+ * ar25-50.js for every measurement and its citation.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Heading: date, subject line (if used), address, salutation. - para 3-6a
+ *
+ * The date is centred two lines below the letterhead (3-6a(1)); the address
+ * follows five lines below it, which figure 3-1 gives as the general rule while
+ * para 3-6a(3)(b) asks for the letter to be evenly spaced on the page; and the
+ * salutation sits two lines below the last line of the address (3-6a(4)).
+ */
+function buildLetterHeading(memo, opts) {
+    const out = [];
+
+    out.push(...gap(LETTER.letterheadToDate));
+    out.push(line(memo.date || "", {align: "center", role: "date"}));
+
+    // "Type the subject (if used) on the fourth line below the seal." - 3-6a(2)
+    if (memo.subject) {
+        out.push(...gap({linesBelow: 2}));
+        out.push(...wrap(`SUBJECT:  ${memo.subject}`, {opts, role: "subject"}));
+    }
+
+    out.push(...gap(LETTER.dateToAddress));
+    for (const a of memo.addressees ?? []) {
+        for (const l of String(a).split("\n")) {
+            out.push(...wrap(normalizeZipSpacing(l), {opts, role: "letter-address"}));
+        }
+    }
+
+    out.push(...gap(LETTER.addressToSalutation));
+    out.push(line(memo.salutation || "", {role: "salutation"}));
+    out.push(...gap(LETTER.salutationToText));
+    return out;
+}
+
+/**
+ * Body. Paragraphs are indented a quarter inch and are *not* numbered - para
+ * 3-6b(5), the letter's largest departure from the memorandum. Subparagraphs
+ * take a, b, c, d, four at most; a lone subparagraph takes a hyphen.
+ */
+function buildLetterBody(memo, opts) {
+    const blocks = [];
+
+    const emit = (node, depth) => {
+        const children = node.children ?? [];
+        const lines = [];
+
+        if (depth === 0) {
+            lines.push(...wrap(normalizePunctuationSpacing(node.text ?? ""), {
+                firstIndentIn: LETTER.paragraphIndentIn, wrapIndentIn: 0, opts, role: "paragraph",
+            }));
+        } else {
+            // One subparagraph is a hyphen; more than one takes letters. - 3-6b(5)
+            const only = node.siblings === 1;
+            const label = only
+                ? LETTER.singleSubparagraphMark
+                : LETTER.subparagraphLabels[node.index] ?? LETTER.subparagraphLabels[3];
+            lines.push(...wrap(normalizePunctuationSpacing(node.text ?? ""), {
+                firstIndentIn: LETTER.subparagraphIndentIn, wrapIndentIn: 0, opts,
+                role: "subparagraph", prefix: label,
+            }));
+        }
+        blocks.push({lines});
+        children.forEach((c, i) =>
+            emit({...c, index: i, siblings: children.length}, depth + 1));
+    };
+
+    (memo.paragraphs ?? []).forEach((p) => emit(p, 0));
+    return blocks;
+}
+
+/**
+ * Closing: complimentary close, signature block, enclosure, courtesy copy.
+ * - para 3-6c
+ *
+ * The close begins at the centre of the page two lines below the text, the
+ * signature block five lines below the close in the same column, "Enclosure" at
+ * the left margin two lines below the block, and "cc:" two lines below whichever
+ * of those is lower.
+ */
+function buildLetterClosing(memo, opts) {
+    const out = [];
+    const colIn = LAYOUT.signatureBlockIndentIn;
+
+    out.push(...gap(LETTER.textToClose));
+    out.push(line(memo.complimentaryClose || LETTER.complimentaryClose,
+        {indentIn: colIn, role: "complimentary-close"}));
+
+    out.push(...gap(LETTER.closeToSignature));
+    for (const l of letterSignatureLines(memo)) {
+        out.push(line(l, {indentIn: colIn, role: "signature"}));
+    }
+
+    // "Do not show the number of enclosures or list them." - 3-6c(3)
+    const enclosures = memo.enclosures ?? [];
+    if (enclosures.length) {
+        out.push(...gap(LETTER.signatureToEnclosure));
+        out.push(line(enclosures.length > 1 ? LETTER.enclosurePlural : LETTER.enclosureKeyword,
+            {role: "enclosure-label"}));
+    }
+
+    const copies = memo.copiesFurnished ?? [];
+    if (copies.length) {
+        out.push(...gap(LETTER.toCopies));
+        out.push(line(LETTER.copyKeyword, {role: "copies"}));
+        for (const c of copies) out.push(...wrap(c, {opts, role: "copies"}));
+    }
+
+    return out;
+}
+
+/**
+ * A letter's signature block. Mixed case, the grade spelled out in full, and
+ * "U.S. Army" in place of the branch - paras 3-4 and 3-6c(2)(c), and figure 3-1
+ * continued: "Branch designations and 'General Staff' have no meaning to the
+ * general public."
+ */
+export function letterSignatureLines(memo) {
+    const sig = memo.signature ?? {};
+    const lines = [];
+    const name = sig.name ?? "";
+    lines.push(name);
+
+    if (sig.gradeAndBranch) {
+        lines.push(sig.gradeAndBranch);
+    } else if (sig.grade) {
+        lines.push([spellOutLetterGrade(sig.grade), LETTER.signatureComponent]
+            .filter(Boolean).join(", "));
+    }
+    if (sig.title) lines.push(sig.title);
+    return lines.filter((l) => l !== undefined);
+}
+
+/**
+ * "Military personnel will use their full grades (for example, lieutenant
+ * general, major general, captain, and sergeant first class)." - para 3-4.
+ * Chapter 6's table is the source; this is the letter's spelled-out form.
+ */
+function spellOutLetterGrade(grade) {
+    return spellOutGradeForSignature(grade) || String(grade);
+}
+
 function buildAgreementHeading(memo, opts) {
     const out = [];
     const title = memo.type === "moa"
@@ -867,14 +1019,20 @@ export function layoutMemo(memo, options = {}) {
     const opts = resolveOptions(options, {hasLetterhead});
     const isAgreement = memo.type === "mou" || memo.type === "moa";
 
+    const isLetter = memo.type === "letter";
+
     const letterhead = hasLetterhead ? buildLetterhead(memo, opts) : null;
-    const heading = isAgreement
-        ? buildAgreementHeading(memo, opts)
-        : buildHeading(memo, opts);
-    const bodyBlocks = buildBody(memo, opts);
-    const closing = isAgreement
-        ? buildAgreementClosing(memo, opts)
-        : buildClosing(memo, opts);
+    const heading = isLetter
+        ? buildLetterHeading(memo, opts)
+        : isAgreement
+            ? buildAgreementHeading(memo, opts)
+            : buildHeading(memo, opts);
+    const bodyBlocks = isLetter ? buildLetterBody(memo, opts) : buildBody(memo, opts);
+    const closing = isLetter
+        ? buildLetterClosing(memo, opts)
+        : isAgreement
+            ? buildAgreementClosing(memo, opts)
+            : buildClosing(memo, opts);
 
     const pages = paginate(heading, bodyBlocks, closing, memo, opts);
 
