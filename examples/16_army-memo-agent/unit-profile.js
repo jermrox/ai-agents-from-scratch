@@ -107,6 +107,15 @@ export const FIELDS = [
         when: (memo) => isLetter(memo),
     },
     {
+        // Naming the row is what lets the salutation above be checked against
+        // appendix C rather than only checked for being present.
+        path: "addresseeCategory", scope: "memorandum", optional: true,
+        label: "Addressee category", prompt: "ADDRESSEE CATEGORY",
+        hint: "A table C-1 through C-11 heading, e.g. \"Governor of a State\" - checks the salutation against it.",
+        cite: "AR 25-50, para 3-5e",
+        when: (memo) => isLetter(memo),
+    },
+    {
         path: "subject", scope: "memorandum",
         label: "Subject", prompt: "SUBJECT",
         hint: "Ten words or less, one subject.",

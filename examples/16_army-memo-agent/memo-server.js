@@ -150,6 +150,10 @@ export function specFromForm(form = {}) {
         context.salutation = filled(form.salutation, template.salutation);
         context.complimentaryClose = filled(form.complimentaryClose, template.complimentaryClose);
         context.date = filled(form.date, formatLetterDate());
+        // "See appendix C for proper addressing of letters" - para 3-5e. Naming
+        // the category here is what lets the salutation be checked against the
+        // regulation's own form rather than only against "is something there."
+        context.addresseeCategory = filled(form.addresseeCategory, null);
     }
 
     const memo = assembleMemo({
@@ -297,6 +301,7 @@ Range Control will complete the following work:
     ${field("suspenseDate", "Suspense date", "optional, para 2-4a(4)")}
     ${field("authorityLine", "Authority line", "only when signing for the commander — para 2-4c(1)")}
     ${field("salutation", "Salutation", "letters only — para 3-6a(4)")}
+    ${field("addresseeCategory", "Addressee category", "optional, letters only — a table C-1 through C-11 heading, e.g. \"Governor of a State\"; checks the salutation against appendix C")}
   </fieldset>
 
   <button type="submit" id="go">Generate</button>

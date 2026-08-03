@@ -60,7 +60,12 @@ import {
     SEPARATE_COVER,
     bodyMentionsEnclosure,
     MFR_ABBREVIATED,
+    APPENDIX_C,
+    lookupAddressForm,
 } from "./ar25-50.js";
+
+/** Salutations compared tolerant of case and of run-together whitespace. */
+const normalizeAddressForm = (s) => String(s).trim().toLowerCase().replace(/\s+/g, " ");
 
 import {layoutMemo, renderText, usesLetterhead} from "./memo-formatter.js";
 import {findPlaceholders, hasPlaceholders} from "./templates.js";
@@ -235,9 +240,36 @@ function checkLetterHeading(memo, out) {
             "AR 25-50, para 3-6a(3)"));
     }
 
+    /*
+     * "See appendix C for proper addressing of letters" (para 3-5e), and
+     * appendix C's tables prescribe the salutation for a category rather than
+     * leaving it to taste - "Dear Governor (surname):" is not a style choice.
+     * `addresseeCategory` names the row (any of appendix C's own headings, or
+     * table C-4's military categories); when it is given, the salutation is
+     * checked against it rather than only against "is something there."
+     */
+    if (memo.addresseeCategory) {
+        const form = lookupAddressForm(memo.addresseeCategory);
+        if (!form) {
+            out.push(warn("content", "letter-addressee-category-unknown",
+                `"${memo.addresseeCategory}" is not one of appendix C's addressee categories. `
+                + "Check the spelling against tables C-1 through C-11, or leave it unset.",
+                APPENDIX_C.cite));
+        } else if (memo.salutation && !hasPlaceholders(memo.salutation)
+            && normalizeAddressForm(memo.salutation) !== normalizeAddressForm(form.salutation)) {
+            out.push(error("content", "letter-salutation-mismatch",
+                `"${memo.salutation}" does not match appendix C's form for ${form.addressee}: `
+                + `"${form.salutation}"`,
+                form.cite));
+        }
+    }
+
     if (!memo.salutation) {
         out.push(warn("content", "not-yet-supplied",
-            "Salutation. It goes on the second line below the last line of the address.",
+            memo.addresseeCategory && lookupAddressForm(memo.addresseeCategory)
+                ? `Salutation. Appendix C gives "${lookupAddressForm(memo.addresseeCategory).salutation}" `
+                  + `for ${memo.addresseeCategory}.`
+                : "Salutation. It goes on the second line below the last line of the address.",
             LETTER.addressToSalutation.cite));
     }
 

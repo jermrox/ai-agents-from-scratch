@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-624 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+648 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 624/624 checks passed.
+# AR 25-50 layout verification: 648/648 checks passed.
 ```
 
 ---
@@ -556,6 +556,18 @@ One thing the letter needed that the memorandum did not: its own top margin. A m
 
 ---
 
+## 13b) Appendix C — the salutation is not free text
+
+A letter that gets the layout right and the salutation wrong is still wrong, and until this section nothing checked the salutation at all — `checkLetterHeading` only asked "is something there," the same test it applies to every other blank. Para 3-5e says *"See appendix C for proper addressing of letters"*, and appendix C's eleven tables prescribe the form outright: `"Dear Governor (surname):"` for a Governor is not a matter of taste.
+
+`APPENDIX_C` transcribes all eleven tables — the address lines, salutation, and complimentary close, in the regulation's own placeholder wording. Ten of the eleven are stored as literal rows, because that is what they are: short, and each one distinct. Table C-4, *Military Personnel*, is the exception and needed a different shape. It runs to roughly fifty rows, and nearly all of them repeat one pattern — `"(full rank) (full name), (Service abbreviation)"` over `"(Address)"`, then `"Sincerely,"` — differing only in one word: the salutation's rank title, and that word is itself a many-to-one collapse (`GEN` through `BG` all become `"General"`; `MSG` through `SGT` all become `"Sergeant"`). Storing fifty near-identical rows would not carry any information the reader could not get from one row and the collapse map, so that is what is stored: `APPENDIX_C.militaryPersonnel.bySer`, one small object per service, plus `militarySalutation(service, grade)` to read it — warrant officers return the courtesy-title form the table itself gives them (`"Dear Mr./Miss/Ms./Mrs. (last name):"`), because appendix C assigns them no rank word at all.
+
+The Army column of that table is not a fresh transcription — it reuses the same grade abbreviations `signature-blocks.js` already carries for table 6-1 (`GRADE_ABBREVIATIONS`), because appendix C's Army rows and chapter 6's are the same set of grades described for two different purposes. `verify.js` asserts they still agree, key for key, with the one legitimate exception recorded rather than silently allowed: Sergeant Major of the Army is a real addressee in table C-4 and is absent from table 6-1's signature grades, because a signature block and a salutation are not the same question.
+
+Wiring: a letter carries an optional `addresseeCategory` naming a row (`"Governor of a State"`, any of the eleven tables' own headings). Once it is set, the validator does three things instead of one — reports an unrecognized category rather than ignoring it, reports a supplied salutation that does not match the table's form as an **error**, citing the exact table, and folds the correct form into the "not yet supplied" message when the salutation is still blank. Leave the category unset and nothing is checked beyond presence, same as before; every path is exercised in `verify.js`, including a deliberately mistranscribed entry that was confirmed to fail before being put back.
+
+---
+
 ## 14a) The unit's fields, and the memorandum's
 
 AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
@@ -761,7 +773,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 624 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 648 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

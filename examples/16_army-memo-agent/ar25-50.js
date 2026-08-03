@@ -1159,6 +1159,628 @@ export const EXCLUSIVE_FOR = {
  * appreciation or commendation to DA Civilians and Soldiers".
  */
 export const PERSONAL_ADDRESS_TYPES = ["exclusiveFor", "appreciation", "commendation"];
+
+/**
+ * Appendix C - Forms of Address, Salutation, and Complimentary Close.
+ *
+ *   "The proper form for addresses in letters, on envelopes, and for
+ *    salutations and complimentary closes in letters is provided in tables
+ *    C-1 through C-11." - para C-2a
+ *
+ * This is what para 3-2 means when it names the letter's audience - the
+ * President, Members of Congress, Justices, State Governors, mayors, foreign
+ * officials, the public - and what para 3-5e means by "See appendix C for
+ * proper addressing of letters." A letter that gets the layout right and the
+ * salutation wrong is still wrong, and nothing before this checked the
+ * salutation at all.
+ *
+ * Every table below is transcribed from the tables themselves, not summarized:
+ * each entry is address lines, a salutation, and a complimentary close, in the
+ * regulation's own placeholder wording ("(full name)", "(surname)"). Table C-4
+ * (Military Personnel) is the one exception, and it is explained where it
+ * starts.
+ */
+export const APPENDIX_C = {
+    cite: "AR 25-50, appendix C",
+    generalCite: "AR 25-50, para C-1",
+
+    /** Table C-1 - The Executive Branch. */
+    executiveBranch: {
+        cite: "AR 25-50, table C-1",
+        entries: [
+            {addressee: "The President",
+             address: ["The President", "The White House", "1600 Pennsylvania Avenue NW", "Washington 20500-0003"],
+             salutation: "Dear Mr./Madam President:", close: "Respectfully, or Respectfully yours,"},
+            {addressee: "Spouse of the President",
+             address: ["Preferred title (full name) or Mr./Mrs. (full name)"],
+             salutation: "Dear (Preferred title)/Mr./Ms. (surname):", close: "Respectfully, or Respectfully yours,"},
+            {addressee: "Assistant to the President",
+             address: ["Honorable (full name) or Mr./Mrs. (full name)", "The White House",
+                        "1600 Pennsylvania Avenue NW", "Washington, DC 20500-0003"],
+             salutation: "Dear (Preferred title)/Mr./Ms. (surname):", close: "Respectfully, or Respectfully yours,"},
+            {addressee: "Secretary to the President",
+             address: ["Honorable (full name)", "Secretary to the President", "The White House",
+                        "1600 Pennsylvania Avenue NW", "Washington, DC 20500-0003"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Secretary to the President (with military grade)",
+             address: ["(Full grade) (full name)", "Secretary to the President", "The White House",
+                        "1600 Pennsylvania Avenue NW", "Washington, DC 20500-0003"],
+             salutation: "Dear (grade) (surname):", close: "Sincerely,"},
+            {addressee: "The President Elect",
+             address: ["The Honorable (full name)", "The President elect", "(Street)", "City, State (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Respectfully, or Respectfully yours,"},
+            {addressee: "The Vice President",
+             address: ["The Vice President", "The United States Senate", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Vice President:", close: "Sincerely,",
+             note: "Addressed as \"President of the Senate\" in submitting proposed legislation and certain reports required by law."},
+            {addressee: "The President of the Senate",
+             address: ["Honorable (full name)", "President of the Senate", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam President:", close: "Sincerely,"},
+            {addressee: "Members of the Cabinet addressed as \"Secretary\"",
+             address: ["Honorable (full name)", "Secretary of (Department)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Secretary:", close: "Sincerely,"},
+            {addressee: "Postmaster General (head of the USPS)",
+             address: ["Honorable (full name)", "Postmaster General", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Postmaster General:", close: "Sincerely,"},
+            {addressee: "The Attorney General (head of the U.S. Department of Justice)",
+             address: ["The Honorable (full name)", "Attorney General", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Attorney General:", close: "Sincerely,"},
+            {addressee: "Under Secretary",
+             address: ["Honorable (full name)", "Under Secretary of (Department)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Assistant Secretary of a Department",
+             address: ["Honorable (full name)", "Assistant Secretary of (Department)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "The Secretary of an Armed Service",
+             address: ["The Honorable (full name)", "Secretary of the (Department)", "The Pentagon, (Room Number)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Secretary:", close: "Sincerely,"},
+            {addressee: "Under Secretary of a Military Department",
+             address: ["The Honorable (full name)", "Under Secretary of the (Department)", "The Pentagon, (Room Number)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Assistant Secretary of a Military Department",
+             address: ["The Honorable (full name)", "Assistant Secretary of the (Department)", "(Street)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "General Counsel of a Department",
+             address: ["(Mr./Mrs./Ms./Miss) (full name)", "General Counsel (Department)", "(Street)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Mrs./Ms./Miss (surname):", close: "Sincerely,"},
+            {addressee: "Administrative Assistant to the Secretary",
+             address: ["(Mr./Mrs./Ms./Miss) (full name)", "Administrative Assistant to the Secretary of the (Department)",
+                        "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Mrs./Ms./Miss (surname):", close: "Sincerely,"},
+            {addressee: "Director of Office of Management and Budget",
+             address: ["The Honorable (full name)", "Director of Office of Management and Budget", "(Street)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Head of a Federal Agency",
+             address: ["The Honorable (full name)", "(Title, name of agency)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Head of a major organization within an agency (if appointed by the President)",
+             address: ["Honorable (full name)", "(Title, name of organization) (Name of Agency)", "(Street)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "President of the Board",
+             address: ["Honorable (full name), President, (name of board)", "(Street)", "Washington, DC (ZIP)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "President of a Commission",
+             address: ["Honorable (full name)", "(name of commission)", "(Street)", "Washington, DC (ZIP)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Chairman of Board",
+             address: ["Honorable (full name)", "Chairman, (name of board)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Chairman of a Commission",
+             address: ["Honorable (full name)", "Chairman, (name of commission)", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "American Ambassador",
+             address: ["The Honorable (full name)", "American Ambassador", "(City)", "(Country)"],
+             salutation: "Formal: Sir/Madam. Informal: Dear Madam Ambassador", close: "Very truly yours,"},
+            {addressee: "American Ambassador (with military grade)",
+             address: ["(Full grade) (full name)", "American Ambassador", "(City)", "(Country)"],
+             salutation: "Formal: Sir/Madam. Informal: Dear Mr./Madam Ambassador/Dear (grade, surname):",
+             close: "Very truly yours, or Sincerely,"},
+            {addressee: "American Minister (with military grade)",
+             address: ["(Full grade) (full name)", "American Minister", "(City)", "(Country)"],
+             salutation: "Formal: Sir/Madam: Dear Madam Minister:. Informal: Dear (Mr.) Minister:/Dear Mr./Ms. (surname):",
+             close: "Very truly yours, or Sincerely,"},
+        ],
+    },
+
+    /** Table C-2 - The Congress and legislative agencies. */
+    congress: {
+        cite: "AR 25-50, table C-2",
+        note: "Address Members of Congress in the capacity in which they sign their communication - as chairperson, "
+            + "as majority or minority leader, or as Senator or Representative, whichever they sign as.",
+        entries: [
+            {addressee: "President Pro Tempore of the United States Senate",
+             address: ["The Honorable (full name)", "President pro Tempore of the Senate", "United States Senate",
+                        "(Room Number)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Senator (surname):", close: "Sincerely,"},
+            {addressee: "Committee Chairman, United States Senate",
+             address: ["The Honorable (full name)", "Chairman, Committee on (name)", "United States Senate",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr. Chairman/Madam Chairwoman:", close: "Sincerely,"},
+            {addressee: "Chairman of a Joint Committee",
+             address: ["The Honorable (full name)", "Chairman, Joint Committee on (name)",
+                        "Congress of the United States (Room Number)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr. Chairman/Madam Chairman:", close: "Sincerely,"},
+            {addressee: "Subcommittee Chairman, United States Senate",
+             address: ["The Honorable (full name)", "Chairman, Subcommittee on (name)", "United States Senate",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Senator (surname):", close: "Sincerely,"},
+            {addressee: "United States Senator (Washington, DC, office)",
+             address: ["The Honorable (full name)", "United States Senate", "(Room Number)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Senator (surname):", close: "Sincerely,"},
+            {addressee: "Deceased Representative",
+             address: ["(Secretary's full name, if known)", "Secretary to the late Honorable (full name)",
+                        "United States House of Representatives", "(Room Number)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Resident Commissioner of Puerto Rico",
+             address: ["The Honorable (full name)", "United States House of Representatives", "(Room Number)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Representative (surname):", close: "Sincerely,"},
+            {addressee: "Librarian of Congress",
+             address: ["The Honorable (full name)", "Librarian of Congress", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Comptroller General (head of the Government Accountability Office)",
+             address: ["The Honorable (full name)", "Comptroller General of the United States", "(Street)",
+                        "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Public Printer (head of the U.S. Government Printing Office)",
+             address: ["The Honorable (full name)", "Public Printer", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-3 - The Judiciary. */
+    judiciary: {
+        cite: "AR 25-50, table C-3",
+        entries: [
+            {addressee: "The Chief Justice of the United States",
+             address: ["Chief Justice of the United States", "The Supreme Court", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Chief Justice:", close: "Sincerely,"},
+            {addressee: "Associate Justice",
+             address: ["Mr./Madam Justice (surname)", "The Supreme Court", "(Street)", "Washington, DC (ZIP+4)"],
+             salutation: "Dear Mr./Madam Justice:", close: "Sincerely,"},
+            {addressee: "Retired Justice",
+             address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam Justice:", close: "Sincerely,"},
+            {addressee: "Presiding Justice",
+             address: ["The Honorable (full name)", "Presiding Justice:", "(Name of Court)", "(Local address)"],
+             salutation: "Dear Mr./Madam Justice:", close: "Sincerely,"},
+            {addressee: "Judge of a Court",
+             address: ["The Honorable (full name)",
+                        "Justice of the (Name of court, if a U.S. District Court, give district)", "(Local address)"],
+             salutation: "Dear Mr./Madam Justice:", close: "Sincerely,"},
+            {addressee: "Clerk of a Court",
+             address: ["Mr./Madam (full name)",
+                        "Clerk of the (name of court; if a U.S. District Court, give district)", "(Local address)"],
+             salutation: "Dear Mr./Madam (surname):", close: "Sincerely,"},
+        ],
+    },
+
+    /**
+     * Table C-4 - Military Personnel.
+     *
+     * Every row follows the same address form and close - "(full rank) (full
+     * name), (Service abbreviation)" over "(Address)", then "Sincerely," -
+     * and differs only in the salutation title, which collapses several grades
+     * to one word ("General" covers GEN through BG; "Sergeant" covers MSG
+     * through SGT). Storing fifty near-identical rows would not add
+     * information a reader could not get from the one row and a lookup; this
+     * stores the lookup, keyed by the same grade abbreviations table 6-1
+     * already uses for the Army column, so the two chapters cannot drift
+     * apart without a check catching it (see verify.js).
+     *
+     * Warrant officers take a courtesy title and the surname, not a rank word
+     * - "Dear Mr./Miss/Ms./Mrs. (last name):" - because appendix C gives them
+     * none.
+     */
+    militaryPersonnel: {
+        cite: "AR 25-50, table C-4",
+        addressForm: "(full rank) (full name), (Service abbreviation)",
+        close: "Sincerely,",
+        warrantOfficerSalutation: "Dear Mr./Miss/Ms./Mrs. (last name):",
+        bySer: {
+            army: {
+                GEN: "General", LTG: "General", MG: "General", BG: "General",
+                COL: "Colonel", LTC: "Colonel", MAJ: "Major", CPT: "Captain",
+                "1LT": "Lieutenant", "2LT": "Lieutenant",
+                CW5: null, CW4: null, CW3: null, CW2: null, WO1: null,   // courtesy title
+                SMA: "Sergeant Major", CSM: "Sergeant Major", SGM: "Sergeant Major",
+                "1SG": "First Sergeant", MSG: "Sergeant", SFC: "Sergeant", SSG: "Sergeant",
+                SGT: "Sergeant", CPL: "Corporal", SPC: "Specialist",
+                PFC: "Private", PV2: "Private", PV1: "Private",
+            },
+            marineCorps: {
+                Gen: "General", LtGen: "General", MajGen: "General", BGen: "General",
+                Col: "Colonel", LtCol: "Colonel", Maj: "Major", Capt: "Captain",
+                "1stLt": "Lieutenant", "2ndLt": "Lieutenant",
+                CWO: null, WO: null,
+                SgtMajMC: "Sergeant Major", SgtMaj: "Sergeant Major",
+                MGySgt: "Master Gunnery Sergeant", "1stSgt": "First Sergeant",
+                MSgt: "Master Sergeant", GySgt: "Gunnery Sergeant", SSgt: "Staff Sergeant",
+                Sgt: "Sergeant", Cpl: "Corporal", LCpl: "Corporal",
+                PFC: "Private First Class", Pvt: "Private",
+            },
+            navy: {
+                ADM: "Admiral", VADM: "Admiral", RADM: "Admiral",
+                CAPT: "Captain", CDR: "Commander", LCDR: "Commander",
+                LT: "Lieutenant", LTJG: "Lieutenant", ENS: "Ensign",
+                CWO: null, WO: null,
+                MCPON: "Master Chief", MCPO: "Master Chief", SCPO: "Senior Chief", CPO: "Chief",
+                PO1: "Petty Officer", PO2: "Petty Officer", PO3: "Petty Officer",
+                // These four are the rating's own title, not a rank word - fig C-4.
+                Airman: "Airman", Constructionman: "Constructionman", Dentalman: "Dentalman",
+                Fireman: "Fireman", HospitalCorpsman: "Hospital Corpsman", Seaman: "Seaman",
+            },
+            airForce: {
+                Gen: "General", LtGen: "General", MajGen: "General", BrigGen: "General",
+                Col: "Colonel", LtCol: "Colonel", Maj: "Major", Capt: "Captain",
+                "1stLt": "Lieutenant", "2ndLt": "Lieutenant",
+                CWO: null, WO: null,
+                CMSAF: "Chief", CMSgt: "Chief", SMSgt: "Sergeant", MSgt: "Sergeant",
+                TSgt: "Sergeant", SSgt: "Sergeant",
+                SrA: "Airman", A1C: "Airman", Amn: "Airman", AB: "Airman",
+            },
+        },
+        additional: [
+            {addressee: "All retired military personnel",
+             address: ["(rank) (full name), (Service abbreviation) (Ret)", "(Address)"],
+             salutation: "Dear (rank) (last name):", close: "Sincerely,"},
+            {addressee: "Cadet", address: ["Cadet (full name)", "(Address)"],
+             salutation: "Dear Cadet (last name):", close: "Sincerely,"},
+            {addressee: "Midshipman", address: ["Midshipman (full name)", "(Address)"],
+             salutation: "Dear Midshipman (last name):", close: "Sincerely,"},
+            {addressee: "Air Cadet", address: ["Air Cadet (full name)", "(Address)"],
+             salutation: "Dear Air Cadet (last name):", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-5 - State and Government Officials. */
+    stateAndGovernment: {
+        cite: "AR 25-50, table C-5",
+        note: "In most States the lower legislative branch is the House of Representatives; in some (California, New York) "
+            + "the Assembly; in others (Maryland, Virginia, West Virginia) the House of Delegates.",
+        entries: [
+            {addressee: "Governor of a State",
+             address: ["The Honorable (full name) Governor of (State)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Governor (surname):", close: "Sincerely,"},
+            {addressee: "Acting Governor of State",
+             address: ["The Honorable (full name) Acting Governor of (State)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Lieutenant Governor of State",
+             address: ["The Honorable (full name) Lieutenant Governor of (State)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Secretary of State of a State",
+             address: ["The Honorable (full name) Secretary of State of (State)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Madam Secretary:", close: "Sincerely,"},
+            {addressee: "Chief Justice of the Supreme Court of a State",
+             address: ["The Honorable (full name)", "Chief Justice Supreme Court of the State of (State)",
+                        "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Madam Chief Justice:", close: "Sincerely,"},
+            {addressee: "Attorney General of a State",
+             address: ["The Honorable (full name) Attorney General", "State of (State)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Madam Attorney General:", close: "Sincerely,"},
+            {addressee: "Judge",
+             address: ["The Honorable (full name) (Local)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Judge (surname):", close: "Sincerely,"},
+            {addressee: "Treasurer, Auditor, or Comptroller of a State",
+             address: ["The Honorable (full name) State Treasurer (Auditor) (Comptroller)", "State of (State)",
+                        "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "President of the Senate of a State",
+             address: ["The Honorable (full name)", "President of the Senate of the State of (State)",
+                        "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Speaker of the Assembly/House of Delegates/House of Representatives of a State",
+             address: ["The Honorable (full name)", "Speaker of the House of Representatives of the State of (name)",
+                        "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "State Senator",
+             address: ["The Honorable (full name) (Name of State) Senate", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Senator (surname):", close: "Sincerely,"},
+            {addressee: "State Representative, Assemblyman, or Delegate",
+             address: ["The Honorable (full name) (Name of State) House of Representatives", "(Street)",
+                        "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Mayor",
+             address: ["The Honorable (full name) Mayor of (city)", "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mayor (surname):", close: "Sincerely,"},
+            {addressee: "President of a Board of Commissioners",
+             address: ["The Honorable (full name)", "President, Board of Commissioners of (city)",
+                        "(Street)", "(City, State ZIP+4)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-6 - Ecclesiastical officials. */
+    ecclesiastical: {
+        cite: "AR 25-50, table C-6",
+        entries: [
+            {addressee: "Protestant Minister, Pastor, or Rector (without scholastic degree)",
+             address: ["The Reverend (full name)", "(Title, name of church)", "(Local address)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Rabbi (with scholastic degree)",
+             address: ["Rabbi (full name, initials of degree)", "(Local address)"],
+             salutation: "Dear Dr. (surname): or Dear Rabbi (surname):", close: "Sincerely,"},
+            {addressee: "Rabbi (without scholastic degree)",
+             address: ["Rabbi (full name)", "(Local address)"],
+             salutation: "Dear Rabbi (surname):", close: "Sincerely,"},
+            {addressee: "The Pope", address: ["His Holiness The Pope", "(Address)"],
+             salutation: "Most Holy Father or Your Holiness", close: "Sincerely,"},
+            {addressee: "Catholic Cardinal",
+             address: ["His Eminence (Christian name)", "Cardinal (surname) Archbishop of (Diocese)", "(Local address)"],
+             salutation: "Your Eminence:", close: "Sincerely,"},
+            {addressee: "Catholic Archbishop",
+             address: ["The Most Reverend (full name)", "Bishop of (diocese)", "(Local address)"],
+             salutation: "Your Excellency:", close: "Sincerely,"},
+            {addressee: "Catholic Bishop",
+             address: ["The Most Reverend (full name)", "Bishop of (city)", "(Local address)"],
+             salutation: "Your Excellency:", close: "Sincerely,"},
+            {addressee: "Catholic Monsignor",
+             address: ["The Very Reverend Monsignor (full name)", "(Local address)"],
+             salutation: "Formal: Very Reverend Monsignor:. Informal: Dear Monsignor (surname):", close: "Sincerely,"},
+            {addressee: "Catholic Priest",
+             address: ["The Reverend (full name) (add designated letters)", "(Local address)"],
+             salutation: "Formal: Reverend:. Informal: Dear Father (surname):", close: "Sincerely,"},
+            {addressee: "Mother Superior of an Institution",
+             address: ["Mother (name, initials, or order, if used) Superior", "(name of institution)", "(Local address)"],
+             salutation: "Dear Mother (name):", close: "Sincerely,"},
+            {addressee: "Bishop, Church of Jesus Christ of Latter Day Saints",
+             address: ["Bishop (full name)", "Church of Jesus Christ of Latter Day Saints", "(Local address)"],
+             salutation: "Formal: Sir:. Informal: Dear Mr. (surname):", close: "Sincerely,"},
+            {addressee: "Orthodox Metropolitan",
+             address: ["The Most Blessed (Christian name)", "Archbishop of (city)", "Metropolitan of (province)",
+                        "(Local address)"],
+             salutation: "Formal: Your Beatitude:/Dear Metropolitan:. Informal: (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Archbishop",
+             address: ["The Most Reverend (Christian name)", "Archbishop of (city or province)", "(Local address)"],
+             salutation: "Formal: Your Eminence:/Dear Archbishop:. Informal: (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Bishop",
+             address: ["The Right Reverend (Christian name)", "Bishop of (city)", "(Local address)"],
+             salutation: "Formal: Your Grace:/Dear Bishop:. Informal: (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Protopresbyter",
+             address: ["The Right Reverend (name)", "(Local address)"],
+             salutation: "Formal: Right Reverend Father:. Informal: Dear Father (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Archpriest",
+             address: ["The Very Reverend (name)", "(Local address)"],
+             salutation: "Formal: Very Reverend Father:. Informal: Dear Father (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Priest",
+             address: ["The Reverend (name)", "(Local address)"],
+             salutation: "Formal: Reverend Father:. Informal: Dear Father (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Deacon",
+             address: ["Father Deacon (name)", "(Local address)"],
+             salutation: "Formal: Father Deacon:/Dear Father Deacon:. Informal: (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Nun", address: ["Sister (Christian name)", "(Name of monastery)", "(Local address)"],
+             salutation: "Dear Sister (Christian name):", close: "Sincerely,"},
+            {addressee: "Orthodox Monk", address: ["Brother (Christian name)", "(Name of monastery)", "(Local address)"],
+             salutation: "Dear Brother (Christian name):", close: "Sincerely,"},
+            {addressee: "Protestant Episcopal Bishop",
+             address: ["The Right Reverend (full name)", "Bishop of (name)", "(Local address)"],
+             salutation: "Formal: Dear Reverend Sir:. Informal: Dear Bishop (surname):", close: "Sincerely,"},
+            {addressee: "Protestant Episcopal Dean",
+             address: ["The Very Reverend (full name)", "Dean of (church)", "(Local address)"],
+             salutation: "Formal: Very Reverend Sir:. Informal: Dear Dean (surname):", close: "Sincerely,"},
+            {addressee: "Methodist Bishop",
+             address: ["The Reverend (full name)", "Methodist Bishop", "(Local address)"],
+             salutation: "Formal: Reverend Sir:. Informal: My Dear Bishop (surname):", close: "Sincerely,"},
+            {addressee: "Chaplain",
+             address: ["Chaplain (grade) (full name)", "(Post office address of organization and station)"],
+             salutation: "Dear Chaplain (surname):", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-7 - Private citizens. */
+    privateCitizens: {
+        cite: "AR 25-50, table C-7",
+        entries: [
+            {addressee: "President of a university or college (with scholastic degree)",
+             address: ["(Full name, initials of degree)", "President, (name of institution)", "(Local address)"],
+             salutation: "Dear Dr. (surname):", close: "Sincerely,"},
+            {addressee: "President of a university or college (without scholastic degree)",
+             address: ["Mr./Ms. (full name)", "President, (name of institution)", "(Local address)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "Dean of a school (with scholastic degree)",
+             address: ["(Full name, initials of degree)", "Dean, School of (name)", "(Name of institution)",
+                        "(Local address)"],
+             salutation: "Dear Dr. (surname):", close: "Sincerely,"},
+            {addressee: "Dean of a school (without scholastic degree)",
+             address: ["Dean (full name)", "School of (name)", "(Name of institution)", "(Local address)"],
+             salutation: "Dear Dean (surname):", close: "Sincerely,"},
+            {addressee: "Professor (with scholastic degree)",
+             address: ["(Full name, initials of degree)", "Department of (name)", "(Name of institution)",
+                        "(Local address)"],
+             salutation: "Dear Professor (surname): or Dear Dr. (surname):", close: "Sincerely,"},
+            {addressee: "Professor (without scholastic degree)",
+             address: ["Professor (full name)", "Department of (name) (Name of institution)", "(Local address)"],
+             salutation: "Dear Professor (surname):", close: "Sincerely,"},
+            {addressee: "Physician",
+             address: ["(Full name), M.D.", "(Local address)"],
+             salutation: "Dear Dr. (surname):", close: "Sincerely,"},
+            {addressee: "Lawyer",
+             address: ["Mr./Ms. (full name)", "Attorney at Law", "(Local address)"],
+             salutation: "Dear Mr./Ms. (full name):", close: "Sincerely,"},
+            {addressee: "Private individuals",
+             address: ["Mr./Ms. (full name)", "(Local address)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-8 - Corporations, companies, and federations. */
+    corporationsAndFederations: {
+        cite: "AR 25-50, table C-8",
+        entries: [
+            {addressee: "To a company or corporation",
+             address: ["(Name of company or corporation)", "(Local address)"],
+             salutation: "Gentlemen: (Ladies and Gentlemen)", close: "Sincerely,"},
+            {addressee: "To a federation",
+             address: ["(Name of official)", "(Title, name of federation)", "(Local address)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "President of a company or corporation (or other official)",
+             address: ["Mr./Ms. (full name)", "President (or other title)", "Company", "(Local address)"],
+             salutation: "Dear Mr./Ms. (surname):", close: "Sincerely,"},
+            {addressee: "To an individual, company, corporation, or federation when the name is not known",
+             address: ["(Title of individual) (Name of organization)", "(Local address)"],
+             salutation: "Dear Sir/Madam:", close: "Sincerely,"},
+        ],
+    },
+
+    /** Table C-9 - Foreign government officials. */
+    foreignGovernmentOfficials: {
+        cite: "AR 25-50, table C-9",
+        note: "Address foreign officials by title if the name of the official is not given in the correspondence "
+            + "or is not readily available.",
+        entries: [
+            {addressee: "Foreign Ambassador in the United States",
+             address: ["His/Her Excellency (full name)", "Ambassador of (country)", "(local address)"],
+             salutation: "Formal: Excellency:. Informal: Dear Mr./Madam Ambassador:",
+             close: "Very truly yours, or Sincerely,"},
+            {addressee: "Foreign Minister in the United States",
+             address: ["Honorable (full name)", "Minister of (country)", "(local address)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Madam Minister:",
+             close: "Very truly yours, or Sincerely,"},
+        ],
+    },
+
+    /** Table C-10 - International organizations. */
+    internationalOrganizations: {
+        cite: "AR 25-50, table C-10",
+        entries: [
+            {addressee: "Secretary General of the United Nations",
+             address: ["His/Her Excellency (full name)", "Secretary General of the United Nations", "(Street)",
+                        "New York, NY (ZIP)"],
+             salutation: "Formal: Excellency:. Informal: Dear Mr./Madam Secretary General:/Dear Mr./Ms. (surname):",
+             close: "Very truly yours, or Sincerely,"},
+            {addressee: "Chairman, United States Delegation to the United Nations Military Staff Committee",
+             address: ["The Chairman", "United States Delegation", "United Nations Military Staff Committee",
+                        "United States Mission to the United Nations", "(Street)", "New York, NY (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "Senior Military Advisor to the United States Delegation to the UN General Assembly",
+             address: ["(Grade) (full name)", "Senior Military Adviser",
+                        "United States Delegation to the United Nations General Assembly", "(Street)",
+                        "New York, NY (ZIP)"],
+             salutation: "Informal: Dear (grade) (surname):", close: "Sincerely,"},
+            {addressee: "United States Representative on the Economic and Social Council",
+             address: ["The Honorable (full name)", "United States Representative on the Economic and Social Council",
+                        "(Street)", "New York, NY (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "United States Representative on the Disarmament Commission",
+             address: ["The Honorable (full name)", "United States Representative on the Disarmament Commission",
+                        "(Street)", "New York, NY (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "United States Representative on the Trusteeship Council",
+             address: ["The Honorable (full name)", "United States Representative on the Trusteeship Council",
+                        "(Street)", "New York, NY (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "Senior Representative of the United States to the UN General Assembly",
+             address: ["The Honorable (full name)",
+                        "Senior Representative of the United States to the General Assembly of the United Nations",
+                        "(Street)", "New York, NY (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "Secretary General of the Organization of American States",
+             address: ["His/Her Excellency (full name)", "Secretary General of the Organization of American States",
+                        "Pan American Union (Street)", "Washington, DC (ZIP)"],
+             salutation: "Formal: Excellency:/Dear Mr./Madam Secretary General:. Informal: Dear Mr./Ms./Dr. (surname):",
+             close: "Very truly yours, or Sincerely,"},
+            {addressee: "Assistant Secretary General of the Organization of American States",
+             address: ["The Honorable (full name)",
+                        "Assistant Secretary General of the Organization of American States", "Pan American Union",
+                        "(Street)", "Washington, DC (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms./Dr. (surname):", close: "Very truly yours, or Sincerely,"},
+            {addressee: "United States Representative on the Council of the Organization of American States",
+             address: ["The Honorable (full name)",
+                        "United States Representative on the Council of the Organization of American States",
+                        "Department of State", "(Street)", "Washington, DC (ZIP)"],
+             salutation: "Formal: Sir/Madam:. Informal: Dear Mr./Ms./Dr. (surname):", close: "Very truly yours, or Sincerely,"},
+        ],
+    },
+
+    /**
+     * Table C-11 - Additional former official.
+     *
+     *   "Address former presidents, vice presidents, justices of the Supreme
+     *    Court, cabinet officers, Service secretaries, and governors as
+     *    indicated in this table. Address other former Federal officials and
+     *    former State, local, and foreign government officials who once held
+     *    positions of distinction ... by the titles of their former positions
+     *    when the former official indicates ... that he or she still uses the
+     *    title ... Otherwise, treat the addressee as a private citizen."
+     */
+    formerOfficials: {
+        cite: "AR 25-50, table C-11",
+        entries: [
+            {addressee: "Former President", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam (surname):", close: "Respectfully,"},
+            {addressee: "Former Vice President", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam (surname):", close: "Sincerely,"},
+            {addressee: "Former Member of the Cabinet addressed as \"Secretary\"",
+             address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam Secretary:", close: "Sincerely,"},
+            {addressee: "Former Postmaster General", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam Postmaster General:", close: "Sincerely,"},
+            {addressee: "Former Attorney General", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam Attorney General:", close: "Sincerely,"},
+            {addressee: "Former \"Secretary\" of military department",
+             address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam (surname):", close: "Sincerely,"},
+            {addressee: "Former Senator", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Senator (surname):", close: "Sincerely,"},
+            {addressee: "Former Representative", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam (surname):", close: "Sincerely,"},
+            {addressee: "Former Justice", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Mr./Madam Justice:", close: "Sincerely,"},
+            {addressee: "Former Judge", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Judge (surname):", close: "Sincerely,"},
+            {addressee: "Former Governor of State", address: ["The Honorable (full name)", "(Local address)"],
+             salutation: "Dear Governor (surname):", close: "Sincerely,"},
+        ],
+        note: "Address other former officials by the title of their former position only when they still use it, "
+            + "or the action official knows they once held a distinctive position; otherwise treat them as a "
+            + "private citizen.",
+    },
+};
+
+/**
+ * Look up an addressee category across every table in appendix C, by its
+ * printed heading. Returns the entry plus which table it came from, or null.
+ * Case-insensitive and tolerant of the parenthetical qualifiers the tables use
+ * ("(with scholastic degree)" and the like), because a caller names the role,
+ * not the footnote.
+ */
+export function lookupAddressForm(addressee) {
+    const needle = String(addressee ?? "").trim().toLowerCase();
+    if (!needle) return null;
+
+    for (const [table, section] of Object.entries(APPENDIX_C)) {
+        if (!section?.entries) continue;
+        const hit = section.entries.find((e) => e.addressee.toLowerCase() === needle)
+            ?? section.entries.find((e) => e.addressee.toLowerCase().startsWith(needle));
+        if (hit) return {table, cite: section.cite, ...hit};
+    }
+    for (const hit of APPENDIX_C.militaryPersonnel.additional) {
+        if (hit.addressee.toLowerCase() === needle) {
+            return {table: "militaryPersonnel", cite: APPENDIX_C.militaryPersonnel.cite, ...hit};
+        }
+    }
+    return null;
+}
+
+/**
+ * A military salutation title from table C-4: the service and the grade
+ * abbreviation in, "Dear (title) (surname):" out - or the warrant officers'
+ * courtesy-title form, which the table gives with no rank word at all.
+ */
+export function militarySalutation(service, grade) {
+    const M = APPENDIX_C.militaryPersonnel;
+    const title = M.bySer[service]?.[grade];
+    if (title === undefined) return null;
+    return title === null
+        ? M.warrantOfficerSalutation
+        : `Dear ${title} (surname):`;
+}
 export const PERSONAL_ADDRESS_CITE = "AR 25-50, paras 2-2 and 2-4a(5)";
 
 /**

@@ -90,6 +90,10 @@ export function assembleMemo(content, context = {}) {
         // both vehicles rather than two.
         salutation: context.salutation,
         complimentaryClose: context.complimentaryClose,
+        // Names a row in appendix C, so the salutation above can be checked
+        // against the form the regulation actually prescribes for it - not
+        // carried into layout, only into validation.
+        addresseeCategory: context.addresseeCategory,
     };
 }
 

@@ -3248,6 +3248,116 @@ function hasPlaceholdersDeep(value) {
 }
 
 // ---------------------------------------------------------------------------
+// Appendix C - Forms of Address, Salutation, and Complimentary Close
+// ---------------------------------------------------------------------------
+
+/*
+ * Spot-checked against the tables themselves, one or more entries per table,
+ * transcribed directly from the PDF pages rather than paraphrased. This is
+ * not exhaustive - table C-4 alone carries roughly fifty rows - but it is
+ * enough to catch a mistranscription in each table, and the Army/table 6-1
+ * cross-check below covers table C-4's largest block exactly rather than by
+ * sampling.
+ */
+{
+    const {APPENDIX_C, lookupAddressForm, militarySalutation} = await import("./ar25-50.js");
+    const {GRADE_ABBREVIATIONS} = await import("./signature-blocks.js");
+
+    check("appendix C: table C-1, the President",
+        lookupAddressForm("The President")?.salutation,
+        "Dear Mr./Madam President:", "AR 25-50, table C-1");
+    check("appendix C: table C-2, a United States Senator",
+        lookupAddressForm("United States Senator (Washington, DC, office)")?.salutation,
+        "Dear Senator (surname):", "AR 25-50, table C-2");
+    check("appendix C: table C-3, the Chief Justice",
+        lookupAddressForm("The Chief Justice of the United States")?.salutation,
+        "Dear Mr./Madam Chief Justice:", "AR 25-50, table C-3");
+    check("appendix C: table C-5, a Governor - the letter's own audience, para 3-2",
+        lookupAddressForm("Governor of a State")?.salutation,
+        "Dear Governor (surname):", "AR 25-50, table C-5");
+    check("appendix C: table C-5, a Mayor - also para 3-2's audience",
+        lookupAddressForm("Mayor")?.salutation, "Dear Mayor (surname):", "AR 25-50, table C-5");
+    check("appendix C: table C-6, a Catholic Cardinal",
+        lookupAddressForm("Catholic Cardinal")?.salutation, "Your Eminence:", "AR 25-50, table C-6");
+    check("appendix C: table C-7, a private individual",
+        lookupAddressForm("Private individuals")?.salutation,
+        "Dear Mr./Ms. (surname):", "AR 25-50, table C-7");
+    check("appendix C: table C-8, a company or corporation",
+        lookupAddressForm("To a company or corporation")?.salutation,
+        "Gentlemen: (Ladies and Gentlemen)", "AR 25-50, table C-8");
+    check("appendix C: table C-9, a foreign ambassador",
+        lookupAddressForm("Foreign Ambassador in the United States")?.salutation,
+        "Formal: Excellency:. Informal: Dear Mr./Madam Ambassador:", "AR 25-50, table C-9");
+    check("appendix C: table C-10, the UN Secretary General",
+        lookupAddressForm("Secretary General of the United Nations")?.salutation,
+        "Formal: Excellency:. Informal: Dear Mr./Madam Secretary General:/Dear Mr./Ms. (surname):",
+        "AR 25-50, table C-10");
+    check("appendix C: table C-11, a former Governor",
+        lookupAddressForm("Former Governor of State")?.salutation,
+        "Dear Governor (surname):", "AR 25-50, table C-11");
+    checkTrue("appendix C: a category that is not in any table returns null, not a guess",
+        lookupAddressForm("Duke of Earl") === null, "AR 25-50, appendix C");
+
+    // Table C-4's own worked example: "Dear Colonel (last name):" for both a
+    // full colonel and a lieutenant colonel - the collapse is the table's own,
+    // not a simplification introduced here.
+    check("appendix C: table C-4, a colonel", militarySalutation("army", "COL"), "Dear Colonel (surname):",
+        "AR 25-50, table C-4");
+    check("appendix C: table C-4, a lieutenant colonel collapses to the same salutation",
+        militarySalutation("army", "LTC"), militarySalutation("army", "COL"), "AR 25-50, table C-4");
+    check("appendix C: table C-4, a warrant officer takes a courtesy title, not a rank word",
+        militarySalutation("army", "CW3"), APPENDIX_C.militaryPersonnel.warrantOfficerSalutation,
+        "AR 25-50, table C-4");
+    check("appendix C: table C-4, a Navy admiral",
+        militarySalutation("navy", "ADM"), "Dear Admiral (surname):", "AR 25-50, table C-4");
+    check("appendix C: table C-4, a Marine Corps gunnery sergeant",
+        militarySalutation("marineCorps", "GySgt"), "Dear Gunnery Sergeant (surname):", "AR 25-50, table C-4");
+    check("appendix C: table C-4, an Air Force chief master sergeant",
+        militarySalutation("airForce", "CMSgt"), "Dear Chief (surname):", "AR 25-50, table C-4");
+
+    /*
+     * Table C-4's Army column and table 6-1 (signature-blocks.js) describe the
+     * same set of Army grades from two different chapters. They should never
+     * drift apart - a grade added to one and not the other is exactly the kind
+     * of gap a page-by-page reading catches and a later edit does not.
+     * Sergeant Major of the Army is the one legitimate difference: a real
+     * addressee in table C-4, and absent from table 6-1's signature grades.
+     */
+    const army = Object.keys(APPENDIX_C.militaryPersonnel.bySer.army);
+    const ch6 = Object.keys(GRADE_ABBREVIATIONS);
+    check("appendix C's Army grades and table 6-1's agree, except SMA",
+        army.filter((g) => !ch6.includes(g)), ["SMA"], "AR 25-50, table C-4 and table 6-1");
+    checkTrue("and nothing in table 6-1 is missing from appendix C's Army column",
+        ch6.every((g) => army.includes(g)), "AR 25-50, table C-4 and table 6-1");
+
+    /*
+     * The validator checks a supplied salutation against the category once one
+     * is named - para 3-5e's "See appendix C for proper addressing of
+     * letters" is not satisfied by having the data on file if nothing reads it.
+     */
+    const {createTemplate: makeTemplate} = await import("./templates.js");
+    const letterBase = {...makeTemplate("letter"),
+        addressees: ["The Honorable Jane Roe, Governor of Texas"], date: "August 3, 2026"};
+    checkTrue("appendix C: an unrecognized category is reported, not silently accepted",
+        validateMemo({...letterBase, addresseeCategory: "Duke of Earl", salutation: "My Lord:"})
+            .warnings.some((f) => f.rule === "letter-addressee-category-unknown"),
+        APPENDIX_C.cite);
+    checkTrue("appendix C: a salutation that does not match the category's form is an error",
+        validateMemo({...letterBase, addresseeCategory: "Governor of a State", salutation: "Dear Ms. Roe:"})
+            .errors.some((f) => f.rule === "letter-salutation-mismatch"),
+        "AR 25-50, table C-5");
+    checkTrue("appendix C: the table's own form raises no error",
+        validateMemo({...letterBase, addresseeCategory: "Governor of a State",
+                      salutation: "Dear Governor (surname):"})
+            .errors.every((f) => f.rule !== "letter-salutation-mismatch"),
+        "AR 25-50, table C-5");
+    checkTrue("appendix C: no category set means no claim is checked",
+        validateMemo({...letterBase, salutation: "Dear Governor Roe:"})
+            .errors.every((f) => f.rule !== "letter-salutation-mismatch"),
+        "AR 25-50, para 3-5e");
+}
+
+// ---------------------------------------------------------------------------
 // The file, against the schema Word implements
 // ---------------------------------------------------------------------------
 
