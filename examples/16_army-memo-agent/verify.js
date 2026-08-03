@@ -2302,6 +2302,24 @@ const FIELD_TEMPLATE = {
         APPENDIX_F.dateBox.alignment, "Right", "AR 25-50, para F-2e");
 
     /*
+     * F-2f: the signature box goes "directly above and left-aligned with the
+     * signer's name". The renderer draws no box - it belongs to Acrobat, after
+     * conversion - but the five lines it already reserves above the name leave
+     * that exact position open. authorityLineToDigitalSignature records where:
+     * the third of the five lines, which is one blank line above the name
+     * (line 5) rather than flush against it. That arithmetic is the one part
+     * of F-2f a line-count renderer can hold itself to without inventing a
+     * box it was never asked to draw.
+     */
+    const {SPACING: F2F_SPACING} = await import("./ar25-50.js");
+    check("appendix F: the reserved space puts the box one line above the name",
+        F2F_SPACING.authorityLineToSignature.linesBelow - F2F_SPACING.authorityLineToDigitalSignature.linesBelow,
+        2, "AR 25-50, para F-2f");
+    check("and left-aligned with it - the rendered name sits at the signature column",
+        layoutMemo(FIG_2_1).flow.find((l) => l.role === "signature")?.indentIn,
+        LAYOUT.signatureBlockIndentIn, "AR 25-50, para F-2f");
+
+    /*
      * Chapter 4's tabbing rules are physical except for one sentence:
      * "Tabs may be any letter or number as long as they are consecutive and
      * fully identified in the text." - para 4-4a. Both halves are checkable.

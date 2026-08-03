@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-622 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+624 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 622/622 checks passed.
+# AR 25-50 layout verification: 624/624 checks passed.
 ```
 
 ---
@@ -598,6 +598,12 @@ Two things came off the page here, both because a figure's *annotation* had been
 
 The figures caption themselves in more than one place — figure 2-11 also carries `[insert text box here]` and `[insert digital signature box here]` on the THRU line, pointing at the boxes appendix F describes. `verify.js` now sweeps every type for all three, because the failure mode is silent: the page still lays out correctly, it just has an instruction printed on it.
 
+**Appendix F turned out to be out of scope for a .docx generator, and the regulation says so itself.** Para 1-17 introduces it: *"The Army will replace analog or 'wet,' signatures with digital and electronic signatures... See appendix F for instruction on creating **Adobe .pdf files** and placing the digital signature box and text boxes for date and comment as required."* Appendix F is instructions for a human converting a finished document to PDF in Acrobat and placing form fields there — it is not a Word layout the memorandum's own template should draw.
+
+That reframes what "supporting appendix F" means for this renderer. Its job stops at getting the office to that conversion step with the right document: the date already sits flush right on the office symbol line, exactly where para F-2e's date box goes (`F-2e: "Top of the document, on the office symbol line, right edge aligned with the right margin"`); the signature block's three blank lines above the name are exactly the space a signature box goes into, per addressee for a THRU chain (F-2i) and per signer for a multi-signature memorandum (F-2h — the MOU/MOA path already gives each signer an overscored rule and a `(Date)` line of their own). Drawing an actual bordered rectangle in the `.docx` would be inventing Word content the regulation never asks the Word document to carry — the box belongs to the PDF, made in the PDF.
+
+The appendix's own figures (F-1 onward) were not available to check this against directly: the uploaded pages run to printed page 100, still inside appendix D at that point. What is confirmed is the paragraph text itself (para 1-17's cross-reference, and the F-2 paragraph citations already carried in `ar25-50.js`), and that the sweep above already guards the one thing that *would* go wrong in a Word template — printing the figure's bracketed instruction as if it were the memorandum's own text.
+
 **The authority line is conditional, not default.** Para 2-4c(1): *"The authority line is used by individuals properly designated as having the authority to sign for the commander or head of an office."* If the signer is the commander, there is no authority line — and figure 2-17 note 6 says of the MFR outright: **"Do not use an authority line."** The templates no longer ship `FOR THE COMMANDER:`; a memorandum that needs one supplies it, and the five lines are then counted from it instead of from the last line of text, which para 2-4c(2)(a) spells out as two separate cases.
 
 ---
@@ -755,7 +761,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 622 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 624 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

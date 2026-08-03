@@ -52,7 +52,19 @@ export const SPACING = {
     authorityLineToSignature: {linesBelow: 5, cite: "AR 25-50, para 2-4c(2)(a)"},
     textToSignature: {linesBelow: 5, cite: "AR 25-50, para 2-4c(2)(a)"},
 
-    // The digital signature block sits on the third of those five lines. - figs 2-1 to 2-5
+    /*
+     * Where a digital signature box goes: the third of those five lines,
+     * figured from where the figures print their own "[place digital
+     * signature block here]" annotation - one blank line above the name.
+     *
+     * The renderer prints neither the annotation nor a box; para 1-17 sends
+     * that work to Adobe Acrobat, not to Word ("See appendix F for
+     * instruction on creating Adobe .pdf files and placing the digital
+     * signature box"). What stays true either way is that the five reserved
+     * lines above a signature block leave this exact position open, so this
+     * constant is the fact rather than a stray leftover from the annotation
+     * that used to sit there. See verify.js.
+     */
     authorityLineToDigitalSignature: {linesBelow: 3, cite: "AR 25-50, figs 2-1 through 2-5"},
 
     // "Type 'CF:' on the second line below the last line of the signature
