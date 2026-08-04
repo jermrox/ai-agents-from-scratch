@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-877 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility (§16e).
+911 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 877/877 checks passed.
+# AR 25-50 layout verification: 911/911 checks passed.
 ```
 
 ---
@@ -834,6 +834,32 @@ Verified against a live server over real HTTP, not just against the template str
 
 ---
 
+## 16f) Tightening: what the page still could not say, and what it said wrong
+
+A second pass over the front end, this time hunting the seams between what the *validator* can express and what the *form* can - every rule the validator enforces that the page gave no way to satisfy is a dead end where the only fix is editing raw JSON.
+
+**Four fields the backend understood and the page could not reach:**
+
+- **`distribution` / `seeDistribution`.** Para 2-4a(5)(c): more than five addressees is a SEE DISTRIBUTION memorandum carrying a `DISTRIBUTION:` listing. The validator enforced both halves (`see-distribution-required`, `distribution-list-missing`) and the form could satisfy neither - a sixth addressee produced an error whose only cure was the spec editor. Now `specFromForm()` sets the flag automatically past the threshold and defaults the listing to the addressees already typed - the office types the recipients once, and the format follows the count. A Distribution textarea (a new gated `FIELDS` entry) appears only once it applies, for the office that wants the listing to read differently.
+- **`digitalSignature`.** The spec carried it, `checkDigitalSignature()` keyed real advisories off it (the para 6-3d wet-signature line-through for THRU chains, appendix F's Acrobat boxes), and fig 2-18/2-19 switch the decision approval line on it - and the form pinned it `true` with no way to say otherwise. Now a checkbox, defaulting to checked; a checkbox submits only when checked, so `specFromForm()` reads *absence from the form* - not a blank - as unchecked. Hidden for letters by id rather than through `FIELDS` (a checkbox is never "still to be supplied," so the outstanding-fields model is the wrong lookup for it): "digital signatures will not be used on letters" - para 3-6c(2)(b) - is not the author's choice to make.
+- **`toCommanderOf`.** Para 1-12b(1)'s second "Exclusive For" form - addressed to the commander of an organization rather than a named person, with its own keyword. Rendered by both renderers, tested, and unreachable from the page. Now a gated field for `exclusiveFor` only. Deliberately *no* template placeholder: unlike `addresseeTitle`, blank here is an answer ("the named person above"), not a question still open.
+- **The subject word count.** Para 2-4a(6) is checked by the validator, but only after Generate - the page said "ten words or less" and made you count them yourself. A live counter under the input now shows the count as you type and turns amber past ten; advisory, not blocking, because the regulation itself says "if possible."
+
+**Two things the page said that were wrong, found by *looking at the screenshots* rather than the assertions:**
+
+- **A dishonest label.** Switching to "Exclusive For" showed the addressee textarea labeled "MEMORANDUM FOR - the office expected to complete the action. One per line." - all three claims false for a type that names one person, no office, no list, and no MEMORANDUM FOR keyword (para 1-12b(1) has its own). The `FIELDS` entry split in two: the multi-recipient wording for the types that have a list, "Addressee's name - the person this is for" for the three personal-address types. `specFromForm()` also trims stray extra lines to the one name these types ever render, so a list left over from switching types cannot trip the multi-recipient checks over data that would never print.
+- **A field that vanished mid-edit.** Once a sixth addressee crossed the threshold, "addressees" dropped out of `/fields`' answer (SEE DISTRIBUTION replaces the heading, so as a *question* it is gone) - and the page, faithfully applying the answer, hid the textarea the user was typing in. `/fields` now also reports `seeDistribution` itself, and the page keeps the field visible with its label rewritten to say what the list now is: the default distribution.
+
+**And one the user hit before any check did: the MFR preview cut off mid-page.** The preview iframe was a fixed `74vh` box scrolling its own content, nested inside `#out` - which *also* scrolls (it is sticky, so a finding stays on screen beside the line it is about). Two independently scrolling regions nested in each other meant the signature block of anything longer than a short memo sat out of view inside a box only partly visible inside another box, reachable by no single scroll gesture. `resizeFrame()` now reads the loaded document's real height and grows the iframe to match, collapsing the two scrolls into the one that already existed. (A `srcdoc` iframe's `contentDocument` is same-origin-accessible from its parent even though its opaque origin blocks resource *loading* - the seal workaround and this read are different operations, which is why one needed a served URL and the other just works.)
+
+The download buttons also stopped naming every file `memorandum.docx`: the filename is now the type and subject slugged (`record-staff-meeting-on-barracks-renovation-funding.docx`), so five downloads in a row stop overwriting each other.
+
+One more served-source bug class got a permanent check: the page's script lives inside a JavaScript template literal, where `\s` is not an escape sequence - the outer literal silently drops the backslash at build time, and the *served* regex matches literal `s`, not whitespace. The word counter shipped broken exactly this way (its count was the number of `s`-separated fragments); the fix is `\\s` in the source, and the check asserts the served HTML contains the backslash intact, because the file on disk can read correctly and still serve the wrong thing.
+
+All verified the same way as §16e - live server, real HTTP, Playwright across the affected types with zero console errors, each fix fault-reintroduced and its check watched to fail - plus, for the preview fix, the user's own reproduction re-run and screenshotted: one scroll from heading to signature block. 877 -> 911 checks.
+
+---
+
 ---
 
 ## Writing your own memo
@@ -942,7 +968,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 877 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 911 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

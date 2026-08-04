@@ -129,7 +129,20 @@ export const FIELDS = [
         hint: "The office expected to complete the action. One per line.",
         cite: "AR 25-50, para 2-4a(5)",
         when: (memo) => memo.type !== "record" && !isAgreement(memo) && !memo.seeDistribution
-            && !isLetter(memo),
+            && !isLetter(memo) && !PERSONAL_ADDRESS_TYPES.includes(memo?.type),
+    },
+    {
+        // "Exclusive For" correspondence, appreciation, and commendation
+        // name one person, not an office - the same underlying field as
+        // MEMORANDUM FOR above (only its first line is ever used), worded
+        // for what it actually holds here rather than borrowing a label and
+        // a "one per line" hint that describe a multi-recipient list this
+        // type never has.
+        path: "addressees", scope: "memorandum",
+        label: "Addressee's name", prompt: "ADDRESSEE",
+        hint: "The person this is for.",
+        cite: "AR 25-50, para 2-4a(5)",
+        when: (memo) => PERSONAL_ADDRESS_TYPES.includes(memo?.type),
     },
     {
         path: "thru", scope: "memorandum", list: true, optional: true,
@@ -137,6 +150,18 @@ export const FIELDS = [
         hint: "Only when the action must be endorsed on the way. One per line, two at most.",
         cite: "AR 25-50, para 2-4a(5)(d)",
         when: (memo) => memo.type !== "record" && !isAgreement(memo) && !isLetter(memo),
+    },
+    {
+        // Appears once the addressee count crosses the threshold and
+        // MEMORANDUM FOR reads SEE DISTRIBUTION instead - specFromForm()
+        // defaults this list to the addressees already typed, so this field
+        // is only for an office that wants the distribution to read
+        // differently from the addressee list that triggered it.
+        path: "distribution", scope: "memorandum", list: true, optional: true,
+        label: "Distribution", prompt: "DISTRIBUTION",
+        hint: "Defaults to the addressee list above. One per line; override only if the distribution should differ.",
+        cite: "AR 25-50, para 2-4a(5)(c)",
+        when: (memo) => Boolean(memo?.seeDistribution),
     },
     {
         // A letter's address stands in the body of the page rather than after a
@@ -164,6 +189,16 @@ export const FIELDS = [
         path: "addresseeAddress", scope: "memorandum", optional: true,
         label: "Addressee's mailing address", prompt: "MAILING ADDRESS",
         hint: "Only \"Exclusive For\" correspondence names a mailing address.",
+        cite: "AR 25-50, para 1-12b(1)",
+        when: (memo) => memo?.type === "exclusiveFor",
+    },
+    {
+        // Blank addresses a named person above, the ordinary case. Filled in,
+        // "Exclusive For" instead addresses the commander of an office - the
+        // keyword and the target both change (para 1-12b(1)).
+        path: "toCommanderOf", scope: "memorandum", optional: true,
+        label: "Or, addressed to the commander of", prompt: "ORGANIZATION",
+        hint: "Leave blank to address the named person above; fill in to address that organization's commander instead.",
         cite: "AR 25-50, para 1-12b(1)",
         when: (memo) => memo?.type === "exclusiveFor",
     },

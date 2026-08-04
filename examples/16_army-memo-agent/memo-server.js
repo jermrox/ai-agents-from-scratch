@@ -33,7 +33,7 @@ import path from "path";
 import {renderText, renderHtmlDocument, DEFAULT_SEAL_PATH} from "./memo-formatter.js";
 import {validateMemo} from "./memo-validator.js";
 import {renderDocx} from "./memo-docx.js";
-import {MEMO_TYPES, formatMemoDate, formatLetterDate} from "./ar25-50.js";
+import {MEMO_TYPES, formatMemoDate, formatLetterDate, ADDRESS_LIMITS, PERSONAL_ADDRESS_TYPES} from "./ar25-50.js";
 import {createTemplate, describeTemplates, recordFieldPlaceholders, RECORD_FIELDS} from "./templates.js";
 import {detectMemoType, assembleMemo, runMemoAgent} from "./memo-intent.js";
 import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
@@ -133,6 +133,14 @@ export function specFromForm(form = {}) {
         // treatment as everything else here.
         addresseeTitle: filled(form.addresseeTitle, template.addresseeTitle ?? null),
         addresseeAddress: filled(form.addresseeAddress, template.addresseeAddress ?? null),
+        // Blank means "addressed to a named person" - the ordinary case above.
+        // Filled in, "Exclusive For" addresses the commander of an office
+        // instead (para 1-12b(1)) - there is no template default for it,
+        // because most "Exclusive For" correspondence does not use it.
+        toCommanderOf: filled(form.toCommanderOf, null),
+        // A checkbox submits only when checked, so its absence from the form
+        // - not a blank string - is what "unchecked" looks like on the wire.
+        digitalSignature: form.digitalSignature !== undefined,
         // An MFR is on plain paper with no addressee and no authority line
         // (fig 2-17); so is an agreement (para 2-6c(1)).
         letterhead: type === "record" ? null : (letterheadGiven ? {
@@ -142,6 +150,33 @@ export function specFromForm(form = {}) {
         } : record.letterhead),
     };
     if (type === "record") context.authorityLine = null;
+    // "Exclusive For" correspondence, appreciation, and commendation name one
+    // person - only ever addressees[0], both here and in the renderer - so
+    // stray extra lines (left over from switching a form out of a type that
+    // does take a list) are dropped before validation sees them rather than
+    // tripping the multi-recipient checks over data that will never render.
+    if (PERSONAL_ADDRESS_TYPES.includes(type)) context.addressees = context.addressees.slice(0, 1);
+
+    /*
+     * Para 2-4a(5)(c): more than five addressees is a SEE DISTRIBUTION
+     * memorandum, and the DISTRIBUTION: listing it requires carries the same
+     * names SEE DISTRIBUTION stands in for - so unless the office wants a
+     * different list, the addressees already typed serve as it rather than
+     * asking for the same names twice. Only the types that use a real,
+     * multi-recipient MEMORANDUM FOR line can trigger this: an MFR and an
+     * agreement have no addressee at all, a letter's "address" is one
+     * recipient written out in full, and "Exclusive For"/appreciation/
+     * commendation each name exactly one person - none of the five can
+     * sensibly have "too many" addressees.
+     */
+    const usesDistribution = !["record", "mou", "moa", "letter"].includes(type)
+        && !PERSONAL_ADDRESS_TYPES.includes(type);
+    if (usesDistribution) {
+        context.distribution = lines(form.distribution);
+        context.seeDistribution = context.addressees.length > ADDRESS_LIMITS.seeDistributionAbove
+            || context.distribution.length > 0;
+        if (context.seeDistribution && !context.distribution.length) context.distribution = context.addressees;
+    }
 
     /*
      * The letter is chapter 3, not chapter 2. Its date is civilian style, it
@@ -213,6 +248,17 @@ const plainField = (id, label, hint = "") =>
 const field = (id, label, hint = "", path = id) =>
     `<div class="field" data-field="${path}">${plainField(id, label, hint)}</div>`;
 
+/*
+ * digitalSignature is a yes/no, not a blank to fill in - FIELDS models "what
+ * still needs a value," and a checkbox is never blank, it is only ever
+ * checked or not. Left out of that lookup for the same reason the signer
+ * columns are; hidden for a letter by id instead, since "digital signatures
+ * will not be used on letters" (para 3-6c(2)(b)) is not the office's choice.
+ */
+const checkboxField = (id, label, hint = "") =>
+    `<label class="checkbox" for="${id}"><input type="checkbox" id="${id}" name="${id}" checked> ` +
+    `<span class="label-text">${label}</span>${hint ? `<em>${hint}</em>` : ""}</label>`;
+
 const page = () => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -244,6 +290,11 @@ const page = () => `<!doctype html>
     border-radius:6px; background:var(--panel); color:var(--ink); font:inherit; }
   textarea { min-height:120px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
   input::placeholder, textarea::placeholder { color:var(--dim); opacity:.75; }
+  label.checkbox { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+  label.checkbox input[type=checkbox] { width:auto; }
+  label.checkbox em { flex-basis:100%; margin-left:22px; }
+  .counter { margin:4px 0 0; font-size:12px; color:var(--dim); text-align:right; }
+  .counter.over { color:var(--warn); font-weight:600; }
   button { margin-top:18px; width:100%; padding:11px; border:0; border-radius:6px;
     background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
   @media (prefers-color-scheme: dark) { button { color:#12141a; } }
@@ -267,7 +318,7 @@ const page = () => `<!doctype html>
   /* Fields unit-profile.js says do not apply to the selected type - MOU/MOA
      has no office symbol, an MFR has no addressee, and so on. Hidden, not
      removed: switching the type back does not lose what was typed. */
-  .field.hidden, fieldset.hidden { display:none; }
+  .field.hidden, fieldset.hidden, #digitalSignatureField.hidden { display:none; }
 </style></head>
 <body>
 <header>
@@ -297,6 +348,7 @@ const page = () => `<!doctype html>
     <p>Blank line between paragraphs. Indent a paragraph, or start it with “- ”, to make it a subparagraph. Never type the numbers — para 2-4b(4)(b) makes them the renderer's job.</p>
     <label for="subject">Subject <em>ten words or less, para 2-4a(6)</em></label>
     <input id="subject" name="subject" placeholder="Range 14 Closure for Scheduled Maintenance">
+    <p class="counter" id="subjectcount"></p>
     <label for="body">Body</label>
     <textarea id="body" name="body" placeholder="Range 14 closes for maintenance from 3 August 2026 through 7 August 2026.
 
@@ -309,12 +361,17 @@ Range Control will complete the following work:
       <label for="addressees"><span class="label-text">Addressees</span><em>one per line</em></label>
       <textarea id="addressees" name="addressees" style="min-height:64px"></textarea>
     </div>
+    <div class="field" data-field="distribution">
+      <label for="distribution"><span class="label-text">Distribution</span><em>more than five addressees uses this instead — one per line, defaults to the addressee list</em></label>
+      <textarea id="distribution" name="distribution" style="min-height:48px"></textarea>
+    </div>
     <div class="field" data-field="parties">
       <label for="parties"><span class="label-text">Parties to the agreement</span><em>one per line, para 2-6c(2)</em></label>
       <textarea id="parties" name="parties" style="min-height:64px"></textarea>
     </div>
     ${field("addresseeTitle", "Addressee's title", "the person's duty title, not their organization — para 2-4a(5)", "addresseeTitle")}
     ${field("addresseeAddress", "Addressee's mailing address", "only “Exclusive For” correspondence names one — para 1-12b(1)", "addresseeAddress")}
+    ${field("toCommanderOf", "Or, addressed to the commander of", "leave blank to address the named person above — para 1-12b(1)", "toCommanderOf")}
     <div class="field" data-field="thru">
       <label for="thru"><span class="label-text">THRU addressees</span><em>one per line, para 2-4a(5)(d)</em></label>
       <textarea id="thru" name="thru" style="min-height:48px"></textarea>
@@ -358,6 +415,10 @@ Range Control will complete the following work:
     ${field("authorityLine", "Authority line", "only when signing for the commander — para 2-4c(1)")}
     ${field("salutation", "Salutation", "letters only — para 3-6a(4)")}
     ${field("addresseeCategory", "Addressee category", "optional, letters only — a table C-1 through C-11 heading, e.g. \"Governor of a State\"; checks the salutation against appendix C")}
+    <div id="digitalSignatureField">
+      ${checkboxField("digitalSignature", "Digitally signed",
+        "uncheck for a wet signature — changes the decision approval line and adds the THRU endorsement instruction")}
+    </div>
   </fieldset>
 
   <button type="submit" id="go">Generate</button>
@@ -437,6 +498,22 @@ function applyFields(data) {
 
   document.querySelectorAll("[data-field]").forEach((el) => {
     const f = known.get(el.dataset.field);
+    /*
+     * "addressees" drops out of /fields' own lists once there are more than
+     * five - the heading reads SEE DISTRIBUTION instead of listing them
+     * (para 2-4a(5)(c)) - but the textarea is what the Distribution field
+     * defaults from, so it stays on the page and relabels rather than
+     * disappearing out from under whoever is mid-edit in it.
+     */
+    if (!f && el.dataset.field === "addressees" && data.seeDistribution) {
+      el.classList.remove("hidden");
+      const label = el.querySelector("label");
+      const text = label && label.querySelector(".label-text");
+      if (text) text.textContent = "Addressees";
+      const em = label && label.querySelector("em");
+      if (em) em.textContent = "More than five - this is now the default Distribution list below, unless overridden there.";
+      return;
+    }
     el.classList.toggle("hidden", !f);
     if (!f) return;
     const label = el.querySelector("label");
@@ -449,6 +526,10 @@ function applyFields(data) {
 
   const agreement = data.type === "mou" || data.type === "moa";
   $("agreementfields").classList.toggle("hidden", !agreement);
+
+  // "Digital signatures will not be used on letters" - para 3-6c(2)(b) - so
+  // there is nothing to ask a letter's author to decide.
+  $("digitalSignatureField").classList.toggle("hidden", data.type === "letter");
 
   // An agreement has no letterhead, no office symbol and no lone signature
   // block (para 2-6c) - every field "Your unit" holds is gone at once, and a
@@ -473,6 +554,33 @@ async function post(path, body) {
                               body: JSON.stringify(body)});
   if (!r.ok) throw new Error(await r.text());
   return r;
+}
+
+/*
+ * The preview used to be a fixed 74vh box scrolling its own content while
+ * sitting inside "#out", which *also* scrolls (it is sticky, so a finding
+ * and the memo line it is about stay on screen together as the form scrolls
+ * past). Two independently scrolling regions nested inside each other meant
+ * the memo's own signature block - the point of an MFR - could be out of
+ * view inside a box only partly visible inside another box, and no single
+ * scroll gesture reached it.
+ *
+ * Sizing the iframe to its own content's real height turns that into one
+ * scroll: the outer "#out" region's, which already exists for the reason
+ * above. A srcdoc iframe is same-document-accessible from its parent even
+ * though it has an opaque origin for loading resources (that is what
+ * withServedSeal() works around) - reading contentDocument here is not the
+ * same operation as fetching the seal image.
+ */
+function resizeFrame(html) {
+  const frame = $("frame");
+  frame.onload = () => {
+    try {
+      const h = frame.contentDocument.documentElement.scrollHeight;
+      frame.style.height = Math.max(300, h + 24) + "px";
+    } catch (e) { /* the fixed default height still shows the memo */ }
+  };
+  frame.srcdoc = html;
 }
 
 function renderReport(d) {
@@ -514,9 +622,10 @@ async function generate() {
   try {
     const d = await (await post("/generate", formData())).json();
     $("detected").textContent = "Reading this as: " + d.title;
+    lastType = d.type;
     renderReport(d);
     renderOutstanding(d.outstanding || {unit: [], memorandum: []});
-    $("frame").srcdoc = d.html;
+    resizeFrame(d.html);
     fetchFields();
   } catch (e) {
     $("report").innerHTML = '<p style="color:var(--err)">' + escapeHtml(e.message) + "</p>";
@@ -567,19 +676,55 @@ fetch("/health").then((r) => r.json()).then((h) => {
     escapeHtml(h.model.path) + "</span>. Write the words yourself \u2014 everything else works.";
 }).catch(() => {});
 
+/*
+ * The subject line's own limit - para 2-4a(6), ten words or less - counted as
+ * you type rather than only after Generate. The validator's own wording
+ * ("if possible") is why this only warns rather than blocking the field.
+ */
+const SUBJECT_MAX_WORDS = 10;
+function updateSubjectCount() {
+  const words = $("subject").value.trim().split(/\\s+/).filter(Boolean).length;
+  const el = $("subjectcount");
+  el.textContent = words ? words + " word" + (words === 1 ? "" : "s") : "";
+  el.classList.toggle("over", words > SUBJECT_MAX_WORDS);
+}
+$("subject").addEventListener("input", updateSubjectCount);
+
+/*
+ * A downloaded file named for what it actually is, not for the last person
+ * who ran the demo: type and subject, not "memorandum.docx" every time, so
+ * five memorandums downloaded in a row do not overwrite each other.
+ */
+let lastType = "";
+function slug(text) {
+  return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+function downloadFilename(ext) {
+  const type = lastType || $("type").value;
+  const name = [slug(type), slug($("subject").value)].filter(Boolean).join("-");
+  return (name || "memorandum") + "." + ext;
+}
+
 $("f").addEventListener("submit", (e) => { e.preventDefault(); generate(); });
-$("dl").addEventListener("click", () => download("/docx", "memorandum.docx"));
-$("spec").addEventListener("click", () => download("/spec", "memorandum.json"));
+$("dl").addEventListener("click", () => download("/docx", downloadFilename("docx")));
+$("spec").addEventListener("click", () => download("/spec", downloadFilename("json")));
 $("request").addEventListener("blur", async () => {
   if (!$("request").value.trim() || $("type").value) return;
   const d = await (await post("/detect", {request: $("request").value})).json();
   $("detected").textContent = "Reading this as: " + d.title + " (" + d.cite + ")";
+  lastType = d.type;
   fetchFields();
 });
 $("type").addEventListener("change", fetchFields);
+// Addressee count is the one other thing besides type that changes what
+// /fields answers - past five it is a SEE DISTRIBUTION memorandum (para
+// 2-4a(5)(c)) and the Distribution field appears, before Generate has to
+// be clicked to find that out.
+$("addressees").addEventListener("change", fetchFields);
 
 loadUnit();
 fetchFields();
+updateSubjectCount();
 </script>
 </body></html>`;
 
@@ -748,6 +893,12 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 // answered - so a caller can build its own form.
                 return json(res, 200, {
                     type: memo.type,
+                    // Not one of FIELDS' own paths - it is the reason
+                    // "addressees" itself drops out of the two lists below
+                    // once it is true, which the page needs to know to keep
+                    // showing that field rather than hiding it out from
+                    // under whoever is mid-edit in it.
+                    seeDistribution: Boolean(memo.seeDistribution),
                     unit: unitFields(memo).map(({when, ...f}) => f),
                     memorandum: memorandumFields(memo).map(({when, ...f}) => f),
                     outstanding: {

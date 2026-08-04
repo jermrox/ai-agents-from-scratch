@@ -3210,6 +3210,198 @@ const FIELD_TEMPLATE = {
     checkTrue("an unsupplied signer falls back to the template's own placeholder",
         hasPlaceholders(agreementBlank.signers[0].name), "AR 25-50, para 2-6c(5)");
 
+    /*
+     * Para 2-4a(5)(c): more than five addressees is a SEE DISTRIBUTION
+     * memorandum. specFromForm() has to set both memo.seeDistribution and
+     * memo.distribution together - the validator raises an error for either
+     * one alone (see-distribution-required without the flag, distribution-
+     * list-missing with the flag but no list) - and default the list to the
+     * addressees already typed, so crossing the threshold does not hand back
+     * a document the office has to fix by hand.
+     */
+    const sixAddressees = Array.from({length: 6}, (_, i) => `Commander, ${i + 1}st Battalion`);
+    const overThreshold = specFromForm({
+        type: "standard", request: "", subject: "Range 14 Closure",
+        body: "Range 14 closes for maintenance in August 2026.",
+        addressees: sixAddressees.join("\n"),
+    });
+    check("more than five addressees sets seeDistribution", overThreshold.seeDistribution, true,
+        "AR 25-50, para 2-4a(5)(c)");
+    check("and defaults the distribution list to the addressees already typed",
+        overThreshold.distribution, sixAddressees, "AR 25-50, para 2-4a(5)(c)");
+    checkTrue("so the memorandum this produces raises no distribution finding at all",
+        validateMemo(overThreshold).findings.every((f) => !f.rule.startsWith("distribution")
+            && f.rule !== "see-distribution-required"),
+        "AR 25-50, para 2-4a(5)(c)");
+
+    const overThresholdOverridden = specFromForm({
+        type: "standard", request: "", subject: "Range 14 Closure",
+        body: "Range 14 closes for maintenance in August 2026.",
+        addressees: sixAddressees.join("\n"), distribution: "Directorate of Public Works\nStaff Judge Advocate",
+    });
+    check("a distribution list actually typed wins over the addressee-list default",
+        overThresholdOverridden.distribution, ["Directorate of Public Works", "Staff Judge Advocate"],
+        "AR 25-50, para 2-4a(5)(c)");
+
+    const underThreshold = specFromForm({
+        type: "standard", request: "", subject: "Range 14 Closure",
+        body: "Range 14 closes for maintenance in August 2026.", addressees: "Commander, 1st Battalion",
+    });
+    checkTrue("five or fewer addressees never sets seeDistribution",
+        !underThreshold.seeDistribution, "AR 25-50, para 2-4a(5)(c)");
+
+    /*
+     * "Exclusive For" correspondence, appreciation, and commendation name one
+     * person, never a list - addressees[0] is the only entry the renderer
+     * ever reads for these types (memo-docx.js's exclusiveFor branch and its
+     * PERSONAL_ADDRESS_TYPES branch both index [0]) - so specFromForm() has
+     * to trim stray extra lines before the validator's multi-recipient
+     * checks see them, and seeDistribution must never trigger for a type
+     * that can never sensibly have "too many" addressees.
+     */
+    const {PERSONAL_ADDRESS_TYPES: PAT} = await import("./ar25-50.js");
+    for (const type of PAT) {
+        const overflowed = specFromForm({
+            type, request: "", subject: "Personal Matter", addressees: sixAddressees.join("\n"),
+        });
+        check(`${type}: stray extra addressee lines are trimmed to the one name used`,
+            overflowed.addressees.length, 1, "AR 25-50, para 2-4a(5)");
+        checkTrue(`${type}: never sets seeDistribution, however many lines were typed`,
+            !overflowed.seeDistribution, "AR 25-50, para 2-4a(5)");
+    }
+
+    /*
+     * digitalSignature: a checkbox submits only when checked, so its absence
+     * from the form - not a blank string - is what "unchecked" looks like on
+     * the wire. A letter forces it false regardless, per para 3-6c(2)(b).
+     */
+    check("the checkbox checked reads as a digital signature",
+        specFromForm({type: "standard", request: "", subject: "S", digitalSignature: "on"}).digitalSignature,
+        true, "AR 25-50, para 2-4c(2)");
+    check("the checkbox absent from the form reads as a wet signature",
+        specFromForm({type: "standard", request: "", subject: "S"}).digitalSignature,
+        false, "AR 25-50, para 2-4c(2)");
+    check("a letter is never digitally signed, checkbox or not",
+        specFromForm({type: "letter", request: "", subject: "S", digitalSignature: "on"}).digitalSignature,
+        false, "AR 25-50, para 3-6c(2)(b)");
+    checkTrue("unchecking it on a THRU memorandum surfaces the wet-signature line-through advisory",
+        validateMemo(specFromForm({
+            type: "thru", request: "", subject: "S", thru: "Commander, 1st Brigade", digitalSignature: "on",
+        })).warnings.every((f) => f.rule !== "thru-wet-signature-lineout")
+            && validateMemo(specFromForm({
+                type: "thru", request: "", subject: "S", thru: "Commander, 1st Brigade",
+            })).warnings.some((f) => f.rule === "thru-wet-signature-lineout"),
+        "AR 25-50, para 6-3d");
+
+    /*
+     * toCommanderOf: blank addresses the named person above, the ordinary
+     * case; filled in, "Exclusive For" instead addresses that organization's
+     * commander (para 1-12b(1)). There is no template placeholder for it -
+     * unlike addresseeTitle/addresseeAddress, most "Exclusive For"
+     * correspondence does not use it, so a blank means "not using this",
+     * not "not yet supplied".
+     */
+    check("a supplied commander-of organization passes through",
+        specFromForm({type: "exclusiveFor", request: "", subject: "S", toCommanderOf: "1st Infantry Division"})
+            .toCommanderOf, "1st Infantry Division", "AR 25-50, para 1-12b(1)");
+    check("left blank, it is null - not a placeholder asking to be filled in",
+        specFromForm({type: "exclusiveFor", request: "", subject: "S"}).toCommanderOf, null,
+        "AR 25-50, para 1-12b(1)");
+
+    server.close();
+}
+
+// ---------------------------------------------------------------------------
+// The page's own field visibility keeps pace with what specFromForm() reads
+// ---------------------------------------------------------------------------
+
+/*
+ * unit-profile.js's FIELDS array is what /fields answers from, and it is
+ * what the page's own script uses to decide which containers to show - so
+ * every field specFromForm() now reads (distribution, toCommanderOf,
+ * digitalSignature) has to actually be reachable on the served page, and the
+ * two fields whose label depends on more than just the type - MEMORANDUM FOR
+ * itself, which reads differently for a personal-address type than for
+ * everything else, and addressees once SEE DISTRIBUTION applies - have to
+ * say the right thing rather than whichever entry happened to load first.
+ */
+{
+    const {createMemoServer} = await import("./memo-server.js");
+    const server = await new Promise((resolve) => {
+        const s = createMemoServer();
+        s.listen(0, () => resolve(s));
+    });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const homeHtml = await (await fetch(`${base}/`)).text();
+
+    for (const id of ["distribution", "toCommanderOf", "digitalSignature", "subjectcount"]) {
+        checkTrue(`"${id}" is on the served page`, homeHtml.includes(`id="${id}"`), "front end");
+    }
+    checkTrue('digital signature defaults to checked - most memorandums are',
+        /id="digitalSignature" name="digitalSignature" checked/.test(homeHtml), "AR 25-50, para 2-4c(2)");
+
+    /*
+     * The exact class of bug a nested template literal invites: `\s` written
+     * inside the outer `page = () => \`...\`` string is not a JavaScript
+     * escape sequence, so the template literal itself silently drops the
+     * backslash at build time - the served script then matches literal "s"
+     * characters, not whitespace, and a subject like "Range 14 Closure"
+     * counts as some number that has nothing to do with its actual word
+     * count. Asserting the served source, not the file on disk, is what
+     * catches it - the source file can say the right thing and still ship
+     * the wrong one.
+     */
+    checkTrue("the subject word counter's regex reaches the browser with its backslash intact",
+        homeHtml.includes(".split(/\\s+/)"), "AR 25-50, para 2-4a(6)");
+
+    /*
+     * The preview iframe used to be a fixed 74vh box scrolling its own
+     * content while sitting inside "#out", which also scrolls (sticky, so a
+     * finding stays alongside the line it is about) - two independently
+     * scrolling regions nested in each other, so the signature block on
+     * anything longer than a short memo could be out of view inside a box
+     * only partly visible inside another box, reachable by no single scroll
+     * gesture. resizeFrame() reads the loaded iframe's own content height
+     * and grows the iframe to match, so one scroll - the outer one that
+     * already exists - reaches all of it.
+     */
+    checkTrue("the preview iframe resizes to fit what it is actually showing",
+        /frame\.contentDocument\.documentElement\.scrollHeight/.test(homeHtml)
+            && /frame\.style\.height\s*=/.test(homeHtml),
+        "front end");
+    checkTrue("generate() goes through the resizing path, not a direct srcdoc assignment",
+        /resizeFrame\(d\.html\)/.test(homeHtml) && !/\$\("frame"\)\.srcdoc\s*=\s*d\.html/.test(homeHtml),
+        "front end");
+
+    const postFields = (body) => fetch(`${base}/fields`, {
+        method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body)})
+        .then((r) => r.json());
+    const sixAddressees = Array.from({length: 6}, (_, i) => `Commander, ${i + 1}st Battalion`);
+
+    const standardFields = await postFields({type: "standard"});
+    checkTrue("/fields carries seeDistribution, so the page knows why addressees might be missing from it",
+        "seeDistribution" in standardFields, "front end");
+    const standardAddressee = standardFields.memorandum.find((f) => f.path === "addressees");
+    check("a standard memorandum's addressee field is worded for an office",
+        standardAddressee?.label, "MEMORANDUM FOR", "AR 25-50, para 2-4a(5)");
+
+    const exclusiveForFields = await postFields({type: "exclusiveFor"});
+    const exclusiveForAddressee = exclusiveForFields.memorandum.find((f) => f.path === "addressees");
+    check("\"Exclusive For\" the same field is worded for a person, not an office",
+        exclusiveForAddressee?.label, "Addressee's name", "AR 25-50, para 2-4a(5)");
+    checkTrue("and toCommanderOf is offered alongside it",
+        exclusiveForFields.memorandum.some((f) => f.path === "toCommanderOf"), "AR 25-50, para 1-12b(1)");
+
+    const overThresholdFields = await postFields({
+        type: "standard", addressees: sixAddressees.join("\n"),
+    });
+    checkTrue("past the threshold, seeDistribution comes back true",
+        overThresholdFields.seeDistribution === true, "AR 25-50, para 2-4a(5)(c)");
+    checkTrue("and addressees itself drops out of the answer - SEE DISTRIBUTION replaces the heading",
+        !overThresholdFields.memorandum.some((f) => f.path === "addressees"), "AR 25-50, para 2-4a(5)(c)");
+    checkTrue("while distribution takes its place",
+        overThresholdFields.memorandum.some((f) => f.path === "distribution"), "AR 25-50, para 2-4a(5)(c)");
+
     server.close();
 }
 
