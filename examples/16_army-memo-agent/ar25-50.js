@@ -1213,6 +1213,90 @@ export const POSTSCRIPTS = {
 };
 
 /**
+ * "List references in the first paragraph of the correspondence... List and
+ *  number references in the order they are mentioned in the correspondence.
+ *  However, when references are not included in the body of the
+ *  correspondence, number, and list them in order of precedence and
+ *  ascending date order in the first paragraph." - para 1-30
+ *
+ * Five of the paragraph's subparagraphs are sentence templates, filled in
+ * exactly as the regulation's own examples fill them - tested against those
+ * literal strings, the same oracle the layout figures serve elsewhere.
+ */
+export const REFERENCES = {
+    cite: "AR 25-50, para 1-30",
+
+    // "AR 25-50 (Preparing and Managing Correspondence)" - para 1-30a
+    publication: (number, title) => `${number} (${title})`,
+    publicationCite: "AR 25-50, para 1-30a",
+
+    // "HQ USARC, AFRC-ZA memorandum (Training for Army Materiel Command
+    //  Personnel), 20 February 2020." - para 1-30b(1)
+    correspondence: ({organization, officeSymbol, type, subject, date}) =>
+        `${organization}, ${officeSymbol} ${type} (${subject}), ${date}.`,
+    correspondenceCite: "AR 25-50, para 1-30b",
+
+    // "HQ TRADOC, ATPL-TDD-OR, [full name] email (Correspondence
+    //  Memorandum), 3 January 2020." - para 1-30c(1)
+    emailOrFax: ({organization, officeSymbol, fullName, medium, subject, date}) =>
+        `${organization}, ${officeSymbol}, ${fullName} ${medium} (${subject}), ${date}.`,
+    emailOrFaxCite: "AR 25-50, para 1-30c",
+
+    // "National Environmental Policy Act of 1969, Public Law No. 91-190,
+    //  Section 103, 83 Statute 852, 853 (1970)." - para 1-30d(1)
+    publicLaw: ({name, publicLawNumber, section, statute, year}) =>
+        `${name}, Public Law No. ${publicLawNumber}, Section ${section}, ${statute} (${year}).`,
+    publicLawCite: "AR 25-50, para 1-30d",
+
+    // "Reference telephone conversation between [full name], TRADOC, and
+    //  [full name], CIO (Records Management), 23 January 2020." - para 1-30g(1)
+    telephoneOrMeeting: ({kind, participants, subject, date}) =>
+        `Reference ${kind} between ${participants.join(", and ")} (${subject}), ${date}.`,
+    telephoneOrMeetingCite: "AR 25-50, para 1-30g",
+
+    // "In memorandums, you may use the term 'subject as above' or the
+    //  acronym 'SAB' in lieu of repeating the subject. You cannot do so in
+    //  letters." - para 1-30h
+    sameSubjectShorthand: ["subject as above", "SAB"],
+    sameSubjectMemorandumOnlyCite: "AR 25-50, para 1-30h",
+};
+
+/** Whether `text` uses the para 1-30h "SAB" / "subject as above" shorthand. */
+export function usesSameSubjectShorthand(text = "") {
+    return /\bsubject as above\b/i.test(String(text)) || /\bSAB\b/.test(String(text));
+}
+
+/**
+ * "Attachments to enclosures are referred to as enclosures to enclosures
+ *  (for example, enclosure 3 to enclosure 2), if necessary." - para 1-34
+ *
+ * Distinct from `TABBING.secondaryLabel` (para 4-3), which names a *tab* in a
+ * package forwarded for signature. This names an attachment in running text -
+ * lowercase, numeric on both sides, no tab letter involved.
+ */
+export function enclosureToEnclosureLabel(child, parent) {
+    return `enclosure ${child} to enclosure ${parent}`;
+}
+export const ENCLOSURE_TO_ENCLOSURE_CITE = "AR 25-50, para 1-34";
+
+/**
+ * "In accordance with AR 25-400-2, delegations of signature authority must be
+ *  created and maintained using the record number 25-50a." - para 1-37
+ *
+ * A recordkeeping obligation with nothing to render on the page - the same
+ * shape as the appendix F signature boxes and the appendix E mass-mailing
+ * review: reported to the drafter, not silently left undone. It fires only
+ * when the memorandum itself says what it is for, since nothing else in a
+ * spec distinguishes a memorandum that delegates signature authority from
+ * any other memorandum an authority line happens to appear on.
+ */
+export const DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING = {
+    recordNumber: "25-50a",
+    note: "This delegates signature authority, so it is filed under record number 25-50a, per AR 25-400-2.",
+    cite: "AR 25-50, para 1-37",
+};
+
+/**
  * Memorandum variants this module knows how to lay out, with the paragraph
  * that governs each.
  */

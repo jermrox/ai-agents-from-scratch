@@ -49,10 +49,13 @@ export const GRADE_TABLE_CITE = "AR 25-50, table 6-1";
  * "Use the full general officer military grade on all formal or official
  *  correspondence (for example, Major General and Lieutenant General)."
  *  - para 6-4f(3), and "In preparing general officer signature blocks, spell
- *  out the military grade." - para 6-5c(1)
+ *  out the military grade." - para 6-5c(1). Para 1-15a states the same rule
+ *  once more, in general terms, as the exception to memorandums otherwise
+ *  being allowed abbreviated grades: "General officers will use their full
+ *  military grades on all correspondence."
  */
 export const GENERAL_OFFICER_GRADES = ["GEN", "LTG", "MG", "BG"];
-export const GENERAL_OFFICER_CITE = "AR 25-50, paras 6-4f(3) and 6-5c(1)";
+export const GENERAL_OFFICER_CITE = "AR 25-50, paras 1-15a, 6-4f(3) and 6-5c(1)";
 
 /** Warrant officer grades, which take "USA" unless a branch title applies. */
 export const WARRANT_OFFICER_GRADES = ["CW5", "CW4", "CW3", "CW2", "WO1"];

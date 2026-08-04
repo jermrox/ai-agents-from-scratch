@@ -69,6 +69,9 @@ import {
     MFR_ABBREVIATED,
     APPENDIX_C,
     lookupAddressForm,
+    usesSameSubjectShorthand,
+    REFERENCES,
+    DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING,
 } from "./ar25-50.js";
 
 /** Salutations compared tolerant of case and of run-together whitespace. */
@@ -595,6 +598,7 @@ function checkBody(memo, doc, out) {
 
             checkArmyCapitalization(text, here, out);
             checkTime(text, here, out);
+            if (isLetter(memo)) checkSameSubjectShorthand(text, here, out);
 
             if (kids.length) walk(kids, depth + 1, [...path, i + 1]);
         });
@@ -774,6 +778,20 @@ function checkMassMailing(memo, out) {
         `A named release authority and an error-free review are required before it goes out. ` +
         MASS_MAILING.prohibitions.join(" "),
         MASS_MAILING.cite));
+}
+
+/**
+ * Para 1-37: a memorandum delegating signature authority is filed under a
+ * specific ARIMS record number. Nothing in a spec's shape says a memorandum
+ * does this - it is a fact about the memorandum's purpose, so it is asked
+ * for as a flag (`delegatesSignatureAuthority`) rather than inferred from
+ * the presence of an authority line, which many ordinary memorandums carry.
+ */
+function checkRecordkeeping(memo, out) {
+    if (!memo.delegatesSignatureAuthority) return;
+    out.push(warn("content", "delegation-recordkeeping",
+        DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.note,
+        DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.cite));
 }
 
 /**
@@ -981,6 +999,18 @@ function checkArmyCapitalization(text, path, out) {
                 ARMY_CAPITALIZATION.cite));
         }
     }
+}
+
+/**
+ * "In memorandums, you may use the term 'subject as above' or the acronym
+ *  'SAB' in lieu of repeating the subject. You cannot do so in letters."
+ *  - para 1-30h. Only called for letters; a memorandum is never checked.
+ */
+function checkSameSubjectShorthand(text, path, out) {
+    if (!usesSameSubjectShorthand(text)) return;
+    out.push(error("content", "sab-not-in-letters",
+        `Paragraph ${path} uses "SAB" or "subject as above." A letter repeats the subject in full - only a memorandum may use the shorthand.`,
+        REFERENCES.sameSubjectMemorandumOnlyCite));
 }
 
 function checkTime(text, path, out) {
@@ -1396,6 +1426,7 @@ export function validateMemo(memo, options = {}) {
     checkAlaract(memo, out);
     checkSupersedingAuthority(memo, out);
     checkMassMailing(memo, out);
+    checkRecordkeeping(memo, out);
     checkCorrespondenceVehicle(memo, out);
     checkDigitalSignature(memo, out);
     checkTabbing(memo, out);

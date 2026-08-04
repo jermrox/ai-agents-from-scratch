@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-682 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+695 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 682/682 checks passed.
+# AR 25-50 layout verification: 695/695 checks passed.
 ```
 
 ---
@@ -599,6 +599,28 @@ Para 1-8b draws its own boundary, one sentence long: *"Do not use the memorandum
 
 ---
 
+## 13g) The rest of chapter 1
+
+A paragraph-by-paragraph read of what remained of chapter 1 turned up three kinds of sentence: some already implemented under a different paragraph's citation, some genuinely new and checkable, and some that hand authority to a source outside these PDFs the same way appendix F and chapter 8 do.
+
+**Already covered, now cited twice.** Para 1-15a — *"General officers will use their full military grades on all correspondence"* — restates the rule `GENERAL_OFFICER_CITE` already enforced under paras 6-4f(3) and 6-5c(1). It is the general statement the chapter 6 paragraphs specialize for signature blocks, so the constant now cites all three rather than leaving the chapter 1 source unlinked.
+
+**Genuinely new, and checkable:**
+
+- **Para 1-30.** *"List references in the first paragraph of the correspondence"* with eight named forms for citing a publication, a piece of correspondence, an email or fax, a public law, and so on. Five of the forms are sentence templates, and each is one function in the new `REFERENCES` object in `ar25-50.js`, tested against the literal example string the regulation prints for it — the same oracle the layout figures serve, applied to a paragraph that governs sentences instead of positions. The sixth form is a rule, not a template: *"you may use... 'SAB'... You cannot do so in letters."* `usesSameSubjectShorthand()` detects it, and `checkSameSubjectShorthand()` reports it as an error, but only when `isLetter(memo)` — a memorandum using "SAB" is exactly what the paragraph permits.
+- **Para 1-34.** *"Attachments to enclosures are referred to as enclosures to enclosures (for example, enclosure 3 to enclosure 2)."* A different fact from `TABBING.secondaryLabel` (para 4-3's `ENCL 1 TO TAB B`, a physical tab color in a signature package) — this one is a running-text convention, lowercase and numeric on both sides, and `enclosureToEnclosureLabel()` is the one-line function for it.
+- **Para 1-37.** *"In accordance with AR 25-400-2, delegations of signature authority must be created and maintained using the record number 25-50a."* The same shape as the appendix E mass-mailing review and the appendix F signature boxes — an obligation the file itself cannot carry, so it is reported. Nothing in an ordinary spec says a memorandum delegates signature authority (many memorandums carry an authority line without being one), so it is asked for directly: a `delegatesSignatureAuthority` flag the drafter sets, checked by the new `checkRecordkeeping()`.
+
+**Out of scope, confirmed rather than assumed.** Four paragraphs turned out to defer entirely to material outside these PDFs, the same relationship chapter 8 has to DoDM 5200.01:
+
+- **Para 1-22**, classified and special handling correspondence, defers to DoDM 5200.01 for marking and to AR 25-55 for FOUO — chapter 8's conclusion again, from a different paragraph.
+- **Para 1-28**, addressing, points at AR 25-51 and this regulation's own chapter 5 — chapter 5 is already implemented; AR 25-51 is a different regulation.
+- **Para 1-31**, page and paragraph numbering, is a pure cross-reference to paras 2-4, 2-5, and 3-6 — all three already implemented under their own citations.
+- **Para 1-33**, distribution formulas, states one substantive rule — *"Do not use internal distribution formulas for correspondence external to your command or installation"* — but "distribution formula" here means the coded, standing distribution lists AR 25-51 defines, not the `SEE DISTRIBUTION`/`DISTRIBUTION:` addressee-listing forms this module already renders. Those are two different things sharing one English word.
+- **Para 1-36**, NATO correspondence, is one sentence deferring wholly to *"applicable NATO directives,"* named but not supplied.
+
+---
+
 ## 14a) The unit's fields, and the memorandum's
 
 AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
@@ -804,7 +826,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 682 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 695 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

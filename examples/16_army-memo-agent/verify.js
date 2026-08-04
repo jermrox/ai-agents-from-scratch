@@ -3763,6 +3763,109 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
 }
 
 // ---------------------------------------------------------------------------
+// The rest of chapter 1 - references, enclosures-to-enclosures, recordkeeping
+// ---------------------------------------------------------------------------
+
+/**
+ * Para 1-30's reference-citation forms, checked against the literal example
+ * strings the regulation prints for each one - the same oracle the layout
+ * figures serve, applied to a paragraph that governs sentences rather than
+ * positions.
+ */
+{
+    const {REFERENCES, usesSameSubjectShorthand} = await import("./ar25-50.js");
+
+    check("para 1-30a: a publication reference",
+        REFERENCES.publication("AR 25-50", "Preparing and Managing Correspondence"),
+        "AR 25-50 (Preparing and Managing Correspondence)", REFERENCES.publicationCite);
+
+    check("para 1-30b(1): a correspondence reference",
+        REFERENCES.correspondence({
+            organization: "HQ USARC", officeSymbol: "AFRC-ZA", type: "memorandum",
+            subject: "Training for Army Materiel Command Personnel", date: "20 February 2020",
+        }),
+        "HQ USARC, AFRC-ZA memorandum (Training for Army Materiel Command Personnel), 20 February 2020.",
+        REFERENCES.correspondenceCite);
+
+    check("para 1-30c(1): an email reference",
+        REFERENCES.emailOrFax({
+            organization: "HQ TRADOC", officeSymbol: "ATPL-TDD-OR", fullName: "[full name]",
+            medium: "email", subject: "Correspondence Memorandum", date: "3 January 2020",
+        }),
+        "HQ TRADOC, ATPL-TDD-OR, [full name] email (Correspondence Memorandum), 3 January 2020.",
+        REFERENCES.emailOrFaxCite);
+
+    check("para 1-30d(1): a public law reference",
+        REFERENCES.publicLaw({
+            name: "National Environmental Policy Act of 1969", publicLawNumber: "91-190",
+            section: "103", statute: "83 Statute 852, 853", year: "1970",
+        }),
+        "National Environmental Policy Act of 1969, Public Law No. 91-190, Section 103, 83 Statute 852, 853 (1970).",
+        REFERENCES.publicLawCite);
+
+    check("para 1-30g(1): a telephone-conversation reference",
+        REFERENCES.telephoneOrMeeting({
+            kind: "telephone conversation",
+            participants: ["[full name], TRADOC", "[full name], CIO"],
+            subject: "Records Management", date: "23 January 2020",
+        }),
+        "Reference telephone conversation between [full name], TRADOC, and [full name], CIO (Records Management), 23 January 2020.",
+        REFERENCES.telephoneOrMeetingCite);
+
+    // Para 1-30h: "SAB" and "subject as above" are the memorandum's shorthand.
+    checkTrue("para 1-30h: \"subject as above\" is recognized",
+        usesSameSubjectShorthand("See paragraph 1, subject as above."), REFERENCES.cite);
+    checkTrue("and so is the acronym \"SAB\"",
+        usesSameSubjectShorthand("Reference SAB."), REFERENCES.cite);
+    checkTrue("but an ordinary sentence is not misread as either",
+        !usesSameSubjectShorthand("The subject above concerns range safety."), REFERENCES.cite);
+
+    const {validateMemo: validate1_30} = await import("./memo-validator.js");
+    const {createTemplate: template1_30} = await import("./templates.js");
+    checkTrue("para 1-30h: a letter using \"SAB\" is reported",
+        validate1_30({...template1_30("standard"), type: "letter",
+                      paragraphs: [{text: "Reference SAB, dated 3 January 2020."}]})
+            .errors.some((f) => f.rule === "sab-not-in-letters"),
+        REFERENCES.sameSubjectMemorandumOnlyCite);
+    checkTrue("and a memorandum using it is not",
+        validate1_30({...template1_30("standard"),
+                      paragraphs: [{text: "Reference SAB, dated 3 January 2020."}]})
+            .findings.every((f) => f.rule !== "sab-not-in-letters"),
+        REFERENCES.sameSubjectMemorandumOnlyCite);
+}
+
+/**
+ * Para 1-34: an attachment to an enclosure is "enclosure N to enclosure M" -
+ * a text convention, distinct from the tab-package label `TABBING.secondaryLabel`
+ * already carries for para 4-3.
+ */
+{
+    const {enclosureToEnclosureLabel, ENCLOSURE_TO_ENCLOSURE_CITE} = await import("./ar25-50.js");
+    check("para 1-34: an attachment to an enclosure is named enclosure-to-enclosure",
+        enclosureToEnclosureLabel(3, 2), "enclosure 3 to enclosure 2", ENCLOSURE_TO_ENCLOSURE_CITE);
+}
+
+/**
+ * Para 1-37: a memorandum that delegates signature authority is filed under
+ * record number 25-50a. Nothing in an ordinary spec implies this - it fires
+ * only off the flag a drafter sets when that is what the memorandum is for.
+ */
+{
+    const {DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING} = await import("./ar25-50.js");
+    const {validateMemo: validate1_37} = await import("./memo-validator.js");
+    const {createTemplate: template1_37} = await import("./templates.js");
+    const base1_37 = template1_37("standard");
+
+    checkTrue("para 1-37: a memorandum delegating signature authority is told to record it under 25-50a",
+        validate1_37({...base1_37, delegatesSignatureAuthority: true})
+            .warnings.some((f) => f.rule === "delegation-recordkeeping"),
+        DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.cite);
+    checkTrue("and an ordinary memorandum is not",
+        validate1_37(base1_37).findings.every((f) => f.rule !== "delegation-recordkeeping"),
+        DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.cite);
+}
+
+// ---------------------------------------------------------------------------
 
 const total = passed + failures.length;
 if (failures.length === 0) {
