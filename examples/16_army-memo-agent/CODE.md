@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-743 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+790 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 743/743 checks passed.
+# AR 25-50 layout verification: 790/790 checks passed.
 ```
 
 ---
@@ -763,7 +763,24 @@ Three call sites shared the pattern, and all three needed the same fix - recogni
 
 **A fourth site turned up doing the same audit on the MOU/MOA agreement templates**, which sign through a `signers` array instead of the single `signature` object and go through a completely separate renderer (`agreementClosingParagraphs()`) - never touched by the fix above, and never covered by the validator's `checkPlaceholders()` either, which didn't scan `memo.signers` at all. Fixing the rendering side turned up a second bug in the same code: giving both signer columns the same slot prompt ("NAME") produced two content controls with the *same* `w:id`, since a slot's id is a hash of its prompt text. Word requires distinct ids. The fix disambiguates by column - `JUNIOR OFFICIAL NAME` / `SENIOR OFFICIAL NAME`, matching the labels the template itself already uses - and a civilian signer's `gradeAndBranch` being genuinely *absent* (not blank, not a placeholder) still correctly omits the line entirely rather than forcing an unwanted slot onto a two-line civilian block (para 6-4a, Note 2).
 
-Every template - all seven - now renders real content controls for exactly its own matters of record and nothing else: an MFR gets none for a letterhead it doesn't have (fig 2-17), an MOU/MOA gets none for an office symbol it doesn't have (para 2-6c(1)), and a fully-supplied real memo still renders as ordinary text, confirmed the same way it always was. `checkPlaceholders()` now sweeps `signers` alongside `signature`, so an unfilled MOU/MOA is reported the same as an unfilled standard memo. Every fix was confirmed by reverting it individually and watching the specific check it was for fail, including the duplicate-id case, before being put back.
+Every template now renders real content controls for exactly its own matters of record and nothing else: an MFR gets none for a letterhead it doesn't have (fig 2-17), an MOU/MOA gets none for an office symbol it doesn't have (para 2-6c(1)), and a fully-supplied real memo still renders as ordinary text, confirmed the same way it always was. `checkPlaceholders()` now sweeps `signers` alongside `signature`, so an unfilled MOU/MOA is reported the same as an unfilled standard memo. Every fix was confirmed by reverting it individually and watching the specific check it was for fail, including the duplicate-id case, before being put back.
+
+---
+
+## 16c) Three memorandum types with nowhere to select them
+
+The same pass asked a broader question: does every type AR 25-50 defines actually have a template, so a user can select it at all? `MEMO_TYPES` in `ar25-50.js` names nine memorandum types, plus the letter - `exclusiveFor`, `appreciation`, and `commendation` among the nine, each with real support already built into the formatter (para 1-12b(1)'s distinct `Memorandum Exclusive For` keyword, the personal-address exception of para 2-4a(5)) and the validator (`PERSONAL_ADDRESS_TYPES`). But `TEMPLATES` in `templates.js` only ever built six of the nine, plus the letter - `createTemplate("exclusiveFor")` threw `Unknown memorandum type`. Neither the CLI's `--template` flag nor the front end's type selector could ever produce one; the type existed only for a spec somebody built by hand.
+
+All three share one shape - a standard memorandum in every respect except who it is addressed to, a name and title rather than an office (the same exception "Exclusive For" correspondence and recognition memorandums both get from para 2-4a(5)) - so `exclusiveFor()` and a shared `recognition("appreciation"|"commendation")` builder both call the same `base()` every other memorandum type uses, overriding only `addressees`, and two fields the formatter already knew how to read but no template had ever supplied: `addresseeTitle` and `addresseeAddress`.
+
+Wiring three new templates in exposed two more places that hadn't reached these two fields at all:
+
+- **`checkPlaceholders()`** didn't scan `addresseeTitle`/`addresseeAddress` - the same class of gap `signers` had in §16b - so a template's own `[TITLE]` and `[MAILING ADDRESS]` would never be reported as unfilled.
+- **The front end** (`specFromForm()`, `assembleMemo()`) had no path for either field at all - not missing a fallback, missing entirely - so even with the template fixed, selecting one of these three types on the page would drop both fields on the floor. Fixed the same way `thru` already falls back to the template's own placeholder when the form leaves it blank.
+
+Auditing that fallback turned up a third, older bug in the same code while it was open: the comment beside `addressees` said an unsupplied one "falls back to the template's placeholder rather than to nothing," but the code next to it (`lines(form.addressees)`, no fallback) never did that for *any* type - not just the three new ones. Fixed to match what the comment already promised. The one visible consequence: a blank addressee is now reported as `unfilled-placeholder`, the same way office symbol and signature already are, rather than `not-yet-supplied` - moved to match, not something anyone should have to remember, so a small correctness fix and a scope-completion pass turned out to be the same commit.
+
+All three types are exercised everywhere the existing six already were - font-size ceiling, "raises no errors," content-control presence, the front end's own render - plus their own checks for the personal-address heading construction. `node army-memo-agent.js --list-types` now lists all ten, aligned; the column width used to be a fixed 9 characters, too narrow for `exclusiveFor`.
 
 ---
 
@@ -873,7 +890,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 743 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 790 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
@@ -885,9 +902,7 @@ One structural note. `army-memo-agent.js` ends in a top-level `await main()`, so
 
 ## Scope
 
-This example implements **chapter 2** of AR 25-50 (memorandums), the chapter 1 rules that govern them, the chapter 4 enclosure and tabbing rules, the chapter 5 addressing rules that reach inside the correspondence, the chapter 6 signature blocks and authority lines, and appendices B, D, E and F. All six memorandum forms are covered: standard, THRU, memorandum for record, decision memorandum, MOU, and MOA.
-
-Letters (chapter 3) are **not** built - they differ in every part, not just a few fields: a centered civilian date, an inside address and salutation, indented unnumbered paragraphs, a complimentary close, no authority line, and page numbers at the top. What *is* implemented is the boundary. Para 3-2 reserves a fixed audience to the letter - the President, Congress, the Supreme Court, Governors, mayors, foreign officials, and the public - and addressing a memorandum to any of them raises a `wrong-vehicle` finding rather than a formatted document. `LETTER_AUDIENCES.deltas` carries the chapter 3 differences, and `buildSignature(signer, "letter")` produces the letter form of a signature block. Forms of address are in appendix C, which para C-2a scopes to letters only.
+This example implements **chapter 2** of AR 25-50 (memorandums) and **chapter 3** (letters), the chapter 1 rules that govern both, the chapter 4 enclosure and tabbing rules, the chapter 5 addressing rules that reach inside the correspondence, the chapter 6 signature blocks and authority lines, and appendices B, C, D, E and F. All nine memorandum forms `MEMO_TYPES` names are covered: standard, THRU, memorandum for record, decision memorandum, MOU, MOA, "Exclusive For" correspondence, memorandum of appreciation, and memorandum of commendation - plus the letter, the other correspondence vehicle chapter 3 governs and para 3-2 reserves a fixed audience to (the President, Congress, the Supreme Court, Governors, mayors, foreign officials, and the public). Addressing a *memorandum* to any of them raises a `wrong-vehicle` finding rather than a formatted document; `LETTER_AUDIENCES.deltas` carries the chapter 3 differences a letter needs instead - a centered civilian date, an inside address and salutation, indented unnumbered paragraphs, a complimentary close, no authority line, and page numbers at the top - and `buildSignature(signer, "letter")` produces the letter form of a signature block. Forms of address are in appendix C, which para C-2a scopes to letters only.
 
 Three places hand formatting authority to something outside this module, and each is reported rather than papered over:
 

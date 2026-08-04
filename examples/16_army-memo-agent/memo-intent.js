@@ -100,6 +100,14 @@ export function assembleMemo(content, context = {}) {
         copiesFurnished: context.copiesFurnished ?? [],
         font: context.font,
 
+        // "Exclusive For" correspondence, appreciation, and commendation
+        // address the name and title of a person, not an office (para
+        // 2-4a(5)) - carried the same way salutation/complimentaryClose are
+        // below: present only when the caller supplies them.
+        addresseeTitle: context.addresseeTitle,
+        addresseeAddress: context.addresseeAddress,
+        toCommanderOf: context.toCommanderOf,
+
         // The letter's own heading elements - para 3-6a. A memorandum has
         // neither, and carrying them as undefined keeps one spec shape for
         // both vehicles rather than two.

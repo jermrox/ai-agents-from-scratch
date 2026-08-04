@@ -152,8 +152,11 @@ async function main() {
     }
 
     if (args.list) {
-        for (const t of describeTemplates()) {
-            console.log(`  ${t.type.padEnd(9)} ${t.title.padEnd(30)} ${t.cite}`);
+        const types = describeTemplates();
+        const typeWidth = Math.max(...types.map((t) => t.type.length));
+        const titleWidth = Math.max(...types.map((t) => t.title.length));
+        for (const t of types) {
+            console.log(`  ${t.type.padEnd(typeWidth)} ${t.title.padEnd(titleWidth)} ${t.cite}`);
         }
         return;
     }

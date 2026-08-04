@@ -844,7 +844,7 @@ const FIG_2_1 = {
     const ceiling = T.maxSizePt * 2;   // half-points
     const inventory = {};
 
-    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+    for (const type of ["standard", "thru", "exclusiveFor", "appreciation", "commendation", "record", "decision", "mou", "moa"]) {
         const zip = await JSZip.loadAsync(await renderDocx(createTemplate(type)));
         const parts = Object.keys(zip.files).filter((n) => n.endsWith(".xml") && !zip.files[n].dir);
 
@@ -2282,7 +2282,7 @@ const FIELD_TEMPLATE = {
 {
     // Templates carry placeholders, and the validator says so.
     const {createTemplate, findPlaceholders} = await import("./templates.js");
-    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+    for (const type of ["standard", "thru", "exclusiveFor", "appreciation", "commendation", "record", "decision", "mou", "moa"]) {
         const template = createTemplate(type);
         checkTrue(`the ${type} template is fully placeholdered`,
             findPlaceholders(template).length > 0, "template");
@@ -2297,7 +2297,7 @@ const FIELD_TEMPLATE = {
      * produces, so a template that reports an error means the module cannot
      * produce a compliant memorandum at all. Every type has to come out clean.
      */
-    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+    for (const type of ["standard", "thru", "exclusiveFor", "appreciation", "commendation", "record", "decision", "mou", "moa"]) {
         const result = validateMemo(createTemplate(type));
         check(`the ${type} template raises no errors`,
             result.errors.map((f) => f.rule), [], "AR 25-50");
@@ -2687,7 +2687,7 @@ const FIELD_TEMPLATE = {
 
     // Blank is reported as not yet supplied, with what it is and where it goes.
     const pending = validateMemo(blank).warnings.filter((f) => f.rule === "not-yet-supplied");
-    for (const what of ["Office symbol", "Date", "Addressee", "Subject", "Signature block"]) {
+    for (const what of ["Office symbol", "Date", "Subject", "Signature block"]) {
         checkTrue(`${what.toLowerCase()} is reported as not yet supplied`,
             pending.some((f) => f.message.startsWith(what)), "AR 25-50");
     }
@@ -2695,6 +2695,22 @@ const FIELD_TEMPLATE = {
         pending.every((f) => /AR 25-50, para/.test(f.cite)), "AR 25-50");
     checkTrue("and none of them is an error - the format is right, the value is absent",
         validateMemo(blank).errors.length === 0, "AR 25-50");
+
+    /*
+     * Addressee is not a matter of record the way officeSymbol/date/signature
+     * are - nothing about who a memorandum is going to waits on who signs it
+     * - so an unsupplied one falls back to the template's own bracketed
+     * placeholder rather than to nothing, and is reported as unfilled the
+     * same way a template's office symbol or signature is: unfilled-placeholder,
+     * not not-yet-supplied.
+     */
+    const {hasPlaceholders: addresseeHasPlaceholders} = await import("./templates.js");
+    checkTrue("an unsupplied addressee falls back to the template's own placeholder",
+        blank.addressees.length === 1 && addresseeHasPlaceholders(blank.addressees[0]), "AR 25-50, para 2-4a(5)");
+    checkTrue("and is reported as an unfilled placeholder, not as not-yet-supplied",
+        validateMemo(blank).warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addressees"))
+            && !pending.some((f) => f.message.startsWith("Addressee")),
+        "AR 25-50, para 2-4a(5)");
 
     // Supplied values are used as given.
     const filled = specFromForm({
@@ -2706,6 +2722,27 @@ const FIELD_TEMPLATE = {
     check("a supplied date is used", filled.date, "3 August 2026", "AR 25-50, para 2-4a(3)(b)");
     checkTrue("a fully supplied memorandum has no unfilled record fields",
         !["officeSymbol", "date"].some((k) => hasPlaceholdersDeep(filled[k])), "AR 25-50");
+
+    /*
+     * Para 2-4a(5): the front end reaches addresseeTitle/addresseeAddress
+     * the same way it reaches every other field - supplied values pass
+     * through, and an unsupplied one falls back to the selected template's
+     * own placeholder rather than to nothing (assembleMemo() has to carry
+     * them at all, which it did not before this was added).
+     */
+    const exclusiveForFilled = specFromForm({
+        type: "exclusiveFor", request: "", subject: "Personal Matter",
+        addresseeTitle: "Director, Civilian Personnel", addresseeAddress: "123 Main St, Anytown VA",
+    });
+    check("a supplied addressee title passes through the front end",
+        exclusiveForFilled.addresseeTitle, "Director, Civilian Personnel", "AR 25-50, para 2-4a(5)");
+    check("and a supplied addressee address does too",
+        exclusiveForFilled.addresseeAddress, "123 Main St, Anytown VA", "AR 25-50, para 2-4a(5)");
+    const exclusiveForBlank = specFromForm({type: "exclusiveFor", request: "", subject: "Personal Matter"});
+    checkTrue("an unsupplied addressee title falls back to the template's own placeholder",
+        addresseeHasPlaceholders(exclusiveForBlank.addresseeTitle), "AR 25-50, para 2-4a(5)");
+    checkTrue("and so does an unsupplied addressee address",
+        addresseeHasPlaceholders(exclusiveForBlank.addresseeAddress), "AR 25-50, para 2-4a(5)");
 
     // The type follows the request, and an explicit choice overrides it.
     check("the request picks the type", specFromForm({request: "record the call with the SJA"}).type,
@@ -2723,7 +2760,7 @@ const FIELD_TEMPLATE = {
     check("fig 2-17: an MFR carries no authority line", mfr.authorityLine, null, "AR 25-50, fig 2-17");
 
     // Whatever the page produces still has to satisfy the regulation.
-    for (const type of ["standard", "thru", "record", "decision", "mou", "moa"]) {
+    for (const type of ["standard", "thru", "exclusiveFor", "appreciation", "commendation", "record", "decision", "mou", "moa"]) {
         const spec = specFromForm({type, request: "", subject: "Range 14 Closure",
                                    body: "Range 14 closes for maintenance in August 2026."});
         check(`the front end's ${type} output raises no errors`,
@@ -4066,6 +4103,15 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
                    "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
         thru: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
                "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        // Para 1-12 / paras 2-2 and 2-4a(5): personal-address types keep the
+        // same matters of record as an ordinary memorandum - only the
+        // addressee line's construction differs, not what gets a slot.
+        exclusiveFor: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+                       "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        appreciation: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+                       "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        commendation: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+                       "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
         record: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE"],
         decision: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
                    "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
@@ -4151,6 +4197,45 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
         checkTrue(`an unfilled ${type} template's signers are reported as unfilled placeholders`,
             result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("signers[0]")),
             "AR 25-50, para 2-6c(5)");
+    }
+
+    /*
+     * "Exclusive For" correspondence, appreciation, and commendation were
+     * valid MEMO_TYPES with formatter and validator support but no template
+     * builder, so createTemplate() rejected them and neither the CLI nor the
+     * front end could ever select one - the type existed only for a spec
+     * built by hand.
+     */
+    const {renderText} = await import("./memo-formatter.js");
+    checkTrue("\"Exclusive For\" is now a selectable template",
+        createTemplate("exclusiveFor").type === "exclusiveFor", "AR 25-50, para 1-12");
+    checkTrue("so is appreciation", createTemplate("appreciation").type === "appreciation",
+        "AR 25-50, paras 2-2 and 2-4a(5)");
+    checkTrue("so is commendation", createTemplate("commendation").type === "commendation",
+        "AR 25-50, paras 2-2 and 2-4a(5)");
+
+    // Para 1-12b(1): "Memorandum Exclusive For [Full Name], [Title], [Mailing
+    // Address]" - not the usual uppercase MEMORANDUM FOR.
+    checkTrue("\"Exclusive For\" opens with its own keyword, addressed to a person",
+        renderText(createTemplate("exclusiveFor")).includes("Memorandum Exclusive For [FULL NAME], [TITLE], [MAILING ADDRESS]"),
+        "AR 25-50, para 1-12b(1)");
+    // Para 2-4a(5): appreciation/commendation keep MEMORANDUM FOR, addressed
+    // to the person by name and title rather than to an office.
+    for (const type of ["appreciation", "commendation"]) {
+        checkTrue(`${type} addresses the person by name and title, not an office`,
+            renderText(createTemplate(type)).includes("MEMORANDUM FOR [FULL NAME], [TITLE], [MAILING ADDRESS]"),
+            "AR 25-50, para 2-4a(5)");
+    }
+
+    // addresseeTitle/addresseeAddress are new fields checkPlaceholders() has
+    // to sweep too, or a template's own "[TITLE]"/"[MAILING ADDRESS]" is
+    // never reported as unfilled - the same class of gap `signers` had.
+    for (const type of ["exclusiveFor", "appreciation", "commendation"]) {
+        const result = validateForTemplates(createTemplate(type));
+        checkTrue(`an unfilled ${type} template's addressee title and address are reported as unfilled`,
+            result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeTitle"))
+                && result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeAddress")),
+            "AR 25-50, para 2-4a(5)");
     }
 }
 

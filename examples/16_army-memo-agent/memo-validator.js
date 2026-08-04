@@ -1424,6 +1424,11 @@ function checkPlaceholders(memo, out) {
         subject: memo.subject,
         addressees: memo.addressees,
         thru: memo.thru,
+        // "Exclusive For" correspondence, appreciation, and commendation
+        // address the name and title of a person, not an office (para
+        // 2-4a(5)) - two fields alongside `addressees` that need the same sweep.
+        addresseeTitle: memo.addresseeTitle,
+        addresseeAddress: memo.addresseeAddress,
         paragraphs: memo.paragraphs,
         signature: memo.signature,
         // An MOU/MOA signs through `signers`, not `signature` (para 2-6c(5)) -

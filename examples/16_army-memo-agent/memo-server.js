@@ -114,9 +114,10 @@ export function specFromForm(form = {}) {
         suspenseDate: filled(form.suspenseDate, null),
         // An unsupplied addressee is a blank like any other, so it falls back
         // to the template's placeholder rather than to nothing. An MFR and an
-        // agreement genuinely have no addressee (fig 2-17, para 2-6c(1)).
-        // Blank until told. The label is what the document carries.
-        addressees: lines(form.addressees),
+        // agreement genuinely have no addressee (fig 2-17, para 2-6c(1)) -
+        // and template.addressees is already [] or undefined for those, so
+        // the fallback lands on the right thing either way.
+        addressees: lines(form.addressees).length ? lines(form.addressees) : (template.addressees ?? []),
         thru: lines(form.thru).length ? lines(form.thru) : (template.thru ?? []),
         enclosures: lines(form.enclosures),
         copiesFurnished: lines(form.copiesFurnished),
@@ -126,6 +127,12 @@ export function specFromForm(form = {}) {
             gradeAndBranch: filled(form.signerGrade, record.signature.gradeAndBranch),
             title: filled(form.signerTitle, record.signature.title),
         },
+        // "Exclusive For" correspondence, appreciation, and commendation
+        // address the name and title of a person, not an office (para
+        // 2-4a(5)) - the same blank-falls-back-to-template's-placeholder
+        // treatment as everything else here.
+        addresseeTitle: filled(form.addresseeTitle, template.addresseeTitle ?? null),
+        addresseeAddress: filled(form.addresseeAddress, template.addresseeAddress ?? null),
         // An MFR is on plain paper with no addressee and no authority line
         // (fig 2-17); so is an agreement (para 2-6c(1)).
         letterhead: type === "record" ? null : (letterheadGiven ? {

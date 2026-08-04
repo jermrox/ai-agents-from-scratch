@@ -157,6 +157,47 @@ function thru() {
 }
 
 /**
+ * "Exclusive For" correspondence - para 1-12. Sensitive or privileged
+ * matter addressed to a named individual, not to an office - "Memorandum
+ * Exclusive For [Full Name], [Title], [Mailing Address]" (para 1-12b(1)),
+ * not the usual uppercase MEMORANDUM FOR.
+ */
+function exclusiveFor() {
+    return base({
+        type: "exclusiveFor",
+        addressees: ["[FULL NAME]"],
+        addresseeTitle: "[TITLE]",
+        addresseeAddress: "[MAILING ADDRESS]",
+        paragraphs: [
+            {text: "[PURPOSE SENTENCE - state the action or decision first, in the active voice.]"},
+            {text: "[MAIN POINT - the recommendation, conclusion, or most important information.]"},
+            {text: POC},
+        ],
+    });
+}
+
+/**
+ * Memorandum of Appreciation / Commendation - paras 2-2 and 2-4a(5).
+ * Addressed to the name and title of the DA Civilian or Soldier being
+ * recognized, not to an office - the same personal-address exception
+ * "Exclusive For" correspondence gets.
+ */
+function recognition(type) {
+    const word = type === "commendation" ? "commendation" : "appreciation";
+    return base({
+        type,
+        addressees: ["[FULL NAME]"],
+        addresseeTitle: "[TITLE]",
+        addresseeAddress: "[MAILING ADDRESS]",
+        paragraphs: [
+            {text: `[STATE THE ${word.toUpperCase()} - what was done and why it matters, in one sentence.]`},
+            {text: "[SPECIFIC DETAILS supporting the recognition.]"},
+            {text: POC},
+        ],
+    });
+}
+
+/**
  * Memorandum for record - para 2-7, figure 2-17.
  * Plain white paper, no authority line, one page if possible.
  */
@@ -355,6 +396,9 @@ export const TEMPLATES = {
     letter,
     standard,
     thru,
+    exclusiveFor,
+    appreciation: () => recognition("appreciation"),
+    commendation: () => recognition("commendation"),
     record,
     decision,
     mou: () => agreement("mou"),
