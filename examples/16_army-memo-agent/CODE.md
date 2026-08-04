@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-790 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+795 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 790/790 checks passed.
+# AR 25-50 layout verification: 795/795 checks passed.
 ```
 
 ---
@@ -771,16 +771,18 @@ Every template now renders real content controls for exactly its own matters of 
 
 The same pass asked a broader question: does every type AR 25-50 defines actually have a template, so a user can select it at all? `MEMO_TYPES` in `ar25-50.js` names nine memorandum types, plus the letter - `exclusiveFor`, `appreciation`, and `commendation` among the nine, each with real support already built into the formatter (para 1-12b(1)'s distinct `Memorandum Exclusive For` keyword, the personal-address exception of para 2-4a(5)) and the validator (`PERSONAL_ADDRESS_TYPES`). But `TEMPLATES` in `templates.js` only ever built six of the nine, plus the letter - `createTemplate("exclusiveFor")` threw `Unknown memorandum type`. Neither the CLI's `--template` flag nor the front end's type selector could ever produce one; the type existed only for a spec somebody built by hand.
 
-All three share one shape - a standard memorandum in every respect except who it is addressed to, a name and title rather than an office (the same exception "Exclusive For" correspondence and recognition memorandums both get from para 2-4a(5)) - so `exclusiveFor()` and a shared `recognition("appreciation"|"commendation")` builder both call the same `base()` every other memorandum type uses, overriding only `addressees`, and two fields the formatter already knew how to read but no template had ever supplied: `addresseeTitle` and `addresseeAddress`.
+All three share one shape - a standard memorandum in every respect except who it is addressed to, a name and title rather than an office (the same exception "Exclusive For" correspondence and recognition memorandums both get from para 2-4a(5)) - so `exclusiveFor()` and a shared `recognition("appreciation"|"commendation")` builder both call the same `base()` every other memorandum type uses, overriding only `addressees`, and fields the formatter already knew how to read but no template had ever supplied: `addresseeTitle`, and - for "Exclusive For" only - `addresseeAddress`.
 
-Wiring three new templates in exposed two more places that hadn't reached these two fields at all:
+That split is deliberate, not an oversight, and it was wrong the first time this was written. Para 1-12b(1) spells "Exclusive For" out as three elements - `Memorandum Exclusive For [Full Name], [Title], [Mailing Address]` - but para 2-4a(5)'s exception for appreciation and commendation names only two: *"address the memorandum to the name and title of the addressee."* No mailing address. The first version of `recognition()` templated one anyway, copying the three-element shape from "Exclusive For" without checking whether para 2-4a(5) actually asked for it - caught on a second pass back through the source PDF rather than by re-deriving from the codebase's own existing (and in this one case, wrong) `addresseeAddress` handling. Fixed by dropping the field from `recognition()` entirely; the formatter still honors one if a caller supplies it; nothing prompts for it.
 
-- **`checkPlaceholders()`** didn't scan `addresseeTitle`/`addresseeAddress` - the same class of gap `signers` had in §16b - so a template's own `[TITLE]` and `[MAILING ADDRESS]` would never be reported as unfilled.
+Wiring three new templates in exposed two more places that hadn't reached `addresseeTitle`/`addresseeAddress` at all:
+
+- **`checkPlaceholders()`** didn't scan either field - the same class of gap `signers` had in §16b - so a template's own `[TITLE]` would never be reported as unfilled.
 - **The front end** (`specFromForm()`, `assembleMemo()`) had no path for either field at all - not missing a fallback, missing entirely - so even with the template fixed, selecting one of these three types on the page would drop both fields on the floor. Fixed the same way `thru` already falls back to the template's own placeholder when the form leaves it blank.
 
 Auditing that fallback turned up a third, older bug in the same code while it was open: the comment beside `addressees` said an unsupplied one "falls back to the template's placeholder rather than to nothing," but the code next to it (`lines(form.addressees)`, no fallback) never did that for *any* type - not just the three new ones. Fixed to match what the comment already promised. The one visible consequence: a blank addressee is now reported as `unfilled-placeholder`, the same way office symbol and signature already are, rather than `not-yet-supplied` - moved to match, not something anyone should have to remember, so a small correctness fix and a scope-completion pass turned out to be the same commit.
 
-All three types are exercised everywhere the existing six already were - font-size ceiling, "raises no errors," content-control presence, the front end's own render - plus their own checks for the personal-address heading construction. `node army-memo-agent.js --list-types` now lists all ten, aligned; the column width used to be a fixed 9 characters, too narrow for `exclusiveFor`.
+All three types are exercised everywhere the existing six already were - font-size ceiling, "raises no errors," content-control presence, the front end's own render - plus their own checks for the personal-address heading construction, including a negative check that appreciation and commendation raise no `addresseeAddress` finding at all, since they have no such field. `node army-memo-agent.js --list-types` now lists all ten, aligned; the column width used to be a fixed 9 characters, too narrow for `exclusiveFor`.
 
 ---
 
@@ -890,7 +892,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 790 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 795 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

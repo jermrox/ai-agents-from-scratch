@@ -4219,22 +4219,40 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
     checkTrue("\"Exclusive For\" opens with its own keyword, addressed to a person",
         renderText(createTemplate("exclusiveFor")).includes("Memorandum Exclusive For [FULL NAME], [TITLE], [MAILING ADDRESS]"),
         "AR 25-50, para 1-12b(1)");
-    // Para 2-4a(5): appreciation/commendation keep MEMORANDUM FOR, addressed
-    // to the person by name and title rather than to an office.
+    /*
+     * Para 2-4a(5): "address the memorandum to the name and title of the
+     * addressee" - two elements, not the three para 1-12b(1) spells out for
+     * "Exclusive For". No mailing address is templated here; the field is
+     * still honored if a caller supplies one, since the exception does not
+     * forbid it, but nothing in paras 2-2 or 2-4a(5) asks a drafter for it.
+     */
     for (const type of ["appreciation", "commendation"]) {
+        const text = renderText(createTemplate(type));
         checkTrue(`${type} addresses the person by name and title, not an office`,
-            renderText(createTemplate(type)).includes("MEMORANDUM FOR [FULL NAME], [TITLE], [MAILING ADDRESS]"),
-            "AR 25-50, para 2-4a(5)");
+            text.includes("MEMORANDUM FOR [FULL NAME], [TITLE]"), "AR 25-50, para 2-4a(5)");
+        checkTrue(`and ${type} does not template a mailing address para 2-4a(5) never asks for`,
+            !text.includes("[MAILING ADDRESS]"), "AR 25-50, para 2-4a(5)");
     }
 
-    // addresseeTitle/addresseeAddress are new fields checkPlaceholders() has
-    // to sweep too, or a template's own "[TITLE]"/"[MAILING ADDRESS]" is
-    // never reported as unfilled - the same class of gap `signers` had.
+    // addresseeTitle is a field checkPlaceholders() has to sweep too, or a
+    // template's own "[TITLE]" is never reported as unfilled - the same
+    // class of gap `signers` had.
     for (const type of ["exclusiveFor", "appreciation", "commendation"]) {
         const result = validateForTemplates(createTemplate(type));
-        checkTrue(`an unfilled ${type} template's addressee title and address are reported as unfilled`,
-            result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeTitle"))
-                && result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeAddress")),
+        checkTrue(`an unfilled ${type} template's addressee title is reported as unfilled`,
+            result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeTitle")),
+            "AR 25-50, para 2-4a(5)");
+    }
+    // "Exclusive For" alone templates a mailing address, matching para
+    // 1-12b(1)'s three-element form.
+    checkTrue("an unfilled \"Exclusive For\" template's addressee address is reported as unfilled",
+        validateForTemplates(createTemplate("exclusiveFor"))
+            .warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("addresseeAddress")),
+        "AR 25-50, para 1-12b(1)");
+    for (const type of ["appreciation", "commendation"]) {
+        checkTrue(`and an unfilled ${type} template raises no addresseeAddress finding at all - it has no such field`,
+            validateForTemplates(createTemplate(type))
+                .findings.every((f) => !f.message.startsWith("addresseeAddress")),
             "AR 25-50, para 2-4a(5)");
     }
 }

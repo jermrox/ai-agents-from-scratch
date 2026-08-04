@@ -178,9 +178,15 @@ function exclusiveFor() {
 
 /**
  * Memorandum of Appreciation / Commendation - paras 2-2 and 2-4a(5).
- * Addressed to the name and title of the DA Civilian or Soldier being
- * recognized, not to an office - the same personal-address exception
- * "Exclusive For" correspondence gets.
+ *
+ * "Exception: When used for 'Exclusive For' correspondence, appreciation,
+ *  and commendation, address the memorandum to the name and title of the
+ *  addressee." - para 2-4a(5). Two elements, not three - unlike "Exclusive
+ *  For" (para 1-12b(1)), which spells out a third, the mailing address,
+ *  because it is often sent somewhere outside the normal chain. Nothing in
+ *  para 2-2 or 2-4a(5) asks for one here, so `addresseeAddress` is left
+ *  unset rather than templated - the formatter still honors it if a caller
+ *  supplies one, since para 2-4a(5) does not forbid it, only not require it.
  */
 function recognition(type) {
     const word = type === "commendation" ? "commendation" : "appreciation";
@@ -188,7 +194,6 @@ function recognition(type) {
         type,
         addressees: ["[FULL NAME]"],
         addresseeTitle: "[TITLE]",
-        addresseeAddress: "[MAILING ADDRESS]",
         paragraphs: [
             {text: `[STATE THE ${word.toUpperCase()} - what was done and why it matters, in one sentence.]`},
             {text: "[SPECIFIC DETAILS supporting the recognition.]"},
