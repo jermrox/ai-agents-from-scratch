@@ -3851,7 +3851,7 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
  * only off the flag a drafter sets when that is what the memorandum is for.
  */
 {
-    const {DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING} = await import("./ar25-50.js");
+    const {DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING, DELEGATION_REQUIRED_STATEMENTS} = await import("./ar25-50.js");
     const {validateMemo: validate1_37} = await import("./memo-validator.js");
     const {createTemplate: template1_37} = await import("./templates.js");
     const base1_37 = template1_37("standard");
@@ -3863,6 +3863,66 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
     checkTrue("and an ordinary memorandum is not",
         validate1_37(base1_37).findings.every((f) => f.rule !== "delegation-recordkeeping"),
         DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.cite);
+
+    // Para 6-1b(1): the same flag also surfaces the two statements a written
+    // delegation should carry.
+    checkTrue("para 6-1b(1): the two required statements are surfaced alongside the recordkeeping note",
+        validate1_37({...base1_37, delegatesSignatureAuthority: true})
+            .warnings.some((f) => f.rule === "delegation-required-statements"
+                && DELEGATION_REQUIRED_STATEMENTS.statements.every((s) => f.message.includes(s))),
+        DELEGATION_REQUIRED_STATEMENTS.cite);
+    checkTrue("and an ordinary memorandum is not asked for them",
+        validate1_37(base1_37).findings.every((f) => f.rule !== "delegation-required-statements"),
+        DELEGATION_REQUIRED_STATEMENTS.cite);
+}
+
+/**
+ * Para 3-3: a letter cannot use a reply-attribution phrase unless the
+ * SECARMY specifically directed it - the opposite shape from the
+ * mandatory-phrase exception chapter 2 gives memorandums.
+ */
+{
+    const {RESPONSE_PHRASES} = await import("./ar25-50.js");
+    const {validateMemo: validate3_3} = await import("./memo-validator.js");
+    const {createTemplate: template3_3} = await import("./templates.js");
+    const letter3_3 = template3_3("letter");
+
+    checkTrue("para 3-3: \"The Secretary has requested that I reply\" is a recognized response phrase",
+        RESPONSE_PHRASES.patterns.some((p) => p.test("The Secretary has requested that I reply to your letter.")),
+        RESPONSE_PHRASES.cite);
+    checkTrue("and so is \"on behalf of the\"",
+        RESPONSE_PHRASES.patterns.some((p) => p.test("I write on behalf of the Chief of Staff.")),
+        RESPONSE_PHRASES.cite);
+    checkTrue("but an ordinary sentence is not misread as either",
+        RESPONSE_PHRASES.patterns.every((p) => !p.test("The range will reopen on 7 August.")),
+        RESPONSE_PHRASES.cite);
+
+    checkTrue("para 3-3: a letter using a response phrase is reported",
+        validate3_3({...letter3_3, paragraphs: [{text: "On behalf of the Secretary, thank you for your letter."}]})
+            .errors.some((f) => f.rule === "response-phrase-not-authorized"),
+        RESPONSE_PHRASES.cite);
+    checkTrue("and excused once the SECARMY has directed it",
+        validate3_3({...letter3_3, secarmyDirectedResponsePhrase: true,
+                     paragraphs: [{text: "On behalf of the Secretary, thank you for your letter."}]})
+            .errors.every((f) => f.rule !== "response-phrase-not-authorized"),
+        RESPONSE_PHRASES.cite);
+    checkTrue("and a memorandum using the same words is not checked at all - para 3-3 governs letters only",
+        validate3_3({...template3_3("standard"),
+                     paragraphs: [{text: "On behalf of the Secretary, forward this to the field."}]})
+            .findings.every((f) => f.rule !== "response-phrase-not-authorized"),
+        RESPONSE_PHRASES.cite);
+}
+
+/**
+ * Para 5-11: "To the Commander of___" - table 5-4's own example is the
+ * oracle, the same discipline the layout figures get.
+ */
+{
+    const {commanderOfAddressForm, COMMANDER_OF_CITE} = await import("./ar25-50.js");
+    check("para 5-11 / table 5-4: addressing correspondence through a commanding officer",
+        commanderOfAddressForm("PFC", "[Name]", ["CO A 1/15 FIELD ARTILLERY", "APO AP 96XXX"]),
+        ["COMMANDER OF PFC [Name]", "CO A 1/15 FIELD ARTILLERY", "APO AP 96XXX"],
+        COMMANDER_OF_CITE);
 }
 
 // ---------------------------------------------------------------------------

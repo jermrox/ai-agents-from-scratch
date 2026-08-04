@@ -72,6 +72,8 @@ import {
     usesSameSubjectShorthand,
     REFERENCES,
     DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING,
+    DELEGATION_REQUIRED_STATEMENTS,
+    RESPONSE_PHRASES,
 } from "./ar25-50.js";
 
 /** Salutations compared tolerant of case and of run-together whitespace. */
@@ -598,7 +600,10 @@ function checkBody(memo, doc, out) {
 
             checkArmyCapitalization(text, here, out);
             checkTime(text, here, out);
-            if (isLetter(memo)) checkSameSubjectShorthand(text, here, out);
+            if (isLetter(memo)) {
+                checkSameSubjectShorthand(text, here, out);
+                checkResponsePhrases(text, here, memo, out);
+            }
 
             if (kids.length) walk(kids, depth + 1, [...path, i + 1]);
         });
@@ -792,6 +797,9 @@ function checkRecordkeeping(memo, out) {
     out.push(warn("content", "delegation-recordkeeping",
         DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.note,
         DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING.cite));
+    out.push(warn("content", "delegation-required-statements",
+        `A written delegation of signature authority should address or contain: ${DELEGATION_REQUIRED_STATEMENTS.statements.join(" ")}`,
+        DELEGATION_REQUIRED_STATEMENTS.cite));
 }
 
 /**
@@ -1011,6 +1019,22 @@ function checkSameSubjectShorthand(text, path, out) {
     out.push(error("content", "sab-not-in-letters",
         `Paragraph ${path} uses "SAB" or "subject as above." A letter repeats the subject in full - only a memorandum may use the shorthand.`,
         REFERENCES.sameSubjectMemorandumOnlyCite));
+}
+
+/**
+ * "Do not use phrases such as 'The Secretary has requested that I reply,'
+ *  'The Secretary desires that I reply,' or 'On behalf of the (name)' unless
+ *  the SECARMY has specifically directed using such a phrase." - para 3-3.
+ *  Only called for letters; `memo.secarmyDirectedResponsePhrase` is the
+ *  drafter's record that the SECARMY ordered it.
+ */
+function checkResponsePhrases(text, path, memo, out) {
+    if (memo.secarmyDirectedResponsePhrase) return;
+    const hit = RESPONSE_PHRASES.patterns.find((p) => p.test(text));
+    if (!hit) return;
+    out.push(error("content", "response-phrase-not-authorized",
+        `Paragraph ${path} uses a reply-attribution phrase ("${text.match(hit)[0]}"). These are used only when the SECARMY has specifically directed it.`,
+        RESPONSE_PHRASES.cite));
 }
 
 function checkTime(text, path, out) {

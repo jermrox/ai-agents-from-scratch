@@ -1198,6 +1198,21 @@ export const ADDRESSING = {
     abbreviatedCityCite: "AR 25-50, fig 2-6",
 };
 
+/**
+ * "Certain official correspondence cannot be addressed directly to the
+ *  individual because it requires the attention of his or her commanding
+ *  officer. Address such correspondence to the commander of the individual;
+ *  indicate the individual's military grade, full name, and last known unit
+ *  address of assignment." - para 5-11
+ *
+ * Table 5-4's own example: "COMMANDER OF PFC [Name]" over the individual's
+ * unit address, unchanged.
+ */
+export function commanderOfAddressForm(grade, name, unitAddressLines = []) {
+    return [`COMMANDER OF ${grade} ${name}`, ...unitAddressLines];
+}
+export const COMMANDER_OF_CITE = "AR 25-50, para 5-11";
+
 /** Memorandums use "CF:"; letters use "cc:". - 1-21c, 1-21d */
 export const COPY_MARKERS = {
     memorandum: "CF:",
@@ -1294,6 +1309,21 @@ export const DELEGATION_SIGNATURE_AUTHORITY_RECORDKEEPING = {
     recordNumber: "25-50a",
     note: "This delegates signature authority, so it is filed under record number 25-50a, per AR 25-400-2.",
     cite: "AR 25-50, para 1-37",
+};
+
+/**
+ * "Written delegation should address or contain the following:" - para
+ * 6-1b(1). Surfaced as a reminder alongside the recordkeeping note above,
+ * not detected in the body text - unlike a fixed phrase such as an
+ * authority line, there is no one wording of these two statements to match
+ * free-form legal boilerplate against.
+ */
+export const DELEGATION_REQUIRED_STATEMENTS = {
+    statements: [
+        "A statement that the commander or head of the agency or office retains the authority to cancel or withdraw the delegated authority at any time.",
+        "A statement that upon change of command or change of the agency head or office, all delegations are subject to review by the new commander, who may cancel or change some delegations.",
+    ],
+    cite: "AR 25-50, para 6-1b(1)",
 };
 
 /**
@@ -2379,6 +2409,25 @@ export function memorandumProhibitedAudiences(addressees = []) {
     }
     return [...hits].map(([who, addressee]) => ({who, addressee}));
 }
+
+/**
+ * "Do not use phrases such as 'The Secretary has requested that I reply,'
+ *  'The Secretary desires that I reply,' or 'On behalf of the (name)' unless
+ *  the SECARMY has specifically directed using such a phrase." - para 3-3
+ *
+ * A letter-only prohibition - the opposite shape from `MANDATORY_PHRASES`
+ * (para 6-2b), whose presence in a memorandum *excuses* the authority line.
+ * These are barred from a letter unless the SECARMY specifically ordered
+ * them, so the finding only fires for a letter and only absent that flag.
+ */
+export const RESPONSE_PHRASES = {
+    patterns: [
+        /\bThe Secretary has requested that I reply\b/i,
+        /\bThe Secretary desires that I reply\b/i,
+        /\bOn behalf of the\b/i,
+    ],
+    cite: "AR 25-50, para 3-3",
+};
 
 export const LETTER_AUDIENCES = {
     cite: "AR 25-50, para 3-2",
