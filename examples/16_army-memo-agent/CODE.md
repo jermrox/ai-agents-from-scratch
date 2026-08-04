@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-648 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+676 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 648/648 checks passed.
+# AR 25-50 layout verification: 676/676 checks passed.
 ```
 
 ---
@@ -568,6 +568,29 @@ Wiring: a letter carries an optional `addresseeCategory` naming a row (`"Governo
 
 ---
 
+## 13c) What chapters 5, 7, and 8 turned out to be
+
+A full pass through chapters 5 through 8 confirmed most of what applies was already built — table 5-3's State codes, the ZIP-spacing rule, the APO/FPO overseas codes, and para 5-9b's addressee-name form all had citations pointing at chapter 5 before this pass started. What is left in chapter 5 - envelope size, folding, sealing, postage weight - and the whole of chapters 7 and 8 - routing slips, DA Form 200, DA Labels 87/113/115, SF 703/704/705 classified cover sheets - describe physical or separate artifacts that accompany a memorandum rather than elements of the memorandum itself. That is the same relationship appendix F turned out to have to the `.docx`: this generator produces the correspondence, not the envelope it travels in, the label stapled to its cover, or the routing slip clipped behind it.
+
+## 13d) What chapter 6 was still missing
+
+Chapter 6 section II is dense - almost every sentence is a distinct signature-block rule - and `signature-blocks.js` already had general officers, warrant officers, GS/IG, Joint command, chaplains, retirees, reservists, and ARNG all correctly built before this pass. Reading the section straight through end to end turned up four sentences nothing was checking:
+
+- **Para 6-8c.** *"Abbreviations reflecting professional degrees may be used in civilian signature blocks when dealing with foreign and high-level officials outside DoD [or in] Army teaching institutions... Do not use these abbreviations in routine correspondence."* A civilian block carrying `Ph.D.` or `B.S.` with neither exception flagged (`foreignOrHighLevelOfficial`, `academicInstitution`) is now reported.
+- **Para 6-3d.** *"For 'THRU' correspondence, when no comment has been made, the signer will line through the appropriate address and initial and date the line through."* This is the wet-signature counterpart to appendix F's digital box - an action taken with a pen on the printed page, not something a Word template renders - and it needed its own check because it fires on the *opposite* condition from the digital-box guidance (`digitalSignature: false`, not `true`).
+- **Para 6-2d, Note.** *"All SECARMY delegations will be copy furnished to the AASA."* A memorandum using `BY ORDER OF THE SECRETARY OF THE ARMY:` with no AASA in its copy-furnished list is now flagged - a routing requirement, not a layout one, so it is reported rather than rendered.
+- **Para 6-4a, Note 2.** *"Civilians will not use 'DAC' (Department of the Army Civilian) on a signature block unless they are attached to or are serving within a multi-Service organization."* Checked across the whole block, because the mistake shows up in the title as often as the name.
+
+## 13e) Appendix B's footnotes, and a bug they exposed
+
+`PROTOCOL_HQDA` and `PROTOCOL_OSD` - the two ordered lists figures B-2 and B-1 print - both existed and were both correctly transcribed. Reading the rest of appendix B turned up two things.
+
+The first is a real bug. `checkProtocol()` in the validator checked addressees against `PROTOCOL_HQDA` only; `PROTOCOL_OSD` was data nothing ever read. A memorandum addressed to the Office of the Secretary of Defense out of protocol order raised nothing, because the function that would have caught it was never being called with that list. Both are checked now - safely, because `checkProtocolOrder` already ignores names outside the sequence it is given, so running the OSD list against an HQDA-addressed memorandum costs nothing.
+
+The second is genuinely new material. Figure B-1 carries eight footnotes and figure B-2 carries one, and seven of those nine give an explicit order for naming some but not all of one category - either the fixed order the footnote states (the three Secretaries of the Military Departments, six Under Secretaries of Defense, four Chiefs of the Military Services) or alphabetical order among the members it names (thirteen Assistant Secretaries of Defense, nineteen Directors of Defense Agencies, eight Directors of DoD Field Activities, five Assistant Secretaries of the Army). `PROTOCOL_OSD_DETAIL` and `PROTOCOL_HQDA_DETAIL` hold all nine, `checkProtocolDetailOrder()` checks a supplied list against any one of them, and the validator runs all nine automatically as `protocol-detail-order`. The eighth OSD footnote - *"refer to the most recent DoD Order of Precedence memorandum"* - names no list AR 25-50 gives, so nothing is invented for it; the fact recorded is that none exists here.
+
+---
+
 ## 14a) The unit's fields, and the memorandum's
 
 AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
@@ -773,7 +796,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 648 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 676 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

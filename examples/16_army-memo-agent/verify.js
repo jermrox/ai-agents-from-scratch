@@ -658,6 +658,69 @@ const FIG_2_1 = {
         checkProtocolOrder(["Information Office, FORSCOM", "Information Office, TRADOC"]).inOrder,
         "AR 25-50, appendix B");
 
+    /*
+     * PROTOCOL_OSD existed as data before this session's audit and was never
+     * read by the validator - checkProtocol() checked only PROTOCOL_HQDA, so a
+     * memorandum addressed to the Office of the Secretary of Defense out of
+     * order raised nothing.
+     */
+    checkTrue("fig B-1: an OSD memorandum out of protocol order is now reported",
+        validateMemo({...FIG_2_1, addressees: ["Deputy Secretary of Defense", "Secretary of Defense"]})
+            .warnings.some((f) => f.rule === "protocol-order"), "AR 25-50, fig B-1");
+    checkTrue("fig B-1: and not reported when it is in order",
+        validateMemo({...FIG_2_1, addressees: ["Secretary of Defense", "Deputy Secretary of Defense"]})
+            .warnings.every((f) => f.rule !== "protocol-order"), "AR 25-50, fig B-1");
+
+    /*
+     * Figure B-1 carries eight footnotes and figure B-2 carries one. Seven of
+     * the nine give an explicit order for naming some but not all of one
+     * category - either the fixed order the footnote states, or (for the
+     * larger categories) alphabetical order among the members the footnote
+     * names. Spot-checked here against the source text; wired into the
+     * validator as `protocol-detail-order`.
+     */
+    const {PROTOCOL_OSD_DETAIL, PROTOCOL_HQDA_DETAIL, checkProtocolDetailOrder} = await import("./ar25-50.js");
+
+    check("fig B-1 note 1: three Secretaries of the Military Departments",
+        PROTOCOL_OSD_DETAIL.secretariesOfMilitaryDepartments.order,
+        ["Secretary of the Army", "Secretary of the Navy", "Secretary of the Air Force"],
+        "AR 25-50, fig B-1, note 1");
+    check("fig B-1 note 2: six Under Secretaries of Defense, in the stated order",
+        PROTOCOL_OSD_DETAIL.underSecretariesOfDefense.order[0],
+        "Under Secretary of Defense for Research and Engineering", "AR 25-50, fig B-1, note 2");
+    check("fig B-1 note 3: the Chiefs of the Military Services sit between the Under Secretaries and NGB",
+        [PROTOCOL_OSD_DETAIL.chiefsOfMilitaryServices.insertAfter,
+         PROTOCOL_OSD_DETAIL.chiefsOfMilitaryServices.insertBefore],
+        ["Under Secretaries of Defense", "Chief of the National Guard Bureau"], "AR 25-50, fig B-1, note 3");
+    check("fig B-1 note 5: thirteen Assistant Secretaries of Defense",
+        PROTOCOL_OSD_DETAIL.assistantSecretariesOfDefense.order.length, 13, "AR 25-50, fig B-1, note 5");
+    check("fig B-1 note 6: nineteen Directors of Defense Agencies",
+        PROTOCOL_OSD_DETAIL.directorsOfDefenseAgencies.order.length, 19, "AR 25-50, fig B-1, note 6");
+    check("fig B-1 note 7: eight Directors of DoD Field Activities",
+        PROTOCOL_OSD_DETAIL.directorsOfDodFieldActivities.order.length, 8, "AR 25-50, fig B-1, note 7");
+    check("fig B-2 note: five Assistant Secretaries of the Army",
+        PROTOCOL_HQDA_DETAIL.assistantSecretariesOfArmy.order.length, 5, "AR 25-50, fig B-2, note");
+
+    checkTrue("fig B-1 note 1: two Secretaries out of the stated order fail the check",
+        !checkProtocolDetailOrder(["Secretary of the Air Force", "Secretary of the Army"],
+            PROTOCOL_OSD_DETAIL.secretariesOfMilitaryDepartments), "AR 25-50, fig B-1, note 1");
+    checkTrue("fig B-1 note 1: and pass it in the stated order",
+        checkProtocolDetailOrder(["Secretary of the Army", "Secretary of the Navy"],
+            PROTOCOL_OSD_DETAIL.secretariesOfMilitaryDepartments), "AR 25-50, fig B-1, note 1");
+    checkTrue("fig B-1 note 6: alphabetical Defense Agencies out of order fail the check",
+        !checkProtocolDetailOrder(["Missile Defense Agency", "Defense Health Agency"],
+            PROTOCOL_OSD_DETAIL.directorsOfDefenseAgencies), "AR 25-50, fig B-1, note 6");
+    checkTrue("fig B-1 note 6: and pass it in alphabetical order",
+        checkProtocolDetailOrder(["Defense Health Agency", "Missile Defense Agency"],
+            PROTOCOL_OSD_DETAIL.directorsOfDefenseAgencies), "AR 25-50, fig B-1, note 6");
+
+    checkTrue("validator: two Assistant Secretaries of the Army out of order are reported",
+        validateMemo({...FIG_2_1, addressees: ["ASA (Manpower and Reserve Affairs)", "ASA (Civil Works)"]})
+            .warnings.some((f) => f.rule === "protocol-detail-order"), "AR 25-50, fig B-2, note");
+    checkTrue("validator: and not reported when they are in alphabetical order",
+        validateMemo({...FIG_2_1, addressees: ["ASA (Civil Works)", "ASA (Manpower and Reserve Affairs)"]})
+            .warnings.every((f) => f.rule !== "protocol-detail-order"), "AR 25-50, fig B-2, note");
+
     // "Do not use it when addressing Army correspondence." - para 1-13
     checkTrue("ALARACT in an address is reported",
         validateMemo({...FIG_2_1, addressees: ["ALARACT"]})
@@ -1664,6 +1727,30 @@ const FIELD_TEMPLATE = {
         buildSignature({name: "David A. Okonkwo", civilian: true, title: "Range Operations Specialist"}).lines,
         ["DAVID A. OKONKWO", "Range Operations Specialist"], "AR 25-50, para 6-8a");
 
+    /*
+     * "Abbreviations reflecting professional degrees may be used in civilian
+     *  signature blocks when dealing with foreign and high-level officials
+     *  outside DoD [or in] Army teaching institutions... Do not use these
+     *  abbreviations in routine correspondence." - para 6-8c
+     */
+    checkTrue("a degree abbreviation in a routine civilian block is reported",
+        buildSignature({name: "Jane Doe", civilian: true, title: "Director, Ph.D."})
+            .findings.some((f) => f.rule === "degree-abbreviation-routine"),
+        "AR 25-50, para 6-8c");
+    checkTrue("and excused for a foreign or high-level official",
+        buildSignature({name: "Jane Doe", civilian: true, title: "Director, Ph.D.",
+                        foreignOrHighLevelOfficial: true})
+            .findings.every((f) => f.rule !== "degree-abbreviation-routine"),
+        "AR 25-50, para 6-8c");
+    checkTrue("and excused at an Army teaching institution",
+        buildSignature({name: "Jane Doe", civilian: true, title: "Dean, Ph.D.", academicInstitution: true})
+            .findings.every((f) => f.rule !== "degree-abbreviation-routine"),
+        "AR 25-50, para 6-8c");
+    checkTrue("and not raised when there is no degree in the block at all",
+        buildSignature({name: "David A. Okonkwo", civilian: true, title: "Range Operations Specialist"})
+            .findings.every((f) => f.rule !== "degree-abbreviation-routine"),
+        "AR 25-50, para 6-8c");
+
     check("retired personnel show USA Retired and no branch",
         buildSignature({name: "A B Smith", grade: "COL", retired: true, title: "None"}).lines[1],
         "COL, USA Retired", "AR 25-50, para 6-6");
@@ -2104,6 +2191,67 @@ const FIELD_TEMPLATE = {
     check("fig D-8: an agency head's authority line names the office",
         AUTHORITY_LINES.agencyHead.text("Chief, Civilian Personnel Division"),
         "FOR THE CHIEF, CIVILIAN PERSONNEL DIVISION:", "AR 25-50, para 6-2e(1)");
+
+    /*
+     * "Civilians will not use 'DAC' ... on a signature block unless they are
+     *  attached to or are serving within a multi-Service organization." -
+     *  para 6-4a, Note 2.
+     */
+    const {createTemplate: dacTemplate} = await import("./templates.js");
+    const dacBase = dacTemplate("standard");
+    checkTrue("para 6-4a Note 2: DAC on a signature block is reported",
+        validateMemo({...dacBase, signature: {name: "JANE DOE", title: "Program Analyst, DAC"}})
+            .errors.some((f) => f.rule === "dac-not-authorized"),
+        "AR 25-50, para 6-4a, Note 2");
+    checkTrue("and excused in a multi-Service organization",
+        validateMemo({...dacBase, signature: {name: "JANE DOE", title: "Program Analyst, DAC"},
+                      multiServiceOrganization: true})
+            .errors.every((f) => f.rule !== "dac-not-authorized"),
+        "AR 25-50, para 6-4a, Note 2");
+    checkTrue("and a title with no 'DAC' in it raises nothing",
+        validateMemo({...dacBase, signature: {name: "JANE DOE", title: "Program Analyst"}})
+            .errors.every((f) => f.rule !== "dac-not-authorized"),
+        "AR 25-50, para 6-4a, Note 2");
+
+    /*
+     * "All SECARMY delegations will be copy furnished to the AASA." -
+     * para 6-2d, Note.
+     */
+    checkTrue("para 6-2d Note: a SECARMY delegation with no AASA copy is reported",
+        validateMemo({...dacBase, authorityLine: AUTHORITY_LINES.secretary.text, copiesFurnished: []})
+            .warnings.some((f) => f.rule === "secarmy-delegation-not-copied"),
+        AUTHORITY_LINES.secretary.copyFurnishedCite);
+    checkTrue("and satisfied once AASA is copy furnished",
+        validateMemo({...dacBase, authorityLine: AUTHORITY_LINES.secretary.text, copiesFurnished: ["AASA"]})
+            .warnings.every((f) => f.rule !== "secarmy-delegation-not-copied"),
+        AUTHORITY_LINES.secretary.copyFurnishedCite);
+    checkTrue("and not raised for an ordinary FOR THE COMMANDER: line",
+        validateMemo({...dacBase, authorityLine: AUTHORITY_LINES.commander.text, copiesFurnished: []})
+            .warnings.every((f) => f.rule !== "secarmy-delegation-not-copied"),
+        "AR 25-50, para 6-2d, Note");
+
+    /*
+     * "For 'THRU' correspondence, when no comment has been made, the signer
+     *  will line through the appropriate address and initial and date the
+     *  line through." - para 6-3d. Appendix F's boxes are for the digital
+     *  form; this is the wet-signature counterpart, and it needed its own
+     *  check because it is the opposite condition (digitalSignature: false).
+     */
+    const thruBase = dacTemplate("thru");
+    checkTrue("para 6-3d: a wet-signed THRU memorandum is told to line out and initial",
+        validateMemo({...thruBase, digitalSignature: false})
+            .warnings.some((f) => f.rule === "thru-wet-signature-lineout"),
+        "AR 25-50, para 6-3d");
+    checkTrue("and a digitally signed THRU memorandum gets the box guidance instead",
+        validateMemo({...thruBase, digitalSignature: true})
+            .warnings.some((f) => f.rule === "thru-signature-boxes")
+        && validateMemo({...thruBase, digitalSignature: true})
+            .warnings.every((f) => f.rule !== "thru-wet-signature-lineout"),
+        "AR 25-50, para 6-3d and appendix F");
+    checkTrue("and a memorandum with no THRU line raises neither",
+        validateMemo({...dacBase, digitalSignature: false})
+            .warnings.every((f) => f.rule !== "thru-wet-signature-lineout"),
+        "AR 25-50, para 6-3d");
 }
 
 {

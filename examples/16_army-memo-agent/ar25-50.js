@@ -603,7 +603,119 @@ export const PROTOCOL_OSD = [
     "Directors of DoD Field Activities",
 ];
 
+/**
+ * Figure B-2's one footnote: the five Assistant Secretaries of the Army are a
+ * single line each in the figure, and take their own alphabetical order when
+ * some but not all of them are named separately.
+ */
+export const PROTOCOL_HQDA_DETAIL = {
+    cite: "AR 25-50, fig B-2, note",
+    assistantSecretariesOfArmy: {
+        order: ["ASA (Acquisition, Logistics and Technology)", "ASA (Civil Works)",
+                "ASA (Financial Management and Comptroller)", "ASA (Installations, Energy and Environment)",
+                "ASA (Manpower and Reserve Affairs)"],
+        alphabetical: true, cite: "AR 25-50, fig B-2, note",
+    },
+};
+
 export const PROTOCOL_CITE = "AR 25-50, appendix B, figs B-1 and B-2";
+
+/**
+ * Figure B-1's eight footnotes. Four of them break a single line of the
+ * figure into its own protocol sequence for when a memorandum names some but
+ * not all of that category - "Secretaries of the Military Departments" is one
+ * line in the figure and three positions with a stated order underneath it.
+ * The other three name their categories' members in the alphabetical order
+ * the footnote itself specifies, and the eighth is a fallback with no list to
+ * transcribe: "refer to the most recent DoD Order of Precedence memorandum."
+ *
+ * `insertAfter`/`insertBefore` record where a sub-list sits in the parent
+ * sequence when it is not already a single named line there - footnotes 3 and
+ * 4 both say so explicitly ("will be listed after ... and before ...").
+ */
+export const PROTOCOL_OSD_DETAIL = {
+    cite: "AR 25-50, fig B-1, notes 1-8",
+    secretariesOfMilitaryDepartments: {
+        order: ["Secretary of the Army", "Secretary of the Navy", "Secretary of the Air Force"],
+        cite: "AR 25-50, fig B-1, note 1",
+    },
+    underSecretariesOfDefense: {
+        order: [
+            "Under Secretary of Defense for Research and Engineering",
+            "Under Secretary of Defense for Acquisition and Sustainment",
+            "Under Secretary of Defense for Policy",
+            "Under Secretary of Defense (Comptroller)/Chief Financial Officer of the Department of Defense",
+            "Under Secretary of Defense for Personnel and Readiness",
+            "Under Secretary of Defense for Intelligence",
+        ],
+        cite: "AR 25-50, fig B-1, note 2",
+    },
+    chiefsOfMilitaryServices: {
+        order: ["Chief of Staff of the Army", "Commandant of the Marine Corps",
+                "Chief of Naval Operations", "Chief of Staff of the Air Force"],
+        insertAfter: "Under Secretaries of Defense", insertBefore: "Chief of the National Guard Bureau",
+        cite: "AR 25-50, fig B-1, note 3",
+    },
+    combatantCommands: {
+        order: [],   // alphabetical order of whichever commands are addressed - none are named
+        alphabetical: true,
+        insertAfter: "Chief of the National Guard Bureau",
+        insertBefore: "General Counsel of the Department of Defense",
+        cite: "AR 25-50, fig B-1, note 4",
+    },
+    assistantSecretariesOfDefense: {
+        order: ["Acquisition", "Asian and Pacific Security Affairs", "Energy, Installation and Environment",
+                "Health Affairs", "Homeland Defense and Global Security", "International Security Affairs",
+                "Logistics and Materiel Readiness", "Manpower and Reserve Affairs",
+                "Nuclear, Chemical, and Biological Defense Programs", "Readiness", "Research and Engineering",
+                "Special Operations and Low Intensity Conflict", "Strategy, Plans, and Capabilities"],
+        alphabetical: true, insertAfter: "Assistant Secretary of Defense for Legislative Affairs",
+        cite: "AR 25-50, fig B-1, note 5",
+    },
+    directorsOfDefenseAgencies: {
+        order: ["Defense Advanced Research Projects Agency", "Defense Commissary Agency",
+                "Defense Contract Audit Agency", "Defense Contract Management Agency",
+                "Defense Finance and Accounting Service", "Defense Health Agency",
+                "Defense Information Systems Agency", "Defense Intelligence Agency",
+                "Defense Legal Services Agency", "Defense Logistics Agency",
+                "Defense Prisoner of War/Missing in Action Accounting Agency",
+                "Defense Security Cooperation Agency", "Defense Security Service",
+                "Defense Threat Reduction Agency", "Missile Defense Agency",
+                "National Geospatial-Intelligence Agency", "National Reconnaissance Office",
+                "National Security Agency/Central Security Service", "Pentagon Force Protection Agency"],
+        alphabetical: true, cite: "AR 25-50, fig B-1, note 6",
+    },
+    directorsOfDodFieldActivities: {
+        order: ["Defense Media Activity", "Defense Technical Information Center",
+                "Defense Technology Security Administration", "DoD Education Activity",
+                "DoD Human Resources Activity", "DoD Test Resource Management Center",
+                "Office of Economic Adjustment", "Washington Headquarters Services"],
+        alphabetical: true, cite: "AR 25-50, fig B-1, note 7",
+    },
+    // "When addressing memorandums that also include other DoD officials,
+    //  refer to the most recent DoD Order of Precedence memorandum to
+    //  determine appropriate placement order." - fig B-1, note 8. No list
+    //  in AR 25-50 to transcribe; this is the fact that none exists here.
+    otherOfficials: {referTo: "the most recent DoD Order of Precedence memorandum", cite: "AR 25-50, fig B-1, note 8"},
+};
+
+/**
+ * Whether a set of same-category addressees (the footnote 1/2/3 style, a
+ * fixed stated order) or an alphabetical-order category (5/6/7) is in the
+ * order its footnote requires. Names that are not in the category's own list
+ * are ignored, the same tolerance `checkProtocolOrder` uses.
+ */
+export function checkProtocolDetailOrder(addressees, detail) {
+    const want = detail.alphabetical
+        ? [...detail.order].sort((a, b) => a.localeCompare(b))
+        : detail.order;
+    const present = want.filter((title) =>
+        addressees.some((a) => String(a).toUpperCase().includes(title.toUpperCase())));
+    const seen = addressees
+        .map((a) => want.find((title) => String(a).toUpperCase().includes(title.toUpperCase())))
+        .filter(Boolean);
+    return seen.length === present.length && seen.every((title, i) => title === present[i]);
+}
 
 /**
  * Where an addressee sits in a protocol sequence, or -1 if it is not one of

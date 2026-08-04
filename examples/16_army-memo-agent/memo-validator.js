@@ -44,6 +44,11 @@ import {
     OVERSEAS_CITE,
     checkProtocolOrder,
     PROTOCOL_CITE,
+    PROTOCOL_HQDA,
+    PROTOCOL_OSD,
+    PROTOCOL_OSD_DETAIL,
+    PROTOCOL_HQDA_DETAIL,
+    checkProtocolDetailOrder,
     ALARACT,
     supersedingAuthority,
     SUPERSEDING_AUTHORITY,
@@ -76,6 +81,7 @@ import {
     normalizeGrade,
     isEnlisted,
     GRADE_TABLE_CITE,
+    AUTHORITY_LINES,
 } from "./signature-blocks.js";
 
 function finding(severity, klass, rule, message, cite, extra = {}) {
@@ -435,14 +441,43 @@ function checkAddressGeography(addressees, out) {
  * appendix B - the Office of the Secretary of Defense (fig B-1) and HQDA
  * principal officials (fig B-2) - so addressees outside those lists are
  * ignored rather than reordered on a guess.
+ *
+ * Both sequences are checked, not only HQDA's: `checkProtocolOrder` already
+ * ignores names that are not in the sequence it is given, so running it
+ * against the OSD list on an HQDA-addressed memorandum costs nothing - no OSD
+ * names are present, so it reports in order trivially. `PROTOCOL_OSD` existed
+ * as data before this and was never read by anything.
  */
 function checkProtocol(addressees, out) {
     if (addressees.length < 2) return;
-    const result = checkProtocolOrder(addressees);
-    if (!result.inOrder) {
-        out.push(warn("content", "protocol-order",
-            `"${result.offender.addressee}" is listed after "${result.previous.addressee}", but precedes it in the protocol sequence for HQDA principal officials.`,
-            PROTOCOL_CITE));
+
+    for (const [sequence, population] of [[PROTOCOL_HQDA, "HQDA principal officials"],
+                                           [PROTOCOL_OSD, "the Office of the Secretary of Defense"]]) {
+        const result = checkProtocolOrder(addressees, sequence);
+        if (!result.inOrder) {
+            out.push(warn("content", "protocol-order",
+                `"${result.offender.addressee}" is listed after "${result.previous.addressee}", `
+                + `but precedes it in the protocol sequence for ${population}.`,
+                PROTOCOL_CITE));
+        }
+    }
+
+    /*
+     * Figure B-1's footnotes: naming some but not all of one category has its
+     * own required order underneath the single line the figure gives that
+     * category (or, for three categories, its own alphabetical order). Each
+     * is checked independently and by name, because a memorandum failing one
+     * footnote should not be reported against a different one.
+     */
+    for (const [figure, detail] of [["fig B-1", PROTOCOL_OSD_DETAIL], ["fig B-2", PROTOCOL_HQDA_DETAIL]]) {
+        for (const category of Object.values(detail)) {
+            if (!Array.isArray(category.order) || category.order.length === 0) continue;
+            if (!checkProtocolDetailOrder(addressees, category)) {
+                out.push(warn("content", "protocol-detail-order",
+                    `These addressees are not in the order ${figure}'s note gives for this category.`,
+                    category.cite));
+            }
+        }
     }
 }
 
@@ -760,7 +795,24 @@ function checkCorrespondenceVehicle(memo, out) {
  * are reported rather than silently left undone.
  */
 function checkDigitalSignature(memo, out) {
-    if (memo.digitalSignature === false) return;
+    if (memo.digitalSignature === false) {
+        /*
+         * "For 'THRU' correspondence, when no comment has been made, the
+         *  signer will line through the appropriate address and initial and
+         *  date the line through." - para 6-3d. The wet-signature counterpart
+         *  to the digital box above: an action each THRU addressee takes on
+         *  the printed page with a pen, not something a Word template can
+         *  render - reported for the same reason the boxes are.
+         */
+        if (memo.thru?.length) {
+            out.push(warn("content", "thru-wet-signature-lineout",
+                "Each THRU addressee who has no comment lines through their own address line and "
+                + "initials and dates the line-through; a THRU addressee who does comment signs "
+                + "normally. This happens on the printed page after signing, so it is not in the .docx.",
+                "AR 25-50, para 6-3d"));
+        }
+        return;
+    }
 
     if (memo.thru?.length) {
         out.push(warn("content", "thru-signature-boxes",
@@ -1238,6 +1290,36 @@ function checkSignatureFormalities(memo, out) {
     if (!decision.required && memo.authorityLine && memo.type !== "record") {
         out.push(warn("content", "authority-line-unnecessary",
             `${decision.reason} Remove the authority line.`, decision.cite));
+    }
+
+    /*
+     * "Civilians will not use 'DAC' (Department of the Army Civilian) on a
+     *  signature block unless they are attached to or are serving within a
+     *  multi-Service organization." - para 6-4a, Note 2. Checked across the
+     *  whole block rather than one field, because "DAC" turns up equally
+     *  often tacked onto the title as onto the name.
+     */
+    const sigText = [sig.name, sig.gradeAndBranch, sig.title].filter(Boolean).join(" ");
+    if (/\bDAC\b/.test(sigText) && !memo.multiServiceOrganization) {
+        out.push(error("format", "dac-not-authorized",
+            '"DAC" is not used on a signature block unless the office is attached to or serving '
+            + "within a multi-Service organization.",
+            "AR 25-50, para 6-4a, Note 2"));
+    }
+
+    /*
+     * "All SECARMY delegations will be copy furnished to the AASA." -
+     * para 6-2d, Note. Not a layout rule - a routing one - so it is reported
+     * rather than rendered, the same way the appendix F signature boxes are.
+     */
+    const secretaryLine = AUTHORITY_LINES.secretary;
+    if (memo.authorityLine
+        && normalizeAddressForm(memo.authorityLine) === normalizeAddressForm(secretaryLine.text)
+        && !(memo.copiesFurnished ?? []).some((c) => new RegExp(`\\b${secretaryLine.copyFurnished}\\b`).test(c))) {
+        out.push(warn("content", "secarmy-delegation-not-copied",
+            `A memorandum using "${secretaryLine.text}" is copy furnished to the `
+            + `${secretaryLine.copyFurnished}.`,
+            secretaryLine.copyFurnishedCite));
     }
 }
 

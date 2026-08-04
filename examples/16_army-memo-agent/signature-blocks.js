@@ -179,6 +179,15 @@ export const ARNG_OFFICE_SYMBOL_CITE = "AR 25-50, para 6-5c(11)";
 export const PROMOTABLE = {pattern: /\(P\)/, cite: "AR 25-50, para 6-5c(2)"};
 
 /**
+ * The professional-degree abbreviations para 6-8c names or gives as its own
+ * examples - "Doctor of Philosophy (Ph.D.), Bachelor of Science (B.S.), and
+ * Master of Fine Arts (M.F.A.)" - plus the common credentials that follow the
+ * same "letters, periods, comma before" shape. Matched with a word boundary
+ * so "B.S." does not fire on ordinary text that happens to contain a "b".
+ */
+export const DEGREE_ABBREVIATION = /\b(Ph\.?D|Ed\.?D|J\.?D|M\.?D|B\.?A|B\.?S|M\.?A|M\.?S|M\.?B\.?A|M\.?F\.?A)\.?\b/;
+
+/**
  * "The person signing will write his or her own name and add the word 'for' in
  *  front of the typed name in the signature block." - para 6-3c
  *
@@ -237,6 +246,25 @@ export function buildSignature(signer, correspondence = "memorandum") {
                 rule: "civilian-grade",
                 message: "A civilian signature block carries name and title only, with no military grade.",
                 cite: "AR 25-50, paras 6-4a note 2 and 6-8a",
+            });
+        }
+        /*
+         * "Abbreviations reflecting professional degrees may be used in
+         *  civilian signature blocks when dealing with foreign and high-level
+         *  officials outside DoD [or in] Army teaching institutions... Do not
+         *  use these abbreviations in routine correspondence." - para 6-8c.
+         * The exception is the correspondence's context, not the signer's -
+         * `foreignOrHighLevelOfficial` and `academicInstitution` name that
+         * context rather than describing the person.
+         */
+        if (DEGREE_ABBREVIATION.test(`${signer.name ?? ""} ${signer.title ?? ""}`)
+            && !signer.foreignOrHighLevelOfficial && !signer.academicInstitution) {
+            findings.push({
+                rule: "degree-abbreviation-routine",
+                message: "A degree abbreviation in a civilian signature block is used only for foreign and "
+                    + "high-level officials outside DoD, or in Army teaching institutions - not in routine "
+                    + "correspondence.",
+                cite: "AR 25-50, para 6-8c",
             });
         }
         return finish(name, null, signer, findings);
@@ -519,6 +547,12 @@ export const AUTHORITY_LINES = {
         text: "BY ORDER OF THE SECRETARY OF THE ARMY:",
         cite: "AR 25-50, para 6-2d",
         restricted: true,
+        // "Note. All SECARMY delegations will be copy furnished to the AASA."
+        // - para 6-2d, Note. Not a formatting rule the layout can enforce -
+        // it is a routing requirement about who else receives the memorandum
+        // - so it is a fact the validator checks for, not something rendered.
+        copyFurnished: "AASA",
+        copyFurnishedCite: "AR 25-50, para 6-2d, Note",
     },
     // "Documents signed by the commander's staff normally use this authority
     //  line when the document pertains to command policy." - para 6-2e(2)
