@@ -115,8 +115,14 @@
   .pill.err { background:var(--err-bg); color:var(--err); }
 
   #preview { background:var(--sheetbg); border:1px solid var(--line); border-radius:10px;
-             padding:26px 0; overflow:hidden; }
+             padding:26px 0; overflow:hidden; min-height:220px; display:flex;
+             align-items:center; justify-content:center; }
   #preview .page { box-shadow:0 10px 30px var(--shadow) !important; }
+  #preview .emptystate { margin:0; padding:0 32px; color:#cfcdc2; font-size:14px;
+                          text-align:center; max-width:34ch; }
+  :root[data-theme="dark"] #preview .emptystate { color:#9a9d92; }
+  :root[data-theme="light"] #preview .emptystate { color:#cfcdc2; }
+  @media (prefers-color-scheme: dark) { #preview .emptystate { color:#9a9d92; } }
 
   .note { margin:10px 0 0; font-size:13px; color:var(--dim); }
   .note b { color:var(--ink); }

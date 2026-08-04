@@ -202,7 +202,29 @@ const BLANK_RULES = new Set(["not-yet-supplied", "unfilled-placeholder",
   "letterhead-organization", "zip-missing"]);
 const isBlankAdvisory = (f) => f.severity === "warning" && BLANK_RULES.has(f.rule);
 
+/*
+ * An untouched form has no memorandum yet - specFromForm still has to
+ * default *some* type internally (it falls back to "standard"), and
+ * rendering that default produces a real sheet full of bracketed
+ * [PURPOSE SENTENCE]-style placeholders. That's correct once a type is
+ * chosen, but as the very first thing a visitor sees it reads as a
+ * broken document, not an empty one. So: nothing is picked yet means no
+ * sheet renders at all - a plain invitation instead.
+ */
+function isUntouched() {
+  return !$("type").value && !$("request").value.trim() &&
+    !$("subject").value.trim() && !$("body").value.trim();
+}
+
 function render() {
+  if (isUntouched()) {
+    $("viewerchips").innerHTML = "";
+    $("report").innerHTML = "";
+    $("outstanding").innerHTML = "";
+    $("preview").innerHTML = '<p class="emptystate">Pick a type, or describe what you need, and the memorandum appears here.</p>';
+    return;
+  }
+
   const spec = currentSpec();
   const result = validateMemo(spec);
   const meta = MEMO_TYPES[spec.type] ?? MEMO_TYPES.standard;
@@ -220,15 +242,9 @@ function render() {
         (f.severity === "error" ? "Error" : "Advisory") + "</span><b>" + escapeHtml(humanRule(f.rule)) + "</b> — " +
         escapeHtml(f.message) + '<span class="cite">' + escapeHtml(f.cite) + "</span></li>").join("") + "</ul>"
     : '<p class="pass">Nothing to fix.</p>';
-  // An untouched page gets one sentence of orientation, not a verdict on
-  // a memorandum nobody has started yet.
-  const untouched = !$("type").value && !$("request").value.trim() &&
-    !$("subject").value.trim() && !$("body").value.trim();
   $("report").innerHTML =
     (PLAIN_PAPER[spec.type] ? '<p class="note">No letterhead on this type by rule: plain white paper — AR 25-50, ' +
-      PLAIN_PAPER[spec.type] + ".</p>" : "") +
-    (untouched ? '<p class="note">This is the blank example — pick a type above and it becomes yours as you fill it in.</p>'
-               : list);
+      PLAIN_PAPER[spec.type] + ".</p>" : "") + list;
 
   // Blanks are safe by design - say so once, quietly, with the list an
   // open-if-you-care fold. Re-renders keep whatever the reader chose.
