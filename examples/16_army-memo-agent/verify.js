@@ -2707,24 +2707,34 @@ const FIELD_TEMPLATE = {
     /*
      * Every matter of record left blank comes back *blank* - not filled with
      * something plausible, and not filled with bracket text either. What the
-     * document carries is the frame; the slot stays empty until told.
+     * document carries is the frame; the slot stays empty until told. The
+     * one exception is the date, by the owner's direction: it defaults to
+     * today in military style, because a memorandum generated today is
+     * dated today in the owner's workflow - typing a date still overrides.
      */
     const blank = specFromForm({request: "tell the battalions the range closes"});
     const isBlank = (v) => v == null || (typeof v === "string" && v.trim() === "")
         || (typeof v === "object" && Object.values(v).every(isBlank));
     for (const {path, label} of (await import("./templates.js")).RECORD_FIELDS) {
+        if (path === "date") continue;   // owner-directed: defaults to today, checked below
         const value = path.split(".").reduce((o, k) => o?.[k], blank);
         checkTrue(`${label} defaults to blank, not to a plausible value`, isBlank(value), "AR 25-50");
     }
-    check("the date is blank, because it goes on after signature",
-        blank.date, "", "AR 25-50, para 2-4a(3)(b)");
+    check("the date defaults to today, military style",
+        blank.date, (await import("./ar25-50.js")).formatMemoDate(), "AR 25-50, para 2-4a(3) as directed");
+    check("and a typed date overrides the default",
+        specFromForm({request: "tell the battalions the range closes", date: "1 July 2026"}).date,
+        "1 July 2026", "AR 25-50, para 2-4a(3)");
 
-    // Blank is reported as not yet supplied, with what it is and where it goes.
+    // Blank is reported as not yet supplied, with what it is and where it
+    // goes. The date is never in this list - it defaults to today.
     const pending = validateMemo(blank).warnings.filter((f) => f.rule === "not-yet-supplied");
-    for (const what of ["Office symbol", "Date", "Subject", "Signature block"]) {
+    for (const what of ["Office symbol", "Subject", "Signature block"]) {
         checkTrue(`${what.toLowerCase()} is reported as not yet supplied`,
             pending.some((f) => f.message.startsWith(what)), "AR 25-50");
     }
+    checkTrue("the date is not reported - it is already on the page",
+        !pending.some((f) => f.message.startsWith("Date")), "AR 25-50, para 2-4a(3) as directed");
     checkTrue("every one of them says which paragraph puts it there",
         pending.every((f) => /AR 25-50, para/.test(f.cite)), "AR 25-50");
     checkTrue("and none of them is an error - the format is right, the value is absent",
@@ -2799,6 +2809,20 @@ const FIELD_TEMPLATE = {
             organization: "HQ, 4TH INFANTRY DIVISION"}).letterhead.organization,
         "HQ, 4TH INFANTRY DIVISION", "AR 25-50, para 2-7 as directed");
     check("fig 2-17: an MFR carries no authority line", mfr.authorityLine, null, "AR 25-50, fig 2-17");
+
+    /*
+     * Enclosures are never forced: a memorandum with none carries no Encl
+     * line at all, and one typed title is placed beside the signature block
+     * (fig 2-17's own margin numerals; the chapter 4 listing forms).
+     */
+    const {renderText: rt} = await import("./memo-formatter.js");
+    checkTrue("an MFR with no enclosures carries no Encl line",
+        !/\bEncl\b/.test(rt(specFromForm({type: "record", subject: "S", body: "One paragraph."}))),
+        "AR 25-50, chapter 4");
+    checkTrue("and one typed enclosure title is placed",
+        rt(specFromForm({type: "record", subject: "S", body: "One paragraph.",
+            enclosures: "Sign-in Roster, 30 Jul 26"})).includes("Sign-in Roster"),
+        "AR 25-50, chapter 4");
 
     // Whatever the page produces still has to satisfy the regulation.
     for (const type of ["standard", "thru", "exclusiveFor", "appreciation", "commendation", "record", "decision", "mou", "moa"]) {
@@ -3426,6 +3450,22 @@ const FIELD_TEMPLATE = {
         /d\.plainPaper/.test(homeHtml) && /plain white paper/.test(homeHtml), "front end");
     checkTrue("generate() goes through the fitting path, not a direct srcdoc assignment",
         /resizeFrame\(d\.html\)/.test(homeHtml) && !/\$\("frame"\)\.srcdoc\s*=\s*d\.html/.test(homeHtml),
+        "front end");
+
+    /*
+     * The example leads, and the fields replace it: selecting a type - by
+     * dropdown or by the request being read - renders that type's example
+     * at once, and every committed field edit re-renders the preview with
+     * the typed value in place of the template's, no Generate press needed.
+     */
+    checkTrue("selecting a type previews its example without pressing Generate",
+        /\$\("type"\)\.addEventListener\("change", \(\) => \{ fetchFields\(\); autoPreview\(\); \}\)/.test(homeHtml),
+        "front end");
+    checkTrue("a detected type previews its example too",
+        /lastType = d\.type;\s*fetchFields\(\);\s*autoPreview\(\);/.test(homeHtml), "front end");
+    checkTrue("and editing any field re-renders the preview in place",
+        /\$\("f"\)\.addEventListener\("change",/.test(homeHtml)
+            && /autoPreview\(\)/.test(homeHtml) && /setTimeout\(generate, /.test(homeHtml),
         "front end");
 
     const postFields = (body) => fetch(`${base}/fields`, {

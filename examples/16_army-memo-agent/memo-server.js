@@ -110,7 +110,10 @@ export function specFromForm(form = {}) {
     const context = {
         type,
         officeSymbol: filled(form.officeSymbol, record.officeSymbol),
-        date: filled(form.date, record.date),
+        // The date defaults to today, military style - owner-directed. Para
+        // 2-4a(3)(b) allows adding it after signing instead; typing a
+        // different date in the form still overrides.
+        date: filled(form.date, formatMemoDate()),
         suspenseDate: filled(form.suspenseDate, null),
         // An unsupplied addressee is a blank like any other, so it falls back
         // to the template's placeholder rather than to nothing. An MFR and an
@@ -738,19 +741,37 @@ function downloadFilename(ext) {
 $("f").addEventListener("submit", (e) => { e.preventDefault(); generate(); });
 $("dl").addEventListener("click", () => download("/docx", downloadFilename("docx")));
 $("spec").addEventListener("click", () => download("/spec", downloadFilename("json")));
+
+/*
+ * The example leads and the fields replace it. Selecting a type - by the
+ * dropdown or by the request being read - renders that type's example at
+ * once, templated placeholders and all, so what the memorandum looks like
+ * is on screen before anything is typed. From there every committed edit
+ * (change fires on blur for text, immediately for the checkbox and select)
+ * re-renders the preview with the typed value in place of the template's -
+ * headers, signature block, enclosures, all of it - without reaching for
+ * the Generate button. Debounced so a burst of change events (autofill,
+ * Forget) costs one render; generate() itself refreshes the field
+ * visibility, so /fields stays in step with every re-render.
+ */
+let autoTimer = 0;
+function autoPreview() {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(generate, 250);
+}
 $("request").addEventListener("blur", async () => {
   if (!$("request").value.trim() || $("type").value) return;
   const d = await (await post("/detect", {request: $("request").value})).json();
   $("detected").textContent = "Reading this as: " + d.title + " (" + d.cite + ")";
   lastType = d.type;
   fetchFields();
+  autoPreview();
 });
-$("type").addEventListener("change", fetchFields);
-// Addressee count is the one other thing besides type that changes what
-// /fields answers - past five it is a SEE DISTRIBUTION memorandum (para
-// 2-4a(5)(c)) and the Distribution field appears, before Generate has to
-// be clicked to find that out.
-$("addressees").addEventListener("change", fetchFields);
+$("type").addEventListener("change", () => { fetchFields(); autoPreview(); });
+$("f").addEventListener("change", (e) => {
+  if (e.target.id === "type" || e.target.id === "request") return;
+  autoPreview();
+});
 
 loadUnit();
 fetchFields();

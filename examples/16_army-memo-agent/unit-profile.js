@@ -236,8 +236,8 @@ export const FIELDS = [
     {
         path: "date", scope: "memorandum", optional: true,
         label: "Date", prompt: "DATE",
-        hint: "Normally left blank - para 2-4a(3)(b) puts it on after the memorandum is signed.",
-        cite: "AR 25-50, para 2-4a(3)(b)",
+        hint: "Defaults to today, military style. Type a different date to override.",
+        cite: "AR 25-50, para 2-4a(3)",
         when: (memo) => !memo.abbreviated && !isLetter(memo),
     },
 ];
