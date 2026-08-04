@@ -3355,21 +3355,31 @@ const FIELD_TEMPLATE = {
         homeHtml.includes(".split(/\\s+/)"), "AR 25-50, para 2-4a(6)");
 
     /*
-     * The preview iframe used to be a fixed 74vh box scrolling its own
-     * content while sitting inside "#out", which also scrolls (sticky, so a
-     * finding stays alongside the line it is about) - two independently
-     * scrolling regions nested in each other, so the signature block on
-     * anything longer than a short memo could be out of view inside a box
-     * only partly visible inside another box, reachable by no single scroll
-     * gesture. resizeFrame() reads the loaded iframe's own content height
-     * and grows the iframe to match, so one scroll - the outer one that
-     * already exists - reaches all of it.
+     * The memorandum is a fixed 8.5in sheet, so the preview has to solve
+     * both directions the hard way a PDF viewer does. Vertically: a fixed
+     * 74vh iframe scrolling inside "#out" (which also scrolls) once hid the
+     * signature block behind two nested scrollbars. Horizontally: any pane
+     * narrower than the sheet's 816px hid the right half of the document
+     * behind an iframe-internal horizontal scrollbar sitting at the bottom
+     * of a very tall frame. fitPreview() scales the sheet to the pane's
+     * width (zoom, so scrollHeight reports the scaled size) and grows the
+     * iframe to the scaled content's full height - one outer scroll, whole
+     * document, at any window width. The resize listener is what keeps that
+     * true when the window changes after Generate.
      */
-    checkTrue("the preview iframe resizes to fit what it is actually showing",
-        /frame\.contentDocument\.documentElement\.scrollHeight/.test(homeHtml)
-            && /frame\.style\.height\s*=/.test(homeHtml),
+    checkTrue("the preview scales the fixed-width sheet to the pane it is actually in",
+        /function fitPreview\(\)/.test(homeHtml)
+            // The applying line, not the reset line - .zoom = "" also exists
+            // and matching it alone would let the scaling itself disappear.
+            && /doc\.body\.style\.zoom = String\(scale\)/.test(homeHtml)
+            && /Math\.min\(1,\s*frame\.clientWidth/.test(homeHtml),
         "front end");
-    checkTrue("generate() goes through the resizing path, not a direct srcdoc assignment",
+    checkTrue("and grows the iframe to the scaled content's full height",
+        /doc\.documentElement\.scrollHeight/.test(homeHtml) && /frame\.style\.height\s*=/.test(homeHtml),
+        "front end");
+    checkTrue("and re-fits when the window is resized",
+        /addEventListener\("resize",/.test(homeHtml), "front end");
+    checkTrue("generate() goes through the fitting path, not a direct srcdoc assignment",
         /resizeFrame\(d\.html\)/.test(homeHtml) && !/\$\("frame"\)\.srcdoc\s*=\s*d\.html/.test(homeHtml),
         "front end");
 

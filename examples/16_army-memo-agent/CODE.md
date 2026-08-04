@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-911 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
+913 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 911/911 checks passed.
+# AR 25-50 layout verification: 913/913 checks passed.
 ```
 
 ---
@@ -858,6 +858,12 @@ One more served-source bug class got a permanent check: the page's script lives 
 
 All verified the same way as §16e - live server, real HTTP, Playwright across the affected types with zero console errors, each fix fault-reintroduced and its check watched to fail - plus, for the preview fix, the user's own reproduction re-run and screenshotted: one scroll from heading to signature block. 877 -> 911 checks.
 
+**The preview's second cut, and the general fix.** The height fix above was half a fix, and the user caught the other half: the memorandum is a fixed 8.5-inch sheet - 816 CSS pixels that may not reflow, because every measurement on it is the regulation's - so on any pane narrower than that (a laptop window, a split screen, a phone) the sheet overflowed the iframe sideways and the right half of the document was gone. Technically it sat behind the iframe's own horizontal scrollbar; with the iframe now grown to full content height, that scrollbar was at the bottom of a frame several screens tall - reachable in principle, invisible in practice.
+
+A document with fixed geometry gets the PDF-viewer treatment: `fitPreview()` measures the sheet's natural width against the pane's, scales the whole document down to fit (CSS `zoom` rather than `transform: scale()`, because zoom participates in layout - `scrollHeight` then simply reports the scaled size, and the iframe height needs no manual scaled-box arithmetic that could drift), never scales *up* past natural size on wide panes, and re-fits on window resize, coalesced to one measurement per animation frame. Verified live at five window widths - 1720px (natural size, centered), 1400px, 1100px with a two-page memorandum (both pages covered), 1000px (the reported failure case), 950px reached by *resizing after* Generate, and 480px single-column mobile - asserting at each that the document's scroll extent fits the frame in both axes, with screenshots and zero console errors.
+
+The first attempt at the fault-reintroduction check here is itself worth recording: the check asserted the served page contains a `.zoom =` assignment - which also matches the *reset* line (`zoom = ""`), so deleting the actual scaling left the check green. The check now pins the applying line (`zoom = String(scale)`) specifically, and was watched to fail against the reintroduced fault before the fix went back. A check that cannot fail is not a check. 911 -> 913.
+
 ---
 
 ---
@@ -968,7 +974,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 911 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 913 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

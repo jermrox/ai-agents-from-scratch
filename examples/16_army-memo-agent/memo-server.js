@@ -557,31 +557,55 @@ async function post(path, body) {
 }
 
 /*
- * The preview used to be a fixed 74vh box scrolling its own content while
- * sitting inside "#out", which *also* scrolls (it is sticky, so a finding
- * and the memo line it is about stay on screen together as the form scrolls
- * past). Two independently scrolling regions nested inside each other meant
- * the memo's own signature block - the point of an MFR - could be out of
- * view inside a box only partly visible inside another box, and no single
- * scroll gesture reached it.
+ * The memorandum is a fixed 8.5-inch sheet - every measurement on it is the
+ * regulation's, in inches, and none of it may reflow - so the preview gets
+ * the PDF-viewer treatment: scale the whole sheet down until its width fits
+ * the pane it is actually in, keep the aspect ratio, and grow the iframe to
+ * the scaled content's full height so the one outer scroll reaches all of it.
  *
- * Sizing the iframe to its own content's real height turns that into one
- * scroll: the outer "#out" region's, which already exists for the reason
- * above. A srcdoc iframe is same-document-accessible from its parent even
- * though it has an opaque origin for loading resources (that is what
- * withServedSeal() works around) - reading contentDocument here is not the
- * same operation as fetching the seal image.
+ * Both cuts this replaces were real: a fixed 74vh iframe scrolling inside
+ * "#out" (which also scrolls - it is sticky so a finding stays beside the
+ * line it is about) hid the bottom of the memo behind two nested
+ * scrollbars, and any pane narrower than the sheet's 816px hid the right
+ * half of it behind a horizontal scrollbar sitting at the bottom of a very
+ * tall frame - reachable in principle, invisible in practice.
+ *
+ * CSS zoom rather than transform scale() because zoom participates in
+ * layout: scrollHeight and scrollWidth report the zoomed size, so the
+ * height the iframe needs is simply what the document says it is - no
+ * manual scaled-box arithmetic to drift out of sync. A srcdoc iframe's
+ * contentDocument is same-origin-accessible from its parent even though
+ * its opaque origin blocks resource loading (that is what withServedSeal()
+ * works around) - reading it here is a different operation.
  */
+function fitPreview() {
+  const frame = $("frame");
+  let doc;
+  try { doc = frame.contentDocument; } catch (e) { return; }
+  const page = doc && doc.querySelector ? doc.querySelector(".ar25-50-memo .page") : null;
+  if (!page) return;
+  doc.body.style.zoom = "";
+  const natural = page.getBoundingClientRect().width;
+  if (!natural || !frame.clientWidth) return;
+  // A small gutter keeps the sheet's drop shadow inside the frame.
+  const scale = Math.min(1, frame.clientWidth / (natural + 24));
+  if (scale < 1) doc.body.style.zoom = String(scale);
+  frame.style.height = Math.max(300, doc.documentElement.scrollHeight + 4) + "px";
+}
+
 function resizeFrame(html) {
   const frame = $("frame");
-  frame.onload = () => {
-    try {
-      const h = frame.contentDocument.documentElement.scrollHeight;
-      frame.style.height = Math.max(300, h + 24) + "px";
-    } catch (e) { /* the fixed default height still shows the memo */ }
-  };
+  frame.onload = fitPreview;
   frame.srcdoc = html;
 }
+
+// The pane's width changes with the window; the sheet's never does. Re-fit
+// on resize, coalesced to one measurement per frame.
+let refit = 0;
+window.addEventListener("resize", () => {
+  cancelAnimationFrame(refit);
+  refit = requestAnimationFrame(fitPreview);
+});
 
 function renderReport(d) {
   const list = d.findings.length
