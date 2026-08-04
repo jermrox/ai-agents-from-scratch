@@ -64,21 +64,36 @@ export function assembleMemo(content, context = {}) {
     // plausible-looking default. `letterhead` is compared against undefined
     // because null is a real answer - an MFR is on plain paper (fig 2-17).
     const record = recordFieldPlaceholders();
+    const type = context.type ?? "standard";
+
+    /*
+     * "MEMORANDUM FOR RECORD" is the whole heading - there is no addressee to
+     * put after it, no THRU chain to route it through, no letterhead (fig
+     * 2-17 para 1: plain white paper), and "Do not use an authority line"
+     * (fig 2-17 step 6). This is a fact about the type, not a drafting
+     * choice, so it overrides drafted content and caller context alike -
+     * a model or a stale form field that supplied an addressee for an MFR
+     * must not have it rendered. Enforced here, once, rather than in every
+     * caller that builds a context: CLI and server both build one and had
+     * each remembered `letterhead`/`authorityLine` but not `addressees`/
+     * `thru`, which is exactly how this gap got in.
+     */
+    const isRecord = type === "record";
 
     return {
-        type: context.type ?? "standard",
-        letterhead: context.letterhead !== undefined ? context.letterhead : record.letterhead,
+        type,
+        letterhead: isRecord ? null : (context.letterhead !== undefined ? context.letterhead : record.letterhead),
         officeSymbol: context.officeSymbol ?? record.officeSymbol,
         date: context.date ?? record.date,
         suspenseDate: context.suspenseDate ?? null,
         addressStyle: context.addressStyle ?? "mixed",
-        addressees: content.addressees?.length ? content.addressees : (context.addressees ?? []),
-        thru: context.thru ?? [],
+        addressees: isRecord ? [] : (content.addressees?.length ? content.addressees : (context.addressees ?? [])),
+        thru: isRecord ? [] : (context.thru ?? []),
         seeDistribution: context.seeDistribution ?? false,
         distribution: context.distribution ?? [],
         subject: content.subject,
         paragraphs: buildParagraphTree(content.paragraphs),
-        authorityLine: context.authorityLine ?? null,
+        authorityLine: isRecord ? null : (context.authorityLine ?? null),
         signature: context.signature ?? record.signature,
         digitalSignature: context.digitalSignature !== false,
         enclosures: context.enclosures ?? [],
@@ -101,6 +116,21 @@ export function assembleMemo(content, context = {}) {
 // Reading the request
 // ---------------------------------------------------------------------------
 
+/*
+ * The record request is the one whose two halves - "memorialize this" and
+ * "this is what happened" - can land in either order in ordinary speech: "I
+ * had a meeting... need to document it" says the event first, "document my
+ * call with range control" says it second. A single ordered regex only
+ * catches the second shape. Two lookaheads catch both, because each only
+ * asserts its half is present somewhere in the request, not where.
+ */
+const RECORD_VERBS = "record|document|memorialize|write up|log|capture";
+const RECORD_EVENTS = "calls?|phone calls?|conversations?|meetings?|discussions?|briefings?|" +
+    "site visits?|walkthroughs?|decision reached|agreement reached";
+const RECORD_PATTERN = new RegExp(
+    `\\bmemorandum for record\\b|\\bmemo for record\\b|\\bmfr\\b|` +
+    `(?=.*\\b(?:${RECORD_VERBS})\\b)(?=.*\\b(?:${RECORD_EVENTS})\\b)`);
+
 /**
  * Pick the memorandum type from what the user actually asked for.
  *
@@ -114,7 +144,7 @@ export function detectMemoType(request = "") {
     const rules = [
         [/\bmemorandum of agreement\b|\bmoa\b/, "moa"],
         [/\bmemorandum of understanding\b|\bmou\b/, "mou"],
-        [/\bmemorandum for record\b|\bmfr\b|\b(record|document|memorialize|write up)\b[^.]*\b(call|phone call|conversation|meeting|discussion|decision reached|agreement reached)\b/, "record"],
+        [RECORD_PATTERN, "record"],
         [/\bdecision memo\w*\b|\bfor decision\b|\bseeking (a )?decision\b|\bapproval memo\w*\b/, "decision"],
         [/\bthru\b|\bthrough the chain of command\b|\bendorse\w*\b/, "thru"],
     ];

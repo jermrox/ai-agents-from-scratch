@@ -1696,6 +1696,31 @@ const FIELD_TEMPLATE = {
     check("intent: anything else is a standard memorandum",
         detectMemoType("tell the battalions the range is closed"), "standard",
         "AR 25-50, para 2-4");
+
+    /*
+     * fig 2-17's own use case - "document informal meetings or telephone
+     * conversations" - is two ideas that land in either order in ordinary
+     * speech. The event named first is the shape the original single-pass
+     * regex missed entirely, silently defaulting to "standard."
+     */
+    check("intent: the event named before the record verb still selects the MFR",
+        detectMemoType("I had a meeting with the contractor and need to document it"), "record",
+        "AR 25-50, para 2-7");
+    check("intent: \"memo for record\" (not the full official name) still selects the MFR",
+        detectMemoType("write a memo for record of the incident"), "record",
+        "AR 25-50, para 2-7");
+    check("intent: \"log a conversation\" still selects the MFR",
+        detectMemoType("I need to log a conversation I had with the vendor"), "record",
+        "AR 25-50, para 2-7");
+    check("intent: \"capture\" a site visit still selects the MFR",
+        detectMemoType("capture the details of our site visit yesterday"), "record",
+        "AR 25-50, para 2-7");
+    checkTrue("intent: a record verb alone, with no event, does not force the MFR",
+        detectMemoType("document the new leave policy for all units") !== "record",
+        "AR 25-50, para 2-7");
+    checkTrue("intent: an event alone, with no record verb, does not force the MFR",
+        detectMemoType("send a memo to the battalions about the upcoming range meeting") !== "record",
+        "AR 25-50, para 2-7");
 }
 
 {
@@ -3116,6 +3141,56 @@ const FIELD_TEMPLATE = {
         validateMemo({type: "record", abbreviated: true,
                       paragraphs: mfr.paragraphs, signature: mfr.signature})
             .warnings.some((f) => f.rule === "abbreviated-mfr-placement"), MFR_ABBREVIATED.cite);
+
+    /*
+     * assembleMemo() is where drafted content and caller context merge into a
+     * spec, and it is the one place both the CLI and the front end route
+     * through - so it is where fig 2-17's "no addressee, no THRU, no
+     * letterhead, no authority line" has to be enforced, once, rather than
+     * trusted to every caller. It was not: a request that resolves to
+     * "record" but is answered with the standard demo's stock content (two
+     * addressees, a suspense date's worth of context) came out addressed,
+     * which fig 2-17 does not allow - reproduced here with exactly that
+     * mismatch before being fixed.
+     */
+    {
+        const {assembleMemo} = await import("./memo-intent.js");
+        const draftedWithAddressees = {
+            subject: "Telephone Conversation With Range Control",
+            addressees: ["Commander, 1st Battalion, 5th Infantry Regiment"],
+            paragraphs: [
+                {level: 0, text: "This documents a call with Range Control."},
+                {level: 0, text: "My point of contact is SSG Jane Doe, ATZB-RC, at 555-0142 or jane.doe@army.mil."},
+            ],
+        };
+        const recordContext = {
+            type: "record",
+            officeSymbol: "ATZB-RC",
+            date: "4 August 2026",
+            addressees: ["Commander, 2d Battalion, 5th Infantry Regiment"],
+            thru: ["Commander, 3d Battalion, 5th Infantry Regiment"],
+            authorityLine: "FOR THE COMMANDER:",
+            letterhead: {organization: "Should Not Appear"},
+        };
+        const assembled = assembleMemo(draftedWithAddressees, recordContext);
+
+        check("assembleMemo: an MFR gets no addressee even when drafted content supplies one",
+            assembled.addressees, [], "AR 25-50, fig 2-17");
+        check("and none even when the caller's context supplies one instead",
+            assembled.thru, [], "AR 25-50, fig 2-17");
+        check("assembleMemo: an MFR carries no authority line even when the context supplies one",
+            assembled.authorityLine, null, "AR 25-50, fig 2-17");
+        check("assembleMemo: an MFR carries no letterhead even when the context supplies one",
+            assembled.letterhead, null, "AR 25-50, fig 2-17");
+        checkTrue("assembleMemo: an MFR built this way raises no findings at all",
+            validateMemo({...assembled, signature: {name: "N", gradeAndBranch: "MAJ, IN", title: "S3"}})
+                .findings.length === 0, "AR 25-50, fig 2-17");
+
+        checkTrue("and an ordinary standard memorandum still keeps its drafted addressee",
+            assembleMemo(draftedWithAddressees, {type: "standard"})
+                .addressees.includes("Commander, 1st Battalion, 5th Infantry Regiment"),
+            "AR 25-50, para 2-4a(5)");
+    }
 }
 
 // ---------------------------------------------------------------------------

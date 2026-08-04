@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-708 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+720 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 708/708 checks passed.
+# AR 25-50 layout verification: 720/720 checks passed.
 ```
 
 ---
@@ -636,6 +636,20 @@ Chapter 1's citations are complete, but the same paragraph-by-paragraph read ext
 
 ---
 
+## 13i) Making the MFR bulletproof
+
+Every measurement in figure 2-17 already had a check — office symbol to `MEMORANDUM FOR RECORD` on the third line, `SUBJECT:` on the second, text on the third below that, the signature block on the fifth line below the text, `Encl` beside the name, the digital-signature-box position, the abbreviated form down to the `.docx` itself. Re-measuring the figure directly (rasterised at 200 dpi from the source PDF, the same discipline as the seal) confirmed all of it, including the one gap the figure itself leaves: no line count appears between its steps 7 and 8, which is the figure choosing not to re-annotate an ordinary paragraph gap rather than a rule of any kind.
+
+What was not yet bulletproof was everything upstream of the layout - whether a real request actually *reaches* that layout as a memorandum for record at all.
+
+**Intent detection missed half its own cases.** `detectMemoType()`'s record rule matched a verb then a noun in that order - `document ... call` - which is exactly backwards from how people as often say it: "I had a meeting... need to document it" names the event first. Four of six natural phrasings tested came back `standard` silently. Rewritten as two lookaheads, `(?=.*record-verb)(?=.*record-event)`, order stops mattering - each lookahead only asserts its half is present *somewhere*, not where - and `memo for record` (not the regulation's full name) was added as a literal alternative. Precision held: a record verb with no named event, or a meeting mentioned with no record verb, still falls through to `standard`, checked explicitly in `verify.js` alongside six corrected true positives.
+
+**Getting the type right was not enough - the assembly still let the wrong fields through.** `army-memo-agent.js` and `memo-server.js` each independently remembered to null `letterhead` and `authorityLine` for a detected `"record"` type; neither remembered `addressees` or `thru`. Reproduced directly: a request that resolves to `"record"` but is answered with content or a stale form field carrying an addressee came out *addressed* - `MEMORANDUM FOR RECORD` at the top of the page and a real addressee below it, a memorandum fig 2-17 does not describe and the validator correctly refused as `mfr-addressee`. The fix moves the guarantee into `assembleMemo()` itself - the one function both callers already route through - so it holds regardless of what drafted content or a caller's context supplies, and holds for every future caller too, rather than being one more thing each new call site has to remember to duplicate. That duplication is exactly how the gap got in the first place.
+
+Both fixes were confirmed the same way as everything else in this file: verified against the reintroduced fault before being put back, with the specific failing phrasing kept as a named test rather than folded into a passing average.
+
+---
+
 ## 14a) The unit's fields, and the memorandum's
 
 AR 25-50 is one regulation, but a memorandum written under it is not interchangeable between offices. Two different lifetimes are mixed together in a spec:
@@ -841,7 +855,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 708 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 720 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
