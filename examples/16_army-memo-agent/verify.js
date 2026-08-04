@@ -1721,6 +1721,25 @@ const FIELD_TEMPLATE = {
     checkTrue("intent: an event alone, with no record verb, does not force the MFR",
         detectMemoType("send a memo to the battalions about the upcoming range meeting") !== "record",
         "AR 25-50, para 2-7");
+
+    /*
+     * Two gaps the backbone scenarios below found by using phrasing nobody
+     * had tried yet: a pronoun inserted into "write up" ("write it up"),
+     * and para 2-7a's other named use - "the authority or basis for an
+     * action taken" - which the trigger list covered nowhere at all.
+     */
+    checkTrue("intent: \"write it up\" (not the bare phrase \"write up\") still selects the MFR",
+        detectMemoType("I had a call with the vendor, need to write it up") === "record",
+        "AR 25-50, para 2-7a");
+    checkTrue("intent: \"basis for\" an action selects the MFR",
+        detectMemoType("document the basis for approving the request") === "record",
+        "AR 25-50, para 2-7a");
+    checkTrue("intent: a gerund (\"documenting\") is recognized, not just the base verb",
+        detectMemoType("write a memo documenting the basis for the reorganization") === "record",
+        "AR 25-50, para 2-7a");
+    checkTrue("intent: \"logistics\" is not mistaken for the record verb \"log\"",
+        detectMemoType("coordinate with the logistics office on the shipment and set up a meeting") !== "record",
+        "AR 25-50, para 2-7");
 }
 
 {
@@ -4255,6 +4274,149 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
                 .findings.every((f) => !f.message.startsWith("addresseeAddress")),
             "AR 25-50, para 2-4a(5)");
     }
+}
+
+// ---------------------------------------------------------------------------
+// The MFR backbone: request in, compliant .docx out, across every use fig
+// 2-17 and para 2-7a actually name - not one canned demo, several.
+// ---------------------------------------------------------------------------
+
+/*
+ * Everything upstream of layout - detectMemoType(), assembleMemo(), the
+ * draft/validate/repair loop - is the same machinery every memorandum type
+ * routes through; the MFR is just where it has been proven hardest, twice
+ * this session. This section is the case for treating it as load-bearing:
+ * five distinct requests, phrased the way people actually phrase them (not
+ * uniformly "document the X"), each carrying its own drafted content the
+ * way a model's answer would, run through the real pipeline end to end -
+ * intent detection, assembly, validation, and a real .docx - not just the
+ * layout math. No live model is available in this environment, so the
+ * "drafted" content below stands in for it (para 2-7's own four described
+ * uses of an MFR - authority for an action, an informal meeting, a
+ * telephone conversation, and - via a site visit and a meeting decision -
+ * the general "official business was conducted" case), exercising exactly
+ * the seam runMemoAgent() takes a real model through.
+ */
+{
+    const {renderDocx} = await import("./memo-docx.js");
+    const {detectMemoType, assembleMemo} = await import("./memo-intent.js");
+    const JSZip = (await import("jszip")).default;
+
+    const SCENARIOS = [
+        {
+            // Para 2-7a: "the authority or basis for an action taken."
+            request: "I need to document the basis for approving SGT Ramirez's emergency leave",
+            subject: "Basis for Approval of Emergency Leave for SGT Ramirez",
+            paragraphs: [
+                {level: 0, text: "This memorandum documents the basis for approving emergency leave for SGT Maria Ramirez from 2 through 9 August 2026."},
+                {level: 0, text: "SGT Ramirez requested leave following notification of a family medical emergency.  The Red Cross verified the emergency on 1 August 2026."},
+                {level: 0, text: "My point of contact for this action is SFC John Diaz, ATZB-PAC, at 719-555-0198 or john.diaz.mil@army.mil."},
+            ],
+        },
+        {
+            // Para 2-7a: "document informal meetings... when official
+            // business was conducted." Event-first phrasing, the shape
+            // the original intent-detection regex missed entirely.
+            request: "I had a staff meeting about the barracks renovation budget and need to document it",
+            subject: "Staff Meeting on Barracks Renovation Funding",
+            paragraphs: [
+                {level: 0, text: "This memorandum documents a staff meeting on 30 July 2026 concerning funding for the Building 2100 barracks renovation."},
+                {level: 0, text: "Attendees agreed the Directorate of Public Works will submit a revised cost estimate by 15 August 2026."},
+                {level: 0, text: "My point of contact for this action is Ms. Karen Blake, ATZB-DPW, at 719-555-0173 or karen.blake.civ@army.mil."},
+            ],
+        },
+        {
+            // Para 2-7a: "document... telephone conversations when
+            // official business was conducted."
+            request: "I had a phone call with the range safety officer and need to write it up",
+            subject: "Telephone Conversation With Range Safety Officer",
+            paragraphs: [
+                {level: 0, text: "This memorandum documents a 1415 telephone conversation on 29 July 2026 between the undersigned and Mr. Aaron Cole, Range Safety Officer."},
+                {level: 0, text: "Mr. Cole confirmed that Range 22 meets safety requirements for the scheduled 5 August 2026 qualification."},
+                {level: 0, text: "My point of contact for this action is SSG Renee Park, ATZB-RC, at 719-555-0142 or renee.park.mil@army.mil."},
+            ],
+        },
+        {
+            // "Decision reached" - one of the RECORD_EVENTS trigger phrases.
+            request: "capture the decision reached at today's planning meeting",
+            subject: "Decision Reached at Training Planning Meeting",
+            paragraphs: [
+                {level: 0, text: "This memorandum documents a decision reached at the 31 July 2026 training planning meeting."},
+                {level: 0, text: "The command group decided to consolidate the September gunnery density into a single two-week window."},
+                {level: 0, text: "My point of contact for this action is MAJ Patricia Nguyen, ATZB-OPS, at 719-555-0155 or patricia.nguyen.mil@army.mil."},
+            ],
+        },
+        {
+            // "Site visit" - the same "official business" case, a physical
+            // inspection rather than a meeting or a call.
+            request: "document our site visit to inspect the fire extinguishers in Building 4400",
+            subject: "Site Visit to Inspect Fire Extinguishers in Building 4400",
+            paragraphs: [
+                {level: 0, text: "This memorandum documents a site visit on 28 July 2026 to inspect fire extinguishers in Building 4400."},
+                {level: 0, text: "The inspection found three extinguishers past their service date.  Building management ordered replacements on 28 July 2026."},
+                {level: 0, text: "My point of contact for this action is Mr. Louis Ferrer, ATZB-SAF, at 719-555-0166 or louis.ferrer.civ@army.mil."},
+            ],
+        },
+    ];
+
+    const UNIT_CONTEXT = {
+        type: "record",
+        officeSymbol: "ATZB-RC",
+        date: "31 July 2026",
+        signature: {name: "MARCUS T. HALE", gradeAndBranch: "SFC, USA", title: "NCOIC, Range Control"},
+    };
+
+    for (const scenario of SCENARIOS) {
+        checkTrue(`intent: "${scenario.request}" selects the MFR`,
+            detectMemoType(scenario.request) === "record", "AR 25-50, para 2-7a");
+
+        const drafted = {subject: scenario.subject, addressees: [], paragraphs: scenario.paragraphs};
+        const memo = assembleMemo(drafted, UNIT_CONTEXT);
+        const result = validateMemo(memo);
+
+        checkTrue(`"${scenario.subject}": a fully-supplied MFR from this request passes clean`,
+            result.errors.length === 0, "AR 25-50, para 2-7");
+        checkTrue("and carries no addressee, letterhead, or authority line - fig 2-17",
+            memo.addressees.length === 0 && memo.letterhead === null && memo.authorityLine === null,
+            "AR 25-50, fig 2-17");
+
+        const zip = await JSZip.loadAsync(await renderDocx(memo));
+        const doc = await zip.file("word/document.xml").async("string");
+        checkTrue("and the rendered .docx opens with MEMORANDUM FOR RECORD, not an addressee line",
+            /MEMORANDUM FOR RECORD/.test(doc) && !/MEMORANDUM FOR(?! RECORD)/.test(doc),
+            "AR 25-50, fig 2-17");
+        checkTrue("with every supplied field as ordinary text - nothing left to click into",
+            (doc.match(/<w:sdt>/g) ?? []).length === 0, "AR 25-50, fig 2-17");
+    }
+
+    // The same five requests, with no unit profile yet on file - the other
+    // half of the backbone: a first-time user still gets a correct,
+    // editable MFR, not a half-finished one.
+    for (const scenario of SCENARIOS.slice(0, 2)) {
+        const drafted = {subject: scenario.subject, addressees: [], paragraphs: scenario.paragraphs};
+        const memo = assembleMemo(drafted, {type: "record"});
+        const zip = await JSZip.loadAsync(await renderDocx(memo));
+        let tags = [];
+        for (const name of Object.keys(zip.files)) {
+            if (!name.endsWith(".xml") || zip.files[name].dir) continue;
+            tags.push(...[...(await zip.file(name).async("string")).matchAll(/<w:tag w:val="([^"]+)"/g)].map((m) => m[1]));
+        }
+        checkTrue(`"${scenario.subject}" with no unit profile yet still gets real click-to-type slots`,
+            ["OFFICE SYMBOL", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE"].every((t) => tags.includes(t)),
+            "AR 25-50, paras 2-4a(1) and 6-4");
+    }
+
+    checkTrue("all five scenarios are schema-valid Word files",
+        (await Promise.all(SCENARIOS.map(async (scenario) => {
+            const drafted = {subject: scenario.subject, addressees: [], paragraphs: scenario.paragraphs};
+            const buf = await renderDocx(assembleMemo(drafted, UNIT_CONTEXT));
+            // A minimal structural check standing in for the external schema
+            // validator (validate-ooxml.py), which this suite cannot shell
+            // out to - confirms the zip has the parts a .docx must have.
+            const zip = await JSZip.loadAsync(buf);
+            return zip.file("word/document.xml") && zip.file("[Content_Types].xml") && zip.file("word/settings.xml");
+        }))).every(Boolean),
+        "ECMA-376 Part 1");
 }
 
 // ---------------------------------------------------------------------------

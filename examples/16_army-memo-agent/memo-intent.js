@@ -131,10 +131,21 @@ export function assembleMemo(content, context = {}) {
  * call with range control" says it second. A single ordered regex only
  * catches the second shape. Two lookaheads catch both, because each only
  * asserts its half is present somewhere in the request, not where.
+ *
+ * Verb suffixes are bounded, not `\w*` - "log" matched loosely enough to eat
+ * a suffix would also eat "logistics". Each stem lists only the inflections
+ * that are actually this verb: document/documents/documented/documenting,
+ * not document plus anything word-shaped after it. "Write up" also takes a
+ * pronoun in natural speech - "write *it* up" - so the object is optional
+ * between the two halves rather than assumed absent. RECORD_EVENTS' "basis
+ * for" is para 2-7a's other named use, alongside "informal meetings or
+ * telephone conversations": "the authority or basis for an action taken."
  */
-const RECORD_VERBS = "record|document|memorialize|write up|log|capture";
+const RECORD_VERBS = "record(?:s|ed|ing)?|document(?:s|ed|ing)?|memorializ(?:e|es|ed|ing)|" +
+    "log(?:s|ged|ging)?|captur(?:e|es|ed|ing)|" +
+    "wr(?:ite|ites|ote|itten|iting) (?:it |this |that |them )?up";
 const RECORD_EVENTS = "calls?|phone calls?|conversations?|meetings?|discussions?|briefings?|" +
-    "site visits?|walkthroughs?|decision reached|agreement reached";
+    "site visits?|walkthroughs?|decision reached|agreement reached|basis for";
 const RECORD_PATTERN = new RegExp(
     `\\bmemorandum for record\\b|\\bmemo for record\\b|\\bmfr\\b|` +
     `(?=.*\\b(?:${RECORD_VERBS})\\b)(?=.*\\b(?:${RECORD_EVENTS})\\b)`);

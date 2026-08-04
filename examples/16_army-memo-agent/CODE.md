@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-795 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+827 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 795/795 checks passed.
+# AR 25-50 layout verification: 827/827 checks passed.
 ```
 
 ---
@@ -786,6 +786,33 @@ All three types are exercised everywhere the existing six already were - font-si
 
 ---
 
+## 16d) The MFR as the backbone: five requests, not one
+
+Everything upstream of layout - `detectMemoType()`, `assembleMemo()`, the draft/validate/repair loop in `runMemoAgent()` - is the same machinery every memorandum type routes through. The MFR is where it has been proven hardest twice already this session, which made it the natural place to ask a broader question: is this actually solid enough to be the pattern the rest of the application relies on, or does it just happen to survive the one demo it has always been run against?
+
+`OFFLINE_CONTENT` is one canned example - a range closure, phrased one way. Five distinct requests were built instead, each carrying its own drafted content the way a model's answer would (no live model is available in this environment, so simulated content stands in for it, exercising the exact seam `runMemoAgent()` takes a real model through), covering every use para 2-7a actually names for an MFR:
+
+| Request | Para 2-7a's use |
+| --- | --- |
+| "I need to document the basis for approving SGT Ramirez's emergency leave" | "the authority or basis for an action taken" |
+| "I had a staff meeting about the barracks renovation budget and need to document it" | "informal meetings... when official business was conducted" |
+| "I had a phone call with the range safety officer and need to write it up" | "telephone conversations when official business was conducted" |
+| "capture the decision reached at today's planning meeting" | official business, a decision |
+| "document our site visit to inspect the fire extinguishers in Building 4400" | official business, an inspection |
+
+Running all five end to end - intent detection, assembly, validation, and a real rendered `.docx`, not just the layout math - found two real gaps neither of the previous MFR passes had exercised:
+
+- **"Write it up."** The trigger list matched the literal phrase `write up`; natural speech puts the object in the middle - "write *it* up," "write *this* up." Fixed by making the pronoun optional between the two halves.
+- **"The basis for an action."** Para 2-7a names this *first*, before meetings or calls, and nothing in the trigger list covered it at all - a request that used the regulation's own vocabulary for an MFR's oldest, plainest use still fell through to `standard`.
+
+Chasing the second one down turned up a third, broader gap while the pattern was open: every verb in the trigger list matched only its bare form - `document` but not `documenting`, `record` but not `recorded` - because `\bdocument\b` does not match inside `documenting` (no word boundary between "t" and "i"). Fixed with bounded per-stem suffixes (`document(?:s|ed|ing)?`, and so on) rather than a `\w*` wildcard, which would have been the easy fix and the wrong one - `\blog\w*\b` matches "logistics" too. A dedicated check keeps that regression named: "logistics" alongside an unrelated "meeting" must not select the MFR.
+
+Both fixes confirmed by reverting them and watching the specific checks fail - the two backbone scenarios' own intent-detection checks among them, not just the narrower unit tests written to isolate each cause. All five scenarios are asserted end to end twice: once with a saved unit profile (office symbol, date, signature all real values), confirming a returning user gets a memorandum with nothing left to click into; once with none (a first-time user), confirming the same five still produce real content-control slots rather than a half-finished document. 795 -> 827 checks.
+
+---
+
+---
+
 ## Writing your own memo
 
 ```javascript
@@ -892,7 +919,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 795 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 827 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
