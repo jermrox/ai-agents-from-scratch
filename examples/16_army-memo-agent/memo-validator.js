@@ -1426,6 +1426,10 @@ function checkPlaceholders(memo, out) {
         thru: memo.thru,
         paragraphs: memo.paragraphs,
         signature: memo.signature,
+        // An MOU/MOA signs through `signers`, not `signature` (para 2-6c(5)) -
+        // a separate field the same placeholder sweep has to reach, or a
+        // template's own "[JUNIOR OFFICIAL NAME]" would never be reported.
+        signers: memo.signers,
         letterhead: memo.letterhead,
         enclosures: memo.enclosures,
     });

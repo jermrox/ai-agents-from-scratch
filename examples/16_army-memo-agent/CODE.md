@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-720 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+743 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 720/720 checks passed.
+# AR 25-50 layout verification: 743/743 checks passed.
 ```
 
 ---
@@ -749,6 +749,24 @@ Two smaller things fell out of fixing it. The seal used to sit in a paragraph of
 
 ---
 
+## 16b) Every template's own editing surface was never actually a slot
+
+Asked to confirm the templates are genuinely ready to select and fill in — the same standard §14a and §16a were built to — running `createTemplate()` straight through to a `.docx` and inspecting the actual XML found that none of it was true. A fresh template rendered **zero** content controls, anywhere, for any type.
+
+The cause was a mismatch nobody had reason to notice from either side alone. `slot(value, prompt)` decides "real content or click-to-type slot" by asking whether `value` is truthy - and `createTemplate()`'s own defaults are never empty, they are self-documenting bracketed text: `officeSymbol: "[OFFICE SYMBOL]"`, `signature.name: "[FULL NAME]"`. Truthy, so `slot()` printed it as plain text. `recordFieldPlaceholders()` (genuinely empty strings) produces real slots and is what the front end's blank-form path happens to use - which is why the bug was invisible there - but the CLI's `--template` flag, and anyone calling `createTemplate()` directly, got a document that looked identical to a filled-in one, with nothing to click.
+
+Three call sites shared the pattern, and all three needed the same fix - recognizing a `[BRACKETED]` value as "not yet supplied," the same test `findPlaceholders()` already uses everywhere else in this codebase, just missing from the one place the `.docx` gets built:
+
+- `slot()` itself, fixed once, which covers office symbol, date, and subject automatically wherever it's called.
+- `letterheadHeader()`'s `upper()` helper, which decided the organization/street/city-state-zip lines by truthiness the same way.
+- `signatureBlockLines()`'s all-or-nothing gate (`!resolved.name && !resolved.gradeAndBranch && ...`), which needed the same substitution per field.
+
+**A fourth site turned up doing the same audit on the MOU/MOA agreement templates**, which sign through a `signers` array instead of the single `signature` object and go through a completely separate renderer (`agreementClosingParagraphs()`) - never touched by the fix above, and never covered by the validator's `checkPlaceholders()` either, which didn't scan `memo.signers` at all. Fixing the rendering side turned up a second bug in the same code: giving both signer columns the same slot prompt ("NAME") produced two content controls with the *same* `w:id`, since a slot's id is a hash of its prompt text. Word requires distinct ids. The fix disambiguates by column - `JUNIOR OFFICIAL NAME` / `SENIOR OFFICIAL NAME`, matching the labels the template itself already uses - and a civilian signer's `gradeAndBranch` being genuinely *absent* (not blank, not a placeholder) still correctly omits the line entirely rather than forcing an unwanted slot onto a two-line civilian block (para 6-4a, Note 2).
+
+Every template - all seven - now renders real content controls for exactly its own matters of record and nothing else: an MFR gets none for a letterhead it doesn't have (fig 2-17), an MOU/MOA gets none for an office symbol it doesn't have (para 2-6c(1)), and a fully-supplied real memo still renders as ordinary text, confirmed the same way it always was. `checkPlaceholders()` now sweeps `signers` alongside `signature`, so an unfilled MOU/MOA is reported the same as an unfilled standard memo. Every fix was confirmed by reverting it individually and watching the specific check it was for fail, including the duplicate-id case, before being put back.
+
+---
+
 ## Writing your own memo
 
 ```javascript
@@ -855,7 +873,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 720 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 743 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

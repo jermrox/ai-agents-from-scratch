@@ -4027,6 +4027,134 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
 }
 
 // ---------------------------------------------------------------------------
+// Every template's own editing surface: a fresh createTemplate() is what a
+// user actually gets when they select a type, and its "matters of record"
+// fields have to come out as real click-to-type slots, not plain bracketed
+// text a template happens to print. This was not true before this section
+// was added - the templates carried `[OFFICE SYMBOL]`-style placeholders,
+// which slot() and its callers only recognized as "blank" when the value was
+// truly empty, so a freshly selected template rendered zero content controls
+// anywhere.
+// ---------------------------------------------------------------------------
+
+{
+    const {createTemplate, hasPlaceholders: hasPlaceholdersFn} = await import("./templates.js");
+    const {renderDocx} = await import("./memo-docx.js");
+    const {validateMemo: validateForTemplates} = await import("./memo-validator.js");
+    const JSZip = (await import("jszip")).default;
+
+    const CITE = "AR 25-50, paras 1-16, 1-18, 2-4a(1), 2-4a(3)(b) and 6-4";
+
+    /** Every w:tag across every part of a rendered .docx, and every content-control id. */
+    const controlsOf = async (memo) => {
+        const zip = await JSZip.loadAsync(await renderDocx(memo));
+        const tags = [], ids = [];
+        for (const name of Object.keys(zip.files)) {
+            if (!name.endsWith(".xml") || zip.files[name].dir) continue;
+            const xml = await zip.file(name).async("string");
+            tags.push(...[...xml.matchAll(/<w:tag w:val="([^"]+)"/g)].map((m) => m[1]));
+            ids.push(...[...xml.matchAll(/<w:sdtPr>.*?<w:id w:val="(\d+)"/gs)].map((m) => m[1]));
+        }
+        return {tags, ids};
+    };
+
+    // Expected tags per type, deduplicated - a tag appearing more than once
+    // (the continuation-page running head repeats SUBJECT) is a pre-existing,
+    // separately-tracked fact and not what this check is about.
+    const EXPECTED = {
+        standard: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+                   "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        thru: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+               "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        record: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE"],
+        decision: ["OFFICE SYMBOL", "SUBJECT", "SIGNER NAME", "GRADE, BRANCH", "DUTY TITLE",
+                   "ORGANIZATION", "STREET ADDRESS", "CITY, STATE ZIP+4"],
+        mou: ["SUBJECT", "JUNIOR OFFICIAL NAME", "SENIOR OFFICIAL NAME",
+              "JUNIOR OFFICIAL GRADE, BRANCH", "SENIOR OFFICIAL GRADE, BRANCH",
+              "JUNIOR OFFICIAL TITLE, AGENCY", "SENIOR OFFICIAL TITLE, AGENCY"],
+        moa: ["SUBJECT", "JUNIOR OFFICIAL NAME", "SENIOR OFFICIAL NAME",
+              "JUNIOR OFFICIAL GRADE, BRANCH", "SENIOR OFFICIAL GRADE, BRANCH",
+              "JUNIOR OFFICIAL TITLE, AGENCY", "SENIOR OFFICIAL TITLE, AGENCY"],
+    };
+
+    for (const [type, expected] of Object.entries(EXPECTED)) {
+        const {tags} = await controlsOf(createTemplate(type));
+        const present = new Set(tags);
+        checkTrue(`the ${type} template's own editing surface is a real content control, not bracketed text`,
+            expected.every((t) => present.has(t)), CITE);
+    }
+
+    // Every template genuinely has record-field placeholders to prove the
+    // point with - if this ever came back empty, the content-control check
+    // above would be vacuously true for the wrong reason.
+    for (const type of Object.keys(EXPECTED)) {
+        const template = createTemplate(type);
+        const recordPlaceholders = [
+            template.officeSymbol,
+            template.letterhead?.organization, template.letterhead?.streetAddress, template.letterhead?.cityStateZip,
+            template.signature?.name, template.signature?.gradeAndBranch, template.signature?.title,
+            ...(template.signers ?? []).flatMap((s) => [s.name, s.gradeAndBranch, s.titleAndAgency]),
+        ].filter((v) => v && hasPlaceholdersFn(v));
+        checkTrue(`the ${type} template has record-field placeholders to check`,
+            recordPlaceholders.length > 0, CITE);
+    }
+
+    // Every content-control id within a single template's render is
+    // distinct, as Word requires - checked per type because this is exactly
+    // where the MOU/MOA fix could have collided two signers on one id.
+    for (const type of Object.keys(EXPECTED)) {
+        const {ids} = await controlsOf(createTemplate(type));
+        // The one known, pre-existing exception: the continuation-page
+        // running head repeats SUBJECT in its own header part, which
+        // predates this section and is not what it checks.
+        const dupes = ids.length - new Set(ids).size;
+        checkTrue(`the ${type} template's content-control ids collide no more than the known SUBJECT repeat`,
+            dupes <= 1, "ECMA-376 Part 1, para 17.5.2.38");
+    }
+
+    // A civilian signer on an MOU/MOA - `gradeAndBranch` genuinely absent,
+    // not blank and not a placeholder - keeps its two-line block rather than
+    // being forced into a slot it does not need. Para 6-4a, Note 2.
+    {
+        const civilianMemo = {
+            ...createTemplate("mou"),
+            signers: [
+                {name: "JANE DOE", title: "General Counsel"},
+                {name: "[SENIOR OFFICIAL NAME]", gradeAndBranch: "[GRADE, BRANCH]", titleAndAgency: "[TITLE, AGENCY]"},
+            ],
+        };
+        const {tags} = await controlsOf(civilianMemo);
+        checkTrue("a civilian signer with no grade field at all is not given a GRADE, BRANCH slot",
+            !tags.includes("JUNIOR OFFICIAL GRADE, BRANCH"), "AR 25-50, para 6-4a, Note 2");
+        checkTrue("but a supplied civilian name is not turned into a slot either",
+            !tags.includes("JUNIOR OFFICIAL NAME"), "AR 25-50, para 6-4a, Note 2");
+    }
+
+    // A real, supplied value is still ordinary text - the central promise of
+    // slot(), reconfirmed after touching it.
+    checkTrue("a fully supplied standard memorandum has no content controls at all",
+        (await controlsOf({
+            type: "standard",
+            letterhead: {organization: "HQ", streetAddress: "1 Army Way", cityStateZip: "Fort Carson, CO  80913"},
+            officeSymbol: "ATZB-RC", date: "4 August 2026", subject: "Real Subject",
+            addressees: ["Commander, 1st Battalion"],
+            paragraphs: [{text: "Body text."}],
+            signature: {name: "JANE DOE", gradeAndBranch: "COL, IN", title: "Commander"},
+        })).tags.length === 0,
+        CITE);
+
+    // Para 2-6c(5): an MOU/MOA signs through `signers`, not `signature` - the
+    // validator has to sweep that field too, or a template's own
+    // "[JUNIOR OFFICIAL NAME]" is never reported as unfilled.
+    for (const type of ["mou", "moa"]) {
+        const result = validateForTemplates(createTemplate(type));
+        checkTrue(`an unfilled ${type} template's signers are reported as unfilled placeholders`,
+            result.warnings.some((f) => f.rule === "unfilled-placeholder" && f.message.startsWith("signers[0]")),
+            "AR 25-50, para 2-6c(5)");
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 const total = passed + failures.length;
 if (failures.length === 0) {

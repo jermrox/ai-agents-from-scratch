@@ -44,6 +44,16 @@ import {
 import {layoutMemo, usesLetterhead, letterSignatureLines} from "./memo-formatter.js";
 import {measureTextIn, breakLines} from "./text-metrics.js";
 import {resolveSignature} from "./signature-blocks.js";
+import {hasPlaceholders} from "./templates.js";
+
+/**
+ * Whether a value is real content or still holds a `[BRACKETED]` blank -
+ * `createTemplate()`'s own placeholder text for exactly the fields `slot()`
+ * governs. The validator already treats these the same way
+ * (`findPlaceholders()`); this is that same test, applied where the .docx is
+ * built rather than where it is checked.
+ */
+const isBlank = (v) => v == null || v === "" || hasPlaceholders(v);
 
 const IN = convertInchesToTwip;
 
@@ -151,7 +161,7 @@ function slotId(prompt) {
  */
 function slot(value, prompt, sizePt = TYPE.fontSizePt) {
     const text = value == null ? "" : String(value).trim();
-    if (text) return run(text, sizePt === TYPE.fontSizePt ? {} : {size: sizePt * 2});
+    if (text && !hasPlaceholders(text)) return run(text, sizePt === TYPE.fontSizePt ? {} : {size: sizePt * 2});
 
     const props = runProps(sizePt);
     return importXml(
@@ -206,8 +216,9 @@ function tabStopAfter(positionIn) {
 function letterheadHeader(memo, sealImage) {
     const lh = memo.letterhead ?? {};
     // "DEPARTMENT OF THE ARMY" is fixed; the three lines under it are the
-    // office's, and stay slots until it says what they are. - para 1-18
-    const upper = (v) => (v ? String(v).trim().toUpperCase() : "");
+    // office's, and stay slots until it says what they are - a template's own
+    // `[ORGANIZATIONAL NAME/TITLE]` included. - para 1-18
+    const upper = (v) => (isBlank(v) ? "" : String(v).trim().toUpperCase());
     const lines = [
         {text: LETTERHEAD.lines[0], sizePt: LETTERHEAD.titleSizePt},
         {text: upper(lh.organization), prompt: "ORGANIZATION", sizePt: LETTERHEAD.addressSizePt},
@@ -506,17 +517,37 @@ function agreementClosingParagraphs(memo) {
     const nameRule = ruleOf(AGREEMENT_FORMAT.signatureRuleIn);
     const dateRule = ruleOf(AGREEMENT_FORMAT.dateRuleIn);
 
-    // Rows of one column: overscore, block, date rule, centred caption.
-    const column = (signer) => {
+    // Rows of one column: overscore, block, date rule, centred caption. A
+    // blank or still-templated field becomes a click-to-type slot rather
+    // than a missing line - except grade, whose field being absent entirely
+    // (not blank, not a placeholder) is a civilian's legitimate two-line
+    // block, correctly omitted rather than forced into a slot.
+    //
+    // `label` disambiguates the prompt per column - two or three signers can
+    // each need a "NAME" slot, and a content control's id is derived from
+    // its prompt text (slotId()), so two identical prompts would collide on
+    // the same id. Word requires distinct ids.
+    const column = (signer, label) => {
         const rows = [{text: nameRule, indentIn: 0}];
-        if (signer.name) rows.push({text: String(signer.name).toUpperCase(), indentIn: 0});
+
+        rows.push(isBlank(signer.name)
+            ? {slot: `${label} NAME`, indentIn: 0}
+            : {text: String(signer.name).toUpperCase(), indentIn: 0});
+
         const grade = signer.gradeAndBranch ?? signer.grade;
-        if (grade) rows.push({text: grade, indentIn: 0});
+        if (grade !== undefined) {
+            rows.push(isBlank(grade) ? {slot: `${label} GRADE, BRANCH`, indentIn: 0} : {text: grade, indentIn: 0});
+        }
+
         const title = signer.titleAndAgency ?? signer.title;
-        if (title) {
-            // Para 6-4c: a title needing a second line continues at 1/4 inch.
-            for (const part of wrapSignatureTitle(title, AGREEMENT_FORMAT.signatureRuleIn)) {
-                rows.push(part);
+        if (title !== undefined) {
+            if (isBlank(title)) {
+                rows.push({slot: `${label} TITLE, AGENCY`, indentIn: 0});
+            } else {
+                // Para 6-4c: a title needing a second line continues at 1/4 inch.
+                for (const part of wrapSignatureTitle(title, AGREEMENT_FORMAT.signatureRuleIn)) {
+                    rows.push(part);
+                }
             }
         }
         rows.push({text: dateRule, indentIn: 0});
@@ -525,14 +556,15 @@ function agreementClosingParagraphs(memo) {
     };
 
     const signers = memo.signers ?? [];
-    const left = signers[0] ? column(signers[0]) : [];
-    const right = signers[1] ? column(signers[1]) : [];
+    const left = signers[0] ? column(signers[0], "JUNIOR OFFICIAL") : [];
+    const right = signers[1] ? column(signers[1], "SENIOR OFFICIAL") : [];
+    const cell = (row) => (row.slot ? slot(null, row.slot) : run(indentText(row)));
 
     for (let i = 0; i < Math.max(left.length, right.length); i++) {
         const children = [];
-        if (left[i]) children.push(run(indentText(left[i])));
+        if (left[i]) children.push(cell(left[i]));
         children.push(tabRun());
-        if (right[i]) children.push(run(indentText(right[i])));
+        if (right[i]) children.push(cell(right[i]));
         out.push(new Paragraph({spacing: SINGLE, tabStops: tabs, children}));
     }
 
@@ -541,11 +573,11 @@ function agreementClosingParagraphs(memo) {
     if (signers[2]) {
         out.push(...blankParagraph(AGREEMENT_FORMAT.signatureLinesBelowText - 1));
         const centreIn = (TEXT_WIDTH_IN - AGREEMENT_FORMAT.signatureRuleIn) / 2;
-        for (const row of column(signers[2])) {
+        for (const row of column(signers[2], "THIRD OFFICIAL")) {
             out.push(new Paragraph({
                 spacing: SINGLE,
                 indent: {left: IN(centreIn + row.indentIn)},
-                children: [run(row.text)],
+                children: [row.slot ? slot(null, row.slot) : run(row.text)],
             }));
         }
     }
@@ -896,9 +928,11 @@ function closingParagraphs(memo) {
 function signatureBlockLines(sig) {
     const resolved = resolveSignature(sig);
 
-    // Nothing supplied: the block is three click-to-type slots on the three
-    // lines para 6-4c gives it, so the space it occupies is already right.
-    if (!resolved.name && !resolved.gradeAndBranch && resolved.titleSegments.length === 0) {
+    // Nothing supplied - a template's own `[FULL NAME]` etc. included - so
+    // the block is three click-to-type slots on the three lines para 6-4c
+    // gives it, and the space it occupies is already right.
+    if (isBlank(resolved.name) && isBlank(resolved.gradeAndBranch)
+        && (resolved.titleSegments.length === 0 || resolved.titleSegments.every((s) => isBlank(s.text)))) {
         return [{slot: "SIGNER NAME"}, {slot: "GRADE, BRANCH"}, {slot: "DUTY TITLE"}];
     }
 
