@@ -3379,6 +3379,27 @@ const FIELD_TEMPLATE = {
         "front end");
     checkTrue("and re-fits when the window is resized",
         /addEventListener\("resize",/.test(homeHtml), "front end");
+
+    /*
+     * A type that is required to have no letterhead - an MFR (fig 2-17 para
+     * 1: "Type the MFR on plain white paper"), an MOU/MOA (para 2-6c(1)) -
+     * looks like a rendering bug to anyone who has just seen a standard
+     * memorandum's seal and DEPARTMENT OF THE ARMY header. /generate says
+     * why, with the figure that says so, and the page prints it in the
+     * report line - the absence reads as the rule it is, not a defect.
+     */
+    const postGenerate = (body) => fetch(`${base}/generate`, {
+        method: "POST", headers: {"content-type": "application/json"},
+        body: JSON.stringify({subject: "S", body: "One paragraph.", ...body}),
+    }).then((r) => r.json());
+    check("an MFR's generate answer says why it has no letterhead",
+        (await postGenerate({type: "record"})).plainPaper, "fig 2-17", "AR 25-50, fig 2-17");
+    check("an MOU's does too", (await postGenerate({type: "mou"})).plainPaper,
+        "para 2-6c(1)", "AR 25-50, para 2-6c(1)");
+    check("a standard memorandum on letterhead carries no such note",
+        (await postGenerate({type: "standard"})).plainPaper, null, "AR 25-50, para 2-3a(1)");
+    checkTrue("and the page renders the note into the report line",
+        /d\.plainPaper/.test(homeHtml) && /plain white paper/.test(homeHtml), "front end");
     checkTrue("generate() goes through the fitting path, not a direct srcdoc assignment",
         /resizeFrame\(d\.html\)/.test(homeHtml) && !/\$\("frame"\)\.srcdoc\s*=\s*d\.html/.test(homeHtml),
         "front end");

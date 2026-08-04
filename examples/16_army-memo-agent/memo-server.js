@@ -617,7 +617,9 @@ function renderReport(d) {
   $("report").innerHTML =
     '<p class="detected">Type: <b>' + escapeHtml(d.title) + '</b> — ' + escapeHtml(d.cite) +
     ' · ' + d.pages + (d.pages === 1 ? " page" : " pages") +
-    (errs ? ' · <span style="color:var(--err)">' + errs + ' error' + (errs===1?'':'s') + '</span>' : '') + '</p>' + list;
+    (errs ? ' · <span style="color:var(--err)">' + errs + ' error' + (errs===1?'':'s') + '</span>' : '') + '</p>' +
+    (d.plainPaper ? '<p class="detected">No letterhead and no seal on this one by rule: this type is typed on ' +
+      '<b>plain white paper</b> — AR 25-50, ' + escapeHtml(d.plainPaper) + '.</p>' : '') + list;
 }
 
 /*
@@ -896,10 +898,27 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                  */
                 const field = ({label, hint, cite, prompt, optional}) =>
                     ({label, hint, cite, prompt, optional: Boolean(optional)});
+                /*
+                 * A type that is *required* to have no letterhead looks, to
+                 * anyone who has just seen a standard memorandum, like a
+                 * rendering bug: no seal, no DEPARTMENT OF THE ARMY. Say why
+                 * in the report line, with the paragraph that says so, so
+                 * the absence reads as the rule it is rather than a defect.
+                 */
+                const PLAIN_PAPER = {
+                    record: "fig 2-17",
+                    mou: "para 2-6c(1)",
+                    moa: "para 2-6c(1)",
+                };
                 return json(res, 200, {
                     type: memo.type,
                     title: meta.title,
                     cite: meta.cite,
+                    // Keyed off the type, not the spec's letterhead field: an
+                    // agreement's spec may carry a letterhead object the
+                    // renderer never draws (para 2-6c(1) overrides it), and
+                    // the note is about the rule, not the leftover data.
+                    plainPaper: PLAIN_PAPER[memo.type] ?? null,
                     pages: result.pages,
                     findings: result.findings.map(({severity, rule, message, cite}) =>
                         ({severity, rule, message, cite})),
