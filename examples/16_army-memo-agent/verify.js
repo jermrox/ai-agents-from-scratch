@@ -3925,6 +3925,32 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
         COMMANDER_OF_CITE);
 }
 
+/**
+ * Para 1-39b(6): "Use 'I,' 'you,' and 'we' as subjects of sentences instead
+ * of this office, this headquarters, this command, all individuals, and so
+ * forth." The mechanical twin of the already-implemented 1-39b(8) check for
+ * "It is"/"There is"/"There are" - same shape, same paragraph, one clause over.
+ */
+{
+    const cite1_39b6 = "AR 25-50, para 1-39b(6)";
+    checkTrue("para 1-39b(6): \"This headquarters\" opening a sentence is reported",
+        validateMemo({...FIG_2_1, paragraphs: [
+            {text: "This headquarters requires all units to submit reports by Friday."},
+        ]}).warnings.some((f) => f.rule === "institutional-subject"), cite1_39b6);
+    checkTrue("and so is \"This command\"",
+        validateMemo({...FIG_2_1, paragraphs: [
+            {text: "This command will conduct an inspection next month."},
+        ]}).warnings.some((f) => f.rule === "institutional-subject"), cite1_39b6);
+    checkTrue("but an ordinary sentence naming an office mid-sentence is not",
+        validateMemo({...FIG_2_1, paragraphs: [
+            {text: "Coordinate with this office before the deadline."},
+        ]}).findings.every((f) => f.rule !== "institutional-subject"), cite1_39b6);
+    checkTrue("and \"I,\" \"you,\" or \"we\" as the subject raises nothing",
+        validateMemo({...FIG_2_1, paragraphs: [
+            {text: "We will complete the inspection by Friday."},
+        ]}).findings.every((f) => f.rule !== "institutional-subject"), cite1_39b6);
+}
+
 // ---------------------------------------------------------------------------
 
 const total = passed + failures.length;

@@ -668,6 +668,17 @@ function checkSentenceLength(paragraphs, out) {
             `Avoid sentences that begin with "It is," "There is," or "There are": "${s.slice(0, 50)}..."`,
             "AR 25-50, para 1-39b(8)"));
     }
+
+    // "Use 'I,' 'you,' and 'we' as subjects of sentences instead of this
+    //  office, this headquarters, this command, all individuals, and so
+    //  forth." - 1-39b(6)
+    const institutional = sentences.filter((s) =>
+        /^(this office|this headquarters|this command|all individuals)\b/i.test(s));
+    for (const s of institutional) {
+        out.push(warn("content", "institutional-subject",
+            `Sentence opens with an institutional subject: "${s.slice(0, 50)}...". Use "I," "you," or "we" instead.`,
+            "AR 25-50, para 1-39b(6)"));
+    }
 }
 
 function checkPassiveVoice(paragraphs, out) {
