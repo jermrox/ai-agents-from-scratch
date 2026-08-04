@@ -178,13 +178,15 @@ function wrap(text, {firstIndentIn = 0, wrapIndentIn = 0, opts, role = "body", b
  * Whether page 1 carries computer-generated letterhead.
  *
  * "Use computer-generated letterhead for the first page of all memorandums" -
- * para 2-3a(1) - with one stated exception: "Type the MFR on plain white
- * paper" (fig 2-17). An MOU/MOA is prepared on plain white paper too, though
- * "if an MOU/MOA is between two Army activities, DA letterhead is
- * appropriate" (para 2-6c(1)), so it follows whether letterhead was supplied.
+ * para 2-3a(1). The MFR included: fig 2-17's example is typed on plain
+ * paper, but by the owner's direction that figure is read as an
+ * illustrative setup, not a prohibition - an MFR is always prepared on the
+ * unit's letterhead, seal and all, exactly like a standard memorandum. An
+ * MOU/MOA is prepared on plain white paper, though "if an MOU/MOA is
+ * between two Army activities, DA letterhead is appropriate" (para
+ * 2-6c(1)), so it follows whether letterhead was supplied.
  */
 export function usesLetterhead(memo) {
-    if (memo.type === "record") return false;
     if (memo.letterhead === null || memo.letterhead === undefined) return false;
     return true;
 }

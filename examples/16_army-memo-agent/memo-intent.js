@@ -68,21 +68,25 @@ export function assembleMemo(content, context = {}) {
 
     /*
      * "MEMORANDUM FOR RECORD" is the whole heading - there is no addressee to
-     * put after it, no THRU chain to route it through, no letterhead (fig
-     * 2-17 para 1: plain white paper), and "Do not use an authority line"
-     * (fig 2-17 step 6). This is a fact about the type, not a drafting
-     * choice, so it overrides drafted content and caller context alike -
-     * a model or a stale form field that supplied an addressee for an MFR
-     * must not have it rendered. Enforced here, once, rather than in every
-     * caller that builds a context: CLI and server both build one and had
-     * each remembered `letterhead`/`authorityLine` but not `addressees`/
-     * `thru`, which is exactly how this gap got in.
+     * put after it, no THRU chain to route it through, and "Do not use an
+     * authority line" (fig 2-17 step 6). These are facts about the type, not
+     * drafting choices, so they override drafted content and caller context
+     * alike - a model or a stale form field that supplied an addressee for
+     * an MFR must not have it rendered. Enforced here, once, rather than in
+     * every caller that builds a context: CLI and server both build one and
+     * had each remembered `authorityLine` but not `addressees`/`thru`,
+     * which is exactly how this gap got in.
+     *
+     * The letterhead is NOT cleared for an MFR: by the owner's direction an
+     * MFR is always prepared on the unit's letterhead, seal and header
+     * included, exactly like a standard memorandum - fig 2-17's plain-paper
+     * example is read as illustrative setup, not a prohibition.
      */
     const isRecord = type === "record";
 
     return {
         type,
-        letterhead: isRecord ? null : (context.letterhead !== undefined ? context.letterhead : record.letterhead),
+        letterhead: context.letterhead !== undefined ? context.letterhead : record.letterhead,
         officeSymbol: context.officeSymbol ?? record.officeSymbol,
         date: context.date ?? record.date,
         suspenseDate: context.suspenseDate ?? null,

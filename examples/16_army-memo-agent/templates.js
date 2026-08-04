@@ -204,12 +204,17 @@ function recognition(type) {
 
 /**
  * Memorandum for record - para 2-7, figure 2-17.
- * Plain white paper, no authority line, one page if possible.
+ *
+ * On the unit's letterhead like every other memorandum: fig 2-17's example
+ * is typed on plain paper, but by the owner's direction the figure is read
+ * as illustrative setup, not a prohibition - an MFR is never prepared
+ * without the seal and the DEPARTMENT OF THE ARMY header. base() already
+ * carries the letterhead, so it is simply not overridden here. No
+ * authority line, one page if possible.
  */
 function record() {
     return base({
         type: "record",
-        letterhead: null,          // "Type the MFR on plain white paper." - fig 2-17
         addressees: [],
         authorityLine: null,       // "Do not use an authority line." - fig 2-17
         subject: "[SUBJECT OF THE RECORD]",

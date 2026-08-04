@@ -141,14 +141,18 @@ export function specFromForm(form = {}) {
         // A checkbox submits only when checked, so its absence from the form
         // - not a blank string - is what "unchecked" looks like on the wire.
         digitalSignature: form.digitalSignature !== undefined,
-        // An MFR is on plain paper with no addressee and no authority line
-        // (fig 2-17); so is an agreement (para 2-6c(1)).
-        letterhead: type === "record" ? null : (letterheadGiven ? {
+        // Every memorandum, the MFR included, goes out on the unit's
+        // letterhead - by the owner's direction an MFR is never prepared
+        // without the seal and DEPARTMENT OF THE ARMY header. An agreement
+        // is the one plain-paper form (para 2-6c(1)), and its renderer
+        // ignores this field.
+        letterhead: letterheadGiven ? {
             organization: filled(form.organization, record.letterhead.organization),
             streetAddress: filled(form.streetAddress, record.letterhead.streetAddress),
             cityStateZip: filled(form.cityStateZip, record.letterhead.cityStateZip),
-        } : record.letterhead),
+        } : record.letterhead,
     };
+    // An MFR takes no authority line - fig 2-17 step 6.
     if (type === "record") context.authorityLine = null;
     // "Exclusive For" correspondence, appreciation, and commendation name one
     // person - only ever addressees[0], both here and in the renderer - so
@@ -899,14 +903,15 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 const field = ({label, hint, cite, prompt, optional}) =>
                     ({label, hint, cite, prompt, optional: Boolean(optional)});
                 /*
-                 * A type that is *required* to have no letterhead looks, to
-                 * anyone who has just seen a standard memorandum, like a
-                 * rendering bug: no seal, no DEPARTMENT OF THE ARMY. Say why
-                 * in the report line, with the paragraph that says so, so
-                 * the absence reads as the rule it is rather than a defect.
+                 * A type that has no letterhead looks, to anyone who has
+                 * just seen a standard memorandum, like a rendering bug: no
+                 * seal, no DEPARTMENT OF THE ARMY. Say why in the report
+                 * line, with the paragraph that says so, so the absence
+                 * reads as the rule it is rather than a defect. Only the
+                 * agreements qualify - by the owner's direction an MFR is
+                 * always on letterhead like every other memorandum.
                  */
                 const PLAIN_PAPER = {
-                    record: "fig 2-17",
                     mou: "para 2-6c(1)",
                     moa: "para 2-6c(1)",
                 };

@@ -1292,15 +1292,15 @@ function lastIndexOfRoles(lines, roles) {
  */
 function checkMemoType(memo, out) {
     if (memo.type === "record") {
-        // "Type the MFR on plain white paper." - fig 2-17
-        // Tested against the spec, not usesLetterhead(): the renderer already
-        // forces plain paper for an MFR, so asking it would always say "no
-        // letterhead" and the mistake in the spec would go unreported.
-        if (memo.letterhead != null) {
-            out.push(error("format", "mfr-letterhead",
-                "A memorandum for record is typed on plain white paper, not letterhead. Set letterhead to null.",
-                "AR 25-50, fig 2-17"));
-        }
+        /*
+         * An MFR carries the unit's letterhead like every other memorandum
+         * - by the owner's direction, reading para 2-7 as the governing
+         * text (its 2-7b(1) heading spec names the office symbol, date and
+         * subject, and says nothing against letterhead) and fig 2-17's
+         * plain-paper example as illustrative of the informal-meeting use,
+         * not a prohibition. So letterhead on an MFR is not a finding; its
+         * absence falls out of the ordinary letterhead checks instead.
+         */
         // "Do not use an authority line. Anyone may prepare and sign an MFR." - fig 2-17
         if (memo.authorityLine) {
             out.push(error("content", "mfr-authority-line",

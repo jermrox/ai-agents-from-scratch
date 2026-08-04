@@ -1277,10 +1277,13 @@ const FIELD_TEMPLATE = {
         "AR 25-50, para 2-5b");
 
     /*
-     * A memorandum not on letterhead - every memorandum for record, and any
-     * memorandum on plain bond - still gets page 1 to itself. Its first-page
-     * header is empty, which is the whole point: para 2-5a starts the text at
-     * the 1-inch top margin, and a running head there would carry it lower.
+     * The MFR goes out on the unit's letterhead like every other memorandum
+     * - by the owner's direction, reading para 2-7 (whose 2-7b(1) heading
+     * spec names the office symbol, date and subject) as the governing text
+     * and fig 2-17's plain-paper example as illustrative, not a
+     * prohibition. So an MFR's first page carries the seal and the
+     * DEPARTMENT OF THE ARMY header exactly as a standard memorandum's
+     * does, and page 1 is still separated from the continuation pages.
      */
     {
         const plain = await open(createTemplate("record"));
@@ -1291,8 +1294,10 @@ const FIELD_TEMPLATE = {
         // check above still passes.
         checkTrue("docx: an MFR separates page 1 too",
             /<w:titlePg\/>/.test(plain.document), "AR 25-50, para 2-5a");
-        checkTrue("docx: an MFR carries no letterhead", !/<w:drawing>/.test(first ?? ""),
-            "AR 25-50, fig 2-17");
+        checkTrue("docx: an MFR carries the seal on its letterhead - never prepared without it",
+            /<w:drawing>/.test(first ?? ""), "AR 25-50, para 2-7 as directed");
+        checkTrue("docx: and the DEPARTMENT OF THE ARMY header",
+            /DEPARTMENT OF THE ARMY/.test(first ?? ""), "AR 25-50, para 2-7 as directed");
         checkTrue("docx: and no continuation heading on page 1",
             !/SUBJECT:/.test(first ?? ""), "AR 25-50, para 2-5a");
         checkTrue("docx: but its continuation pages still carry one",
@@ -1413,14 +1418,24 @@ const FIELD_TEMPLATE = {
         /MEMORANDUM FOR RECORD/.test(document), "AR 25-50, fig 2-17");
     checkTrue("docx: an MFR carries no authority line",
         !/AUTHORITY LINE/.test(document), "AR 25-50, fig 2-17");
-    checkTrue("docx: an MFR starts at the 1-inch top margin",
-        /<w:pgMar w:top="1440"/.test(document), "AR 25-50, fig 2-17 and para 2-5a");
+    {
+        // On letterhead like every other memorandum (owner-directed, per
+        // para 2-7), an MFR's page 1 starts where a standard memorandum's
+        // does - at the seal, not at the 1-inch text margin.
+        const standardDoc = await (await JSZip.loadAsync(await renderDocx(createTemplate("standard"))))
+            .file("word/document.xml").async("string");
+        check("docx: an MFR's page 1 starts where a standard memorandum's does",
+            /<w:pgMar w:top="(\d+)"/.exec(document)?.[1],
+            /<w:pgMar w:top="(\d+)"/.exec(standardDoc)?.[1],
+            "AR 25-50, para 2-7 as directed");
+    }
 
     const result = validateMemo(mfr);
-    checkTrue("an MFR on letterhead is reported",
-        validateMemo({...mfr, letterhead: {organization: "X"}})
-            .errors.some((f) => f.rule === "mfr-letterhead"),
-        "AR 25-50, fig 2-17");
+    checkTrue("an MFR on letterhead raises no finding - it is never prepared without one",
+        validateMemo({...mfr, letterhead: {organization: "HQ, 4TH INFANTRY DIVISION",
+            streetAddress: "1633 MEKONG STREET", cityStateZip: "FORT CARSON, CO  80913-4321"}})
+            .findings.every((f) => f.rule !== "mfr-letterhead"),
+        "AR 25-50, para 2-7 as directed");
     checkTrue("an MFR with an authority line is reported",
         validateMemo({...mfr, authorityLine: "FOR THE COMMANDER:"})
             .errors.some((f) => f.rule === "mfr-authority-line"),
@@ -2773,9 +2788,16 @@ const FIELD_TEMPLATE = {
         specFromForm({request: "record the call with the SJA", type: "nonsense"}).type,
         "record", "AR 25-50, para 2-2");
 
-    // fig 2-17: an MFR is on plain paper with no authority line.
+    // An MFR is never prepared without the seal and letterhead (owner-
+    // directed, per para 2-7), and takes no authority line (fig 2-17).
     const mfr = specFromForm({request: "memorandum for record of the call", authorityLine: "FOR THE COMMANDER:"});
-    check("fig 2-17: an MFR comes out on plain paper", mfr.letterhead, null, "AR 25-50, fig 2-17");
+    checkTrue("an MFR always comes out on letterhead - blank fields become slots",
+        mfr.letterhead != null && typeof mfr.letterhead === "object",
+        "AR 25-50, para 2-7 as directed");
+    check("and a supplied organization reaches the MFR's letterhead",
+        specFromForm({request: "memorandum for record of the call",
+            organization: "HQ, 4TH INFANTRY DIVISION"}).letterhead.organization,
+        "HQ, 4TH INFANTRY DIVISION", "AR 25-50, para 2-7 as directed");
     check("fig 2-17: an MFR carries no authority line", mfr.authorityLine, null, "AR 25-50, fig 2-17");
 
     // Whatever the page produces still has to satisfy the regulation.
@@ -2848,11 +2870,13 @@ const FIELD_TEMPLATE = {
             body: JSON.stringify(body)});
 
         const fields = await (await postBody("/fields", {type: "record"})).json();
-        // An MFR is on plain white paper and has no addressee - fig 2-17 - so
-        // neither is a question worth asking about one.
-        checkTrue("an MFR is not asked for a letterhead it does not have",
-            fields.unit.every((f) => !f.path.startsWith("letterhead")), "AR 25-50, fig 2-17");
-        checkTrue("nor for an addressee",
+        // An MFR is on the unit's letterhead like every other memorandum
+        // (owner-directed, per para 2-7), so its letterhead fields are
+        // asked for - but it still has no addressee (fig 2-17's heading is
+        // MEMORANDUM FOR RECORD, whole).
+        checkTrue("an MFR is asked for its letterhead - it is never prepared without one",
+            fields.unit.some((f) => f.path.startsWith("letterhead")), "AR 25-50, para 2-7 as directed");
+        checkTrue("but not for an addressee",
             fields.memorandum.every((f) => f.path !== "addressees"), "AR 25-50, fig 2-17");
 
         const agreement = await (await postBody("/fields", {type: "mou"})).json();
@@ -3381,20 +3405,20 @@ const FIELD_TEMPLATE = {
         /addEventListener\("resize",/.test(homeHtml), "front end");
 
     /*
-     * A type that is required to have no letterhead - an MFR (fig 2-17 para
-     * 1: "Type the MFR on plain white paper"), an MOU/MOA (para 2-6c(1)) -
-     * looks like a rendering bug to anyone who has just seen a standard
+     * A type that has no letterhead - an MOU/MOA (para 2-6c(1)) - looks
+     * like a rendering bug to anyone who has just seen a standard
      * memorandum's seal and DEPARTMENT OF THE ARMY header. /generate says
-     * why, with the figure that says so, and the page prints it in the
-     * report line - the absence reads as the rule it is, not a defect.
+     * why, with the paragraph that says so, and the page prints it in the
+     * report line. The MFR does NOT carry this note: by the owner's
+     * direction it goes out on letterhead like every other memorandum.
      */
     const postGenerate = (body) => fetch(`${base}/generate`, {
         method: "POST", headers: {"content-type": "application/json"},
         body: JSON.stringify({subject: "S", body: "One paragraph.", ...body}),
     }).then((r) => r.json());
-    check("an MFR's generate answer says why it has no letterhead",
-        (await postGenerate({type: "record"})).plainPaper, "fig 2-17", "AR 25-50, fig 2-17");
-    check("an MOU's does too", (await postGenerate({type: "mou"})).plainPaper,
+    check("an MFR's generate answer carries no plain-paper note - it is on letterhead",
+        (await postGenerate({type: "record"})).plainPaper, null, "AR 25-50, para 2-7 as directed");
+    check("an MOU's names para 2-6c(1)", (await postGenerate({type: "mou"})).plainPaper,
         "para 2-6c(1)", "AR 25-50, para 2-6c(1)");
     check("a standard memorandum on letterhead carries no such note",
         (await postGenerate({type: "standard"})).plainPaper, null, "AR 25-50, para 2-3a(1)");
@@ -3603,7 +3627,8 @@ const FIELD_TEMPLATE = {
             addressees: ["Commander, 2d Battalion, 5th Infantry Regiment"],
             thru: ["Commander, 3d Battalion, 5th Infantry Regiment"],
             authorityLine: "FOR THE COMMANDER:",
-            letterhead: {organization: "Should Not Appear"},
+            letterhead: {organization: "HEADQUARTERS, 4TH INFANTRY DIVISION",
+                streetAddress: "1633 MEKONG STREET", cityStateZip: "FORT CARSON, CO  80913-4321"},
         };
         const assembled = assembleMemo(draftedWithAddressees, recordContext);
 
@@ -3613,8 +3638,11 @@ const FIELD_TEMPLATE = {
             assembled.thru, [], "AR 25-50, fig 2-17");
         check("assembleMemo: an MFR carries no authority line even when the context supplies one",
             assembled.authorityLine, null, "AR 25-50, fig 2-17");
-        check("assembleMemo: an MFR carries no letterhead even when the context supplies one",
-            assembled.letterhead, null, "AR 25-50, fig 2-17");
+        // Owner-directed, per para 2-7: the MFR keeps the letterhead the
+        // caller supplied - it is never prepared without one.
+        check("assembleMemo: an MFR keeps the unit's letterhead",
+            assembled.letterhead.organization, "HEADQUARTERS, 4TH INFANTRY DIVISION",
+            "AR 25-50, para 2-7 as directed");
         checkTrue("assembleMemo: an MFR built this way raises no findings at all",
             validateMemo({...assembled, signature: {name: "N", gradeAndBranch: "MAJ, IN", title: "S3"}})
                 .findings.length === 0, "AR 25-50, fig 2-17");
@@ -4741,6 +4769,11 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
         officeSymbol: "ATZB-RC",
         date: "31 July 2026",
         signature: {name: "MARCUS T. HALE", gradeAndBranch: "SFC, USA", title: "NCOIC, Range Control"},
+        // Owner-directed, per para 2-7: an MFR is never prepared without
+        // the seal and the unit's letterhead, so a fully-supplied MFR
+        // supplies it like any other memorandum.
+        letterhead: {organization: "HEADQUARTERS, 4TH INFANTRY DIVISION",
+            streetAddress: "1633 MEKONG STREET", cityStateZip: "FORT CARSON, CO  80913-4321"},
     };
 
     for (const scenario of SCENARIOS) {
@@ -4753,9 +4786,9 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
 
         checkTrue(`"${scenario.subject}": a fully-supplied MFR from this request passes clean`,
             result.errors.length === 0, "AR 25-50, para 2-7");
-        checkTrue("and carries no addressee, letterhead, or authority line - fig 2-17",
-            memo.addressees.length === 0 && memo.letterhead === null && memo.authorityLine === null,
-            "AR 25-50, fig 2-17");
+        checkTrue("and carries the unit's letterhead but no addressee and no authority line",
+            memo.addressees.length === 0 && memo.letterhead != null && memo.authorityLine === null,
+            "AR 25-50, para 2-7 as directed, and fig 2-17");
 
         const zip = await JSZip.loadAsync(await renderDocx(memo));
         const doc = await zip.file("word/document.xml").async("string");

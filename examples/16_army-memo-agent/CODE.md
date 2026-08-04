@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-913 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
+919 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 913/913 checks passed.
+# AR 25-50 layout verification: 919/919 checks passed.
 ```
 
 ---
@@ -866,6 +866,22 @@ The first attempt at the fault-reintroduction check here is itself worth recordi
 
 ---
 
+## 16g) The MFR goes out on letterhead: an owner decision, recorded as one
+
+The owner directed that an MFR is never prepared without the seal and the DEPARTMENT OF THE ARMY letterhead - reading para 2-7 as the governing text (its 2-7b(1) heading spec names the office symbol, date, and subject, and says nothing against letterhead) and fig 2-17's plain-paper example as illustrative of the informal-meeting use, not a prohibition. The code had read fig 2-17 ¶1 ("Type the MFR on plain white paper") as binding; the owner's reading now governs, and the deviation is recorded here rather than papered over.
+
+What changed, in every layer that had forced plain paper:
+
+- `templates.js`: the record template no longer overrides `base()`'s letterhead - an MFR template ships with the same letterhead placeholders as a standard memorandum's.
+- `memo-intent.js` `assembleMemo()`: the `isRecord` guarantee still clears addressees, THRU, and the authority line (undisputed - fig 2-17 step 6, and MEMORANDUM FOR RECORD is the whole heading), but no longer nulls the letterhead.
+- `memo-server.js` `specFromForm()`: the record special-case on letterhead is gone; an MFR's letterhead comes from the form or falls back to slots, same as any memorandum. The /generate plain-paper note now names only the agreements.
+- `memo-formatter.js` `usesLetterhead()` and `unit-profile.js`'s own `usesLetterhead()`: the record short-circuit removed - the page asks an MFR for its letterhead fields, and both renderers draw the seal and header.
+- `memo-validator.js`: the `mfr-letterhead` error is deleted; letterhead on an MFR is the required state, not a finding. `mfr-authority-line` and `mfr-addressee` stay.
+
+Every check that had pinned plain paper was flipped to pin the new behavior instead, cited "para 2-7 as directed" so a future reader can tell the owner-directed rules from the regulation-quoted ones: the .docx first-page header must now carry the seal (`<w:drawing>`) and DEPARTMENT OF THE ARMY; an MFR's page 1 starts where a standard memorandum's does; /fields asks an MFR for its letterhead; letterhead on an MFR raises no finding; and the five backbone scenarios assert the letterhead is present. Verified live: the preview shows the seal (image loaded, not a placeholder), and the downloaded .docx's header part contains the drawing, the department line, and the unit's three lines, with no authority line. 913 -> 919 checks.
+
+---
+
 ---
 
 ## Writing your own memo
@@ -974,7 +990,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 913 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 919 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

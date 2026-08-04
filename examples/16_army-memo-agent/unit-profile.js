@@ -246,12 +246,15 @@ const isAgreement = (memo) => memo?.type === "mou" || memo?.type === "moa";
 const isLetter = (memo) => memo?.type === "letter";
 
 /**
- * Whether this memorandum is written on letterhead at all. An MFR is on plain
- * white paper (fig 2-17), and an MOU/MOA defaults to it (para 2-6c(1)), so
- * neither has an organization block to ask about.
+ * Whether this memorandum is written on letterhead at all. An MOU/MOA
+ * defaults to plain white paper (para 2-6c(1)), so it has no organization
+ * block to ask about. The MFR does NOT qualify: by the owner's direction an
+ * MFR is always prepared on the unit's letterhead, seal and header
+ * included, so its letterhead fields are asked for like any other
+ * memorandum's.
  */
 function usesLetterhead(memo) {
-    if (memo?.type === "record" || isAgreement(memo)) return false;
+    if (isAgreement(memo)) return false;
     // "Use computer-generated letterhead for the first page" - para 3-5b for a
     // letter, para 2-3a(1) for a memorandum. Both.
     return memo?.letterhead !== null;
