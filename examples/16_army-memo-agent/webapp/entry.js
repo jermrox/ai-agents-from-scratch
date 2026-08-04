@@ -38,54 +38,38 @@ const plain = (id, label, hint = "") =>
   `<label for="${id}"><span class="label-text">${label}</span>${hint ? `<em>${hint}</em>` : ""}</label><input id="${id}">`;
 
 document.getElementById("app").innerHTML = `
-<header>
-  <h1>Army memorandum — AR 25-50</h1>
-  <p>You write the words; the layout is not editable, because none of it is a choice. Pick a type and the example appears; everything you type replaces it live.</p>
+<header class="masthead">
+  <p class="kicker">AR 25-50 · Preparing and Managing Correspondence</p>
+  <h1>Army Memorandum Builder</h1>
+  <p class="sub">Pick the type, say what you need, download the Word file. Anything you skip becomes a click-to-type slot in the document — the formatting is locked to the regulation either way.</p>
 </header>
 <main>
 <form id="f" autocomplete="off" onsubmit="return false">
   <fieldset>
-    <legend>What do you need</legend>
-    <p>The memorandum type is read from this. Override it with the dropdown if the guess is wrong.</p>
-    <label for="request"><span class="label-text">Say it plainly</span></label>
-    <textarea id="request" style="min-height:70px" placeholder="I had a staff meeting about the barracks renovation budget and need to document it"></textarea>
-    <label for="type"><span class="label-text">Type</span></label>
+    <legend><span class="step">1</span> What are you writing?</legend>
     <select id="type">
-      <option value="">Detect from the request</option>
-      ${TYPES.map((t) => `<option value="${t.type}">${t.title} — ${t.cite}</option>`).join("")}
+      <option value="">Pick a type — or describe it below</option>
+      ${TYPES.map((t) => `<option value="${t.type}">${t.title}</option>`).join("")}
     </select>
     <p class="note" id="detected"></p>
-    <p class="note">Drafting with the local language model runs in the full install (<span class="mono">node army-memo-agent.js --serve</span>); this page formats and checks your words with the same code.</p>
+    <label for="request"><span class="label-text">Not sure? Say what you need</span><em>plain words — the right type is picked for you</em></label>
+    <textarea id="request" style="min-height:56px" placeholder="I had a staff meeting about the barracks renovation budget and need to document it"></textarea>
   </fieldset>
 
   <fieldset>
-    <legend>Your words</legend>
-    <p>Type what you need in your own words. Blank line between paragraphs; indent (or start with “- ”) for a subparagraph; never type the numbers — the renderer owns them (para 2-4b(4)(b)).</p>
-    <label for="subject"><span class="label-text">Subject</span><em>ten words or less, para 2-4a(6)</em></label>
+    <legend><span class="step">2</span> Say what it needs to say</legend>
+    <label for="subject"><span class="label-text">Subject</span><em>a few words — ten or fewer</em></label>
     <input id="subject" placeholder="Staff Meeting on Barracks Renovation Funding">
     <p class="counter" id="subjectcount"></p>
-    <label for="body"><span class="label-text">Body</span></label>
-    <textarea id="body" style="min-height:120px" placeholder="This memorandum documents a staff meeting on 30 July 2026 concerning the barracks renovation.
-
-My point of contact is Ms. Karen Blake, ATZB-DPW, 719-555-0173."></textarea>
-    <button type="button" class="secondary" id="copyPrompt">Copy tailoring prompt</button>
-    <p class="note" id="promptnote">Rough words are fine. This copies your request, subject, and body wrapped in the tailoring instruction — paste it into Claude, then paste the tailored paragraphs back into the Body.</p>
-    ${area("addressees", "Addressees", "one per line — para 2-4a(5)")}
-    ${area("distribution", "Distribution", "more than five addressees uses this — defaults to the addressee list", "distribution", 48)}
-    ${area("parties", "Parties to the agreement", "one per line — para 2-6c(2)")}
-    ${field("addresseeTitle", "Addressee's title", "the person's duty title — para 2-4a(5)")}
-    ${field("addresseeAddress", "Addressee's mailing address", "“Exclusive For” only — para 1-12b(1)")}
-    ${field("toCommanderOf", "Or, addressed to the commander of", "leave blank to address the named person — para 1-12b(1)")}
-    ${area("thru", "THRU addressees", "one per line, two at most — para 2-4a(5)(d)", "thru", 48)}
-    <label for="enclosures"><span class="label-text">Enclosures</span><em>optional — one title per line, chapter 4</em></label>
-    <textarea id="enclosures" style="min-height:48px"></textarea>
-    <label for="copiesFurnished"><span class="label-text">Copies furnished</span><em>one per line, para 2-4c(5)</em></label>
-    <textarea id="copiesFurnished" style="min-height:48px"></textarea>
+    <label for="body"><span class="label-text">Your words</span><em>rough is fine — blank line between paragraphs; never type the numbers, the formatter owns them</em></label>
+    <textarea id="body" style="min-height:140px" placeholder="met w DPW 30 jul about barracks funding, they owe a revised cost estimate by 15 aug, poc karen blake ATZB-DPW 719-555-0173"></textarea>
+    <button type="button" class="secondary inline" id="copyPrompt">Copy AI clean-up prompt</button>
+    <p class="note" id="promptnote">Copies your rough words with the tailoring instructions — paste into Claude, then paste the tailored paragraphs back here.</p>
   </fieldset>
 
   <fieldset id="agreementfields" class="hidden">
-    <legend>Signers</legend>
-    <p>Two agreeing officials, in protocol order — para 2-6c(5)(d). Leave a grade blank for a civilian.</p>
+    <legend><span class="step">✦</span> Who signs the agreement</legend>
+    <p>Two agreeing officials, protocol order. Leave a grade blank for a civilian.</p>
     ${plain("signer1Name", "Signer 1 — junior official — name")}
     ${plain("signer1Grade", "Signer 1 — grade and branch", "blank for a civilian")}
     ${plain("signer1Title", "Signer 1 — title and agency")}
@@ -94,44 +78,63 @@ My point of contact is Ms. Karen Blake, ATZB-DPW, 719-555-0173."></textarea>
     ${plain("signer2Title", "Signer 2 — title and agency")}
   </fieldset>
 
-  <fieldset id="unitfields">
-    <legend>Your unit</legend>
-    <p>Fill these in once — this browser remembers them. Anything left blank comes out as a click-to-type slot in Word, formatting locked.</p>
-    ${field("organization", "Letterhead organization", "paras 1-16b and 1-18", "letterhead.organization")}
-    ${field("streetAddress", "Street address", "para 1-18", "letterhead.streetAddress")}
-    ${field("cityStateZip", "City, State ZIP+4", "two spaces before the ZIP — para 5-10b", "letterhead.cityStateZip")}
-    ${field("officeSymbol", "Office symbol", "para 2-4a(1)")}
-    ${field("signerName", "Signer name", "para 6-4c", "signature.name")}
-    ${field("signerGrade", "Grade and branch", "paras 6-4f and 6-5c", "signature.gradeAndBranch")}
-    ${field("signerTitle", "Duty title", "para 6-4c", "signature.title")}
+  <details class="extra" id="unitfields">
+    <summary><span class="sumtitle">Your unit &amp; signature block</span>
+      <em>Set once — this browser remembers it. Anything blank becomes a fill-in slot in Word.</em></summary>
+    <div class="inner">
+    ${field("organization", "Letterhead organization", "as it reads on your letterhead", "letterhead.organization")}
+    ${field("streetAddress", "Street address", "", "letterhead.streetAddress")}
+    ${field("cityStateZip", "City, State ZIP+4", "two spaces before the ZIP", "letterhead.cityStateZip")}
+    ${field("officeSymbol", "Office symbol", "e.g. ATZB-RC")}
+    ${field("signerName", "Signer name", "ALL CAPS on the signature block", "signature.name")}
+    ${field("signerGrade", "Grade and branch", "e.g. SFC, USA", "signature.gradeAndBranch")}
+    ${field("signerTitle", "Duty title", "", "signature.title")}
     <p class="note" id="unitnote"></p>
-    <button type="button" class="secondary" id="forget">Forget this unit</button>
-  </fieldset>
+    <button type="button" class="secondary inline" id="forget">Forget this unit</button>
+    </div>
+  </details>
 
-  <fieldset>
-    <legend>This memorandum</legend>
-    ${field("date", "Date", "defaults to today — " + formatMemoDate())}
-    ${field("suspenseDate", "Suspense date", "optional — para 2-4a(4)")}
-    ${field("authorityLine", "Authority line", "only when signing for the commander — para 2-4c(1)")}
-    ${field("salutation", "Salutation", "letters only — para 3-6a(4)")}
-    ${field("addresseeCategory", "Addressee category", "letters only — appendix C heading")}
+  <details class="extra">
+    <summary><span class="sumtitle">Addressing, enclosures &amp; options</span>
+      <em>All optional — anything blank becomes a fill-in slot in Word.</em></summary>
+    <div class="inner">
+    ${area("addressees", "Addressees", "one per line")}
+    ${area("distribution", "Distribution", "more than five addressees uses this — defaults to the addressee list", "distribution", 48)}
+    ${area("parties", "Parties to the agreement", "one per line")}
+    ${field("addresseeTitle", "Addressee's title", "the person's duty title")}
+    ${field("addresseeAddress", "Addressee's mailing address", "“Exclusive For” only")}
+    ${field("toCommanderOf", "Or, addressed to the commander of", "leave blank to address the named person")}
+    ${area("thru", "THRU addressees", "one per line, two at most", "thru", 48)}
+    <label for="enclosures"><span class="label-text">Enclosures</span><em>only if you attach something — one title per line</em></label>
+    <textarea id="enclosures" style="min-height:48px"></textarea>
+    <label for="copiesFurnished"><span class="label-text">Copies furnished</span><em>one per line</em></label>
+    <textarea id="copiesFurnished" style="min-height:48px"></textarea>
+    ${field("date", "Date", "already set to today — " + formatMemoDate())}
+    ${field("suspenseDate", "Suspense date", "reply-by date, if any")}
+    ${field("authorityLine", "Authority line", "only when signing for the commander")}
+    ${field("salutation", "Salutation", "letters only")}
+    ${field("addresseeCategory", "Addressee category", "letters only")}
     <div id="digitalSignatureField">
       <label class="checkbox" for="digitalSignature"><input type="checkbox" id="digitalSignature" checked>
       <span class="label-text">Digitally signed</span><em>uncheck for a wet signature</em></label>
     </div>
-  </fieldset>
+    <button type="button" class="secondary inline" id="spec">Download spec (JSON)</button>
+    </div>
+  </details>
 
-  <button type="button" id="dl">Download .docx</button>
-  <button type="button" class="secondary" id="spec">Download spec (JSON)</button>
-  <button type="button" class="secondary" id="newmemo">New memorandum</button>
-  <p class="note">New memorandum clears this memorandum's fields and keeps your unit.</p>
+  <div class="actionbar">
+    <span class="step">3</span>
+    <button type="button" id="dl">Download the Word file</button>
+    <button type="button" class="secondary" id="newmemo">Start over</button>
+  </div>
 </form>
 
 <section id="out">
-  <div id="report"><p class="note">Pick a type or say what you need — the example appears here, and everything you type replaces it live.</p></div>
+  <div class="viewerbar"><span class="vtitle">The memorandum</span><span id="viewerchips"></span></div>
+  <div id="report"><p class="note">Pick a type — the finished example appears here and updates as you type.</p></div>
   <div id="outstanding"></div>
   <div id="preview"></div>
-  <p class="note">Runs entirely in this page — nothing you type leaves your browser, and the Word file is built locally. Same code, same checks as the full install (jermrox/ai-agents-from-scratch, examples/16_army-memo-agent).</p>
+  <footer class="pagefoot">Runs entirely in this page — nothing you type leaves your browser; the Word file is built locally. Same code and checks as the full install (jermrox/ai-agents-from-scratch · examples/16_army-memo-agent).</footer>
 </section>
 </main>`;
 
@@ -184,31 +187,64 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":
 
 const PLAIN_PAPER = {mou: "para 2-6c(1)", moa: "para 2-6c(1)"};
 
+const humanRule = (rule) => {
+  const words = String(rule).replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/*
+ * Advisories that only say "this is still blank" duplicate the slots
+ * story - a blank is fine by design, it comes out as a click-to-type
+ * slot. They stay out of the card list so a fresh page shows the sheet,
+ * not a wall of warnings. Real errors and style advisories still show.
+ */
+const BLANK_RULES = new Set(["not-yet-supplied", "unfilled-placeholder",
+  "letterhead-organization", "zip-missing"]);
+const isBlankAdvisory = (f) => f.severity === "warning" && BLANK_RULES.has(f.rule);
+
 function render() {
   const spec = currentSpec();
   const result = validateMemo(spec);
   const meta = MEMO_TYPES[spec.type] ?? MEMO_TYPES.standard;
 
   const errs = result.findings.filter((f) => f.severity === "error").length;
-  const list = result.findings.length
-    ? '<ul class="findings">' + result.findings.map((f) =>
-        '<li class="' + f.severity + '"><span class="rule">' + f.rule + '</span> ' +
-        escapeHtml(f.message) + '<br><span class="cite">' + escapeHtml(f.cite) + '</span></li>').join("") + "</ul>"
-    : '<p class="pass">Compliant. No findings.</p>';
-  $("report").innerHTML =
-    '<p class="note">Type: <b>' + escapeHtml(meta.title) + '</b> — ' + escapeHtml(meta.cite) +
-    ' · ' + result.pages + (result.pages === 1 ? " page" : " pages") +
-    (errs ? ' · <span style="color:var(--err)">' + errs + " error" + (errs === 1 ? "" : "s") + "</span>" : "") + "</p>" +
-    (PLAIN_PAPER[spec.type] ? '<p class="note">No letterhead on this type by rule: plain white paper — AR 25-50, ' +
-      PLAIN_PAPER[spec.type] + ".</p>" : "") + list;
+  document.querySelector("#viewerchips").innerHTML =
+    '<span class="pill">' + escapeHtml(meta.title) + "</span> " +
+    '<span class="pill">' + result.pages + (result.pages === 1 ? " page" : " pages") + "</span>" +
+    (errs ? ' <span class="pill err">' + errs + " error" + (errs === 1 ? "" : "s") + "</span>" : "");
 
+  const shown = result.findings.filter((f) => !isBlankAdvisory(f));
+  const list = shown.length
+    ? '<ul class="findings">' + shown.map((f) =>
+        '<li class="' + f.severity + '"><span class="tag">' +
+        (f.severity === "error" ? "Error" : "Advisory") + "</span><b>" + escapeHtml(humanRule(f.rule)) + "</b> — " +
+        escapeHtml(f.message) + '<span class="cite">' + escapeHtml(f.cite) + "</span></li>").join("") + "</ul>"
+    : '<p class="pass">Nothing to fix.</p>';
+  // An untouched page gets one sentence of orientation, not a verdict on
+  // a memorandum nobody has started yet.
+  const untouched = !$("type").value && !$("request").value.trim() &&
+    !$("subject").value.trim() && !$("body").value.trim();
+  $("report").innerHTML =
+    (PLAIN_PAPER[spec.type] ? '<p class="note">No letterhead on this type by rule: plain white paper — AR 25-50, ' +
+      PLAIN_PAPER[spec.type] + ".</p>" : "") +
+    (untouched ? '<p class="note">This is the blank example — pick a type above and it becomes yours as you fill it in.</p>'
+               : list);
+
+  // Blanks are safe by design - say so once, quietly, with the list an
+  // open-if-you-care fold. Re-renders keep whatever the reader chose.
   const group = (title, fields) => !fields.length ? "" :
-    '<p class="note"><b>' + title + '</b></p><ul class="findings">' +
-    fields.map((f) => '<li><span class="rule">' + escapeHtml(f.label) + "</span> " + escapeHtml(f.hint) +
-      '<br><span class="cite">' + escapeHtml(f.cite) + "</span></li>").join("") + "</ul>";
-  $("outstanding").innerHTML =
-    group("Still to be supplied — your unit", outstandingFields(spec, "unit")) +
-    group("Still to be supplied — this memorandum", outstandingFields(spec, "memorandum").filter((f) => !f.optional));
+    '<p class="grouptitle">' + title + '</p><ul class="findings">' +
+    fields.map((f) => '<li><span class="tag">Slot</span><b>' + escapeHtml(f.label) + "</b> — " + escapeHtml(f.hint) +
+      '<span class="cite">' + escapeHtml(f.cite) + "</span></li>").join("") + "</ul>";
+  const unitBlanks = outstandingFields(spec, "unit");
+  const memoBlanks = outstandingFields(spec, "memorandum").filter((f) => !f.optional);
+  const nBlanks = unitBlanks.length + memoBlanks.length;
+  const wasOpen = !!$("outstanding").querySelector("details[open]");
+  $("outstanding").innerHTML = !nBlanks ? "" :
+    '<details class="blanks"' + (wasOpen ? " open" : "") + "><summary>" +
+    nBlanks + " blank" + (nBlanks === 1 ? "" : "s") +
+    " — fine to leave; each comes out as a grey click-to-type slot in the Word file.</summary>" +
+    group("Your unit", unitBlanks) + group("This memorandum", memoBlanks) + "</details>";
 
   $("preview").innerHTML = renderHtml(spec);
   fitPreview();
@@ -240,7 +276,7 @@ function applyFields(spec) {
     const text = el.querySelector(".label-text");
     if (text) text.textContent = f.label + (f.optional ? " (optional)" : "");
     const em = el.querySelector("em");
-    if (em) em.textContent = f.hint + " — " + f.cite;
+    if (em) em.textContent = f.hint;   // the cite stays in the blanks list, not on every input
   });
   const agreement = spec.type === "mou" || spec.type === "moa";
   $("agreementfields").classList.toggle("hidden", !agreement);
