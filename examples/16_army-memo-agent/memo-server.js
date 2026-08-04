@@ -172,10 +172,17 @@ export function specFromForm(form = {}) {
     // paragraphs are already nested, so they are put back as they were.
     if (!body.length) memo.paragraphs = template.paragraphs;
 
-    // The agreement forms carry structure the standard spec has no field for.
+    // The agreement forms carry structure the standard spec has no field
+    // for - "parties" instead of an addressee, two signers instead of one
+    // signature block (para 2-6c(5)), each falling back to the template's
+    // own placeholder field by field, same as everything else on this page.
     if (type === "mou" || type === "moa") {
-        memo.parties = lines(form.addressees).length ? lines(form.addressees) : template.parties;
-        memo.signers = template.signers;
+        memo.parties = lines(form.parties).length ? lines(form.parties) : template.parties;
+        memo.signers = [0, 1].map((i) => ({
+            name: filled(form[`signer${i + 1}Name`], template.signers[i].name),
+            gradeAndBranch: filled(form[`signer${i + 1}Grade`], template.signers[i].gradeAndBranch),
+            titleAndAgency: filled(form[`signer${i + 1}Title`], template.signers[i].titleAndAgency),
+        }));
     }
     return memo;
 }
@@ -186,8 +193,25 @@ export function specFromForm(form = {}) {
 
 const TYPES = describeTemplates();
 
-const field = (id, label, hint = "") =>
-    `<label for="${id}">${label}${hint ? `<em>${hint}</em>` : ""}</label><input id="${id}" name="${id}">`;
+/*
+ * `field()` wraps every input that unit-profile.js's FIELDS array knows about
+ * in a `data-field="<path>"` container, so the same client-side script that
+ * fetches /fields can show or hide it and rewrite its label and hint - one
+ * source of truth for "does this apply to this memorandum type" instead of a
+ * second copy of that judgment sitting in the page's own markup.
+ *
+ * `path` defaults to `id` because most fields are named after their spec path
+ * already; the few that are not (signerGrade -> signature.gradeAndBranch, and
+ * so on) pass it explicitly. `plainField()` is the escape hatch for inputs
+ * FIELDS does not model at all - the MOU/MOA signer columns, which are an
+ * array of two objects rather than a single path - so they are never hidden
+ * by a path lookup that could never match one.
+ */
+const plainField = (id, label, hint = "") =>
+    `<label for="${id}"><span class="label-text">${label}</span>${hint ? `<em>${hint}</em>` : ""}</label><input id="${id}" name="${id}">`;
+
+const field = (id, label, hint = "", path = id) =>
+    `<div class="field" data-field="${path}">${plainField(id, label, hint)}</div>`;
 
 const page = () => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -240,6 +264,10 @@ const page = () => `<!doctype html>
   .cite { color:var(--dim); font-size:12px; }
   .pass { color:var(--ok); font-weight:600; }
   .empty { color:var(--dim); }
+  /* Fields unit-profile.js says do not apply to the selected type - MOU/MOA
+     has no office symbol, an MFR has no addressee, and so on. Hidden, not
+     removed: switching the type back does not lose what was typed. */
+  .field.hidden, fieldset.hidden { display:none; }
 </style></head>
 <body>
 <header>
@@ -277,26 +305,47 @@ Range Control will complete the following work:
   Replace the target lifters on lanes 1 through 12.
 
   Regrade the access road."></textarea>
-    <label for="addressees">Addressees <em>one per line</em></label>
-    <textarea id="addressees" name="addressees" style="min-height:64px"></textarea>
-    <label for="thru">THRU addressees <em>one per line, para 2-4a(5)(d)</em></label>
-    <textarea id="thru" name="thru" style="min-height:48px"></textarea>
+    <div class="field" data-field="addressees">
+      <label for="addressees"><span class="label-text">Addressees</span><em>one per line</em></label>
+      <textarea id="addressees" name="addressees" style="min-height:64px"></textarea>
+    </div>
+    <div class="field" data-field="parties">
+      <label for="parties"><span class="label-text">Parties to the agreement</span><em>one per line, para 2-6c(2)</em></label>
+      <textarea id="parties" name="parties" style="min-height:64px"></textarea>
+    </div>
+    ${field("addresseeTitle", "Addressee's title", "the person's duty title, not their organization — para 2-4a(5)", "addresseeTitle")}
+    ${field("addresseeAddress", "Addressee's mailing address", "only “Exclusive For” correspondence names one — para 1-12b(1)", "addresseeAddress")}
+    <div class="field" data-field="thru">
+      <label for="thru"><span class="label-text">THRU addressees</span><em>one per line, para 2-4a(5)(d)</em></label>
+      <textarea id="thru" name="thru" style="min-height:48px"></textarea>
+    </div>
     <label for="enclosures">Enclosures <em>one per line, chapter 4</em></label>
     <textarea id="enclosures" name="enclosures" style="min-height:48px"></textarea>
     <label for="copiesFurnished">Copies furnished <em>one per line, para 2-4c(5)</em></label>
     <textarea id="copiesFurnished" name="copiesFurnished" style="min-height:48px"></textarea>
   </fieldset>
 
+  <fieldset id="agreementfields" class="hidden">
+    <legend>Signers</legend>
+    <p>Two agreeing officials, in protocol order — para 2-6c(5)(d). Leave a grade blank for a civilian; only the title is shown for one.</p>
+    ${plainField("signer1Name", "Signer 1 — junior official — name")}
+    ${plainField("signer1Grade", "Signer 1 — grade and branch", "blank for a civilian")}
+    ${plainField("signer1Title", "Signer 1 — title and agency")}
+    ${plainField("signer2Name", "Signer 2 — senior official — name")}
+    ${plainField("signer2Grade", "Signer 2 — grade and branch", "blank for a civilian")}
+    ${plainField("signer2Title", "Signer 2 — title and agency")}
+  </fieldset>
+
   <fieldset id="unitfields">
     <legend>Your unit</legend>
     <p>These are the office's own, and they are the same on the next memorandum and the one after that. Fill them in once and this page will remember them on this browser; <b>Forget</b> clears them. Leave any of them blank and it comes out as a click-to-type slot in Word — editable as text, with the formatting locked, so nothing moves when you fill it in.</p>
-    ${field("organization", "Letterhead organization", "paras 1-16b and 1-18")}
-    ${field("streetAddress", "Street address", "para 1-18")}
-    ${field("cityStateZip", "City, State ZIP+4", "two spaces before the ZIP — para 5-10b")}
+    ${field("organization", "Letterhead organization", "paras 1-16b and 1-18", "letterhead.organization")}
+    ${field("streetAddress", "Street address", "para 1-18", "letterhead.streetAddress")}
+    ${field("cityStateZip", "City, State ZIP+4", "two spaces before the ZIP — para 5-10b", "letterhead.cityStateZip")}
     ${field("officeSymbol", "Office symbol", "para 2-4a(1)")}
-    ${field("signerName", "Signer name", "para 6-4c")}
-    ${field("signerGrade", "Grade and branch", "paras 6-4f and 6-5c")}
-    ${field("signerTitle", "Duty title", "para 6-4c")}
+    ${field("signerName", "Signer name", "para 6-4c", "signature.name")}
+    ${field("signerGrade", "Grade and branch", "paras 6-4f and 6-5c", "signature.gradeAndBranch")}
+    ${field("signerTitle", "Duty title", "para 6-4c", "signature.title")}
     <p class="detected" id="unitnote"></p>
     <button type="button" class="secondary" id="forget">Forget this unit</button>
   </fieldset>
@@ -373,6 +422,52 @@ for (const id of UNIT_IDS) {
   }));
 }
 
+/*
+ * Which fields belong on the page at all, for the type currently selected.
+ * unit-profile.js's FIELDS array already knows this - an MFR has no
+ * addressee, an MOU/MOA has no office symbol, a letter has no THRU chain -
+ * and /fields is that same judgment, already used to build the "still to be
+ * supplied" list, read again here so the form itself does not carry a second,
+ * driftable copy of it. Hidden fields keep their values: switching the type
+ * to check something and back must not lose what was typed.
+ */
+function applyFields(data) {
+  const known = new Map();
+  for (const f of [...(data.unit || []), ...(data.memorandum || [])]) known.set(f.path, f);
+
+  document.querySelectorAll("[data-field]").forEach((el) => {
+    const f = known.get(el.dataset.field);
+    el.classList.toggle("hidden", !f);
+    if (!f) return;
+    const label = el.querySelector("label");
+    const text = label && label.querySelector(".label-text");
+    if (text) text.textContent = f.label + (f.optional ? " (optional)" : "");
+    let em = label && label.querySelector("em");
+    if (label && !em) { em = document.createElement("em"); label.appendChild(em); }
+    if (em) em.textContent = f.hint + " — " + f.cite;
+  });
+
+  const agreement = data.type === "mou" || data.type === "moa";
+  $("agreementfields").classList.toggle("hidden", !agreement);
+
+  // An agreement has no letterhead, no office symbol and no lone signature
+  // block (para 2-6c) - every field "Your unit" holds is gone at once, and a
+  // box with nothing in it but an intro paragraph and a Forget button is
+  // clutter, not a fieldset. "Your words" and "This memorandum" never empty
+  // out this way - each always keeps something ungated (the body, the date) -
+  // so this check is only ever applied here, not generically.
+  const unitfields = $("unitfields");
+  const anyUnitVisible = Array.from(unitfields.querySelectorAll(".field[data-field]"))
+    .some((el) => !el.classList.contains("hidden"));
+  unitfields.classList.toggle("hidden", !anyUnitVisible);
+}
+
+async function fetchFields() {
+  try {
+    applyFields(await (await post("/fields", formData())).json());
+  } catch (e) { /* the static form still works without live field metadata */ }
+}
+
 async function post(path, body) {
   const r = await fetch(path, {method:"POST", headers:{"content-type":"application/json"},
                               body: JSON.stringify(body)});
@@ -422,6 +517,7 @@ async function generate() {
     renderReport(d);
     renderOutstanding(d.outstanding || {unit: [], memorandum: []});
     $("frame").srcdoc = d.html;
+    fetchFields();
   } catch (e) {
     $("report").innerHTML = '<p style="color:var(--err)">' + escapeHtml(e.message) + "</p>";
   } finally {
@@ -478,9 +574,12 @@ $("request").addEventListener("blur", async () => {
   if (!$("request").value.trim() || $("type").value) return;
   const d = await (await post("/detect", {request: $("request").value})).json();
   $("detected").textContent = "Reading this as: " + d.title + " (" + d.cite + ")";
+  fetchFields();
 });
+$("type").addEventListener("change", fetchFields);
 
 loadUnit();
+fetchFields();
 </script>
 </body></html>`;
 

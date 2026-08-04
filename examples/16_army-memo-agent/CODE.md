@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-827 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+877 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility (§16e).
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 827/827 checks passed.
+# AR 25-50 layout verification: 877/877 checks passed.
 ```
 
 ---
@@ -811,6 +811,29 @@ Both fixes confirmed by reverting them and watching the specific checks fail - t
 
 ---
 
+## 16e) A form that shows only the fields the type in hand actually has
+
+`unit-profile.js`'s `FIELDS` array already answered "does this field apply to this memorandum type" - it is what `/fields`, the "still to be supplied" list, and `outstandingFields()` are all built from. What it never reached was the page itself: every input was hardcoded, shown for every type regardless of whether that type carries the field at all. A standard memorandum's form and an MOU's were the same 20-odd inputs, most of them meaningless for whichever one you had picked - the office symbol on an agreement that has none (para 2-6c), an authority line on an MFR that fig 2-17 forbids one on.
+
+Reading the served page directly - not just the backend logic - turned up three gaps the earlier passes hadn't reached:
+
+- **`addresseeTitle` and `addresseeAddress` had no input at all.** `specFromForm()` already read them (added while wiring the three new templates in §16b/16c); the page had nowhere to type them. An "Exclusive For" memorandum's title and mailing address (para 2-4a(5), para 1-12b(1)) were reachable only through the raw JSON spec, never through the form built to produce one.
+- **MOU/MOA signers were hardcoded to the template's placeholders.** `specFromForm()`'s agreement branch set `memo.signers = template.signers` unconditionally - there was no form field a real signer's name could reach, and "Addressees" was silently repurposed as the agreement's party list under a label that said something else.
+- **Every field showed regardless of type.** No structural problem, but the opposite of "not sloppy": filling in an office symbol for an agreement that will never render it is exactly the kind of thing that makes a form feel unreliable.
+
+The fix extends the existing single source of truth rather than duplicating its judgment in the page's own markup, which is what made the earlier CLI/server letterhead-clearing bug (§13i) possible in the first place - two copies of one rule, one of them stale. `field()` now wraps every input `FIELDS` knows about in `<div class="field" data-field="<path>">`; a new `fetchFields()` in the page's own script calls `POST /fields` with the current form state - on load, on the type `<select>`'s `change`, and after `/detect` resolves on request blur - and shows or hides each container by whether its path came back, rewriting the label and hint from the answer so a letter's "Grade and component" and a memorandum's "Grade and branch" are never both on screen under the same input. Hidden fields keep whatever was typed in them: switching the type to check something and back does not lose it, and the render path was already proven safe for this in §16b - `memo-docx.js` gates `addresseeTitle`/`addresseeAddress` on `PERSONAL_ADDRESS_TYPES.includes(memo.type)` at the point of use, so a stale value in a hidden field is inert, not wrong.
+
+Two things `FIELDS` cannot model got handled separately rather than forced into the same lookup:
+
+- **The MOU/MOA signer columns** are an array of two objects, not a single path - `plainField()` (the pre-existing behavior, no `data-field` wrapper) is used for `signer1Name/Grade/Title` and `signer2Name/Grade/Title`, and the whole "Signers" fieldset is toggled by `data.type === "mou" || data.type === "moa"` instead. A field wrapped in a `data-field` container keyed to its own id would never appear in a `/fields` answer and would stay hidden forever - `verify.js` asserts none of the six carry one.
+- **"Your unit" going empty.** An agreement clears every unit-scoped field at once - no letterhead, no office symbol, no lone signature block (para 2-6c) - which left a fieldset holding nothing but its intro paragraph and a Forget button. Hidden as a whole when none of its fields are visible; "Your words" and "This memorandum" are never emptied out this way (the body and the date are never gated), so the check is applied only to `#unitfields`, not generically.
+
+Two new `FIELDS` entries - `authorityLine` and `suspenseDate` - had existed only as hardcoded, ungated inputs before this pass; both are now genuinely typed fields with `when()` predicates (present on a standard memorandum, absent from an MFR, an agreement, and a letter) rather than static markup that happened to be right for most types and silently wrong for the rest.
+
+Verified against a live server over real HTTP, not just against the template string: every distinct `FIELDS` path (all but `subject`, which stays on the page unconditionally - para 3-6a(2) makes a letter's subject optional "if used," not absent, and the validator accepts one either way) has a container on the served page; `/fields` for `mou`/`exclusiveFor`/`standard`/`letter` returns exactly the paths each type's own `when()` predicates say it should; a filled MOU form round-trips through `specFromForm()` into the actual `.docx` XML - signer names, grades, titles, and the party list all present, not the template's placeholders. Confirmed with Playwright against the running server across five types (standard, MOU, "Exclusive For", MFR, letter): screenshots at each step, zero console errors, and the downloaded MOU's `document.xml` inspected directly for the typed signer names. Each of the three gaps above was fault-reintroduced and confirmed to fail its own new check before being fixed for good. 827 -> 877 checks.
+
+---
+
 ---
 
 ## Writing your own memo
@@ -919,7 +942,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 827 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 877 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

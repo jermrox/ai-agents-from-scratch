@@ -18,7 +18,7 @@
  * the office. So the agent's job is to know where they go, not what they say.
  */
 
-import {LETTERHEAD} from "./ar25-50.js";
+import {LETTERHEAD, PERSONAL_ADDRESS_TYPES} from "./ar25-50.js";
 
 /**
  * Every field a memorandum needs from a person rather than from the
@@ -146,6 +146,49 @@ export const FIELDS = [
         hint: "Name, street, city and State, written out - no abbreviations except those in para 3-6a(3)(a).",
         cite: "AR 25-50, para 3-6a(3)",
         when: (memo) => isLetter(memo),
+    },
+    {
+        // "Exclusive For" correspondence, appreciation, and commendation
+        // address the name and title of a person, not an office - para
+        // 2-4a(5).
+        path: "addresseeTitle", scope: "memorandum",
+        label: "Addressee's title", prompt: "TITLE",
+        hint: "The person's duty title, not their organization.",
+        cite: "AR 25-50, para 2-4a(5)",
+        when: (memo) => PERSONAL_ADDRESS_TYPES.includes(memo?.type),
+    },
+    {
+        // Only "Exclusive For" spells this out as a third element - para
+        // 1-12b(1). Appreciation and commendation name only "the name and
+        // title of the addressee" - para 2-4a(5) - so this does not apply there.
+        path: "addresseeAddress", scope: "memorandum", optional: true,
+        label: "Addressee's mailing address", prompt: "MAILING ADDRESS",
+        hint: "Only \"Exclusive For\" correspondence names a mailing address.",
+        cite: "AR 25-50, para 1-12b(1)",
+        when: (memo) => memo?.type === "exclusiveFor",
+    },
+    {
+        // Para 2-6c(2): the parties are named in the heading, not after a
+        // MEMORANDUM FOR line - an MOU/MOA has no addressee at all (para 2-6c(1)).
+        path: "parties", scope: "memorandum", list: true,
+        label: "Parties to the agreement", prompt: "PARTY",
+        hint: "The agencies entering into it, in the order they should appear. One per line.",
+        cite: "AR 25-50, para 2-6c(2)",
+        when: (memo) => isAgreement(memo),
+    },
+    {
+        path: "authorityLine", scope: "memorandum", optional: true,
+        label: "Authority line", prompt: "AUTHORITY LINE",
+        hint: "Only when someone other than the commander signs - para 2-4c(1). Omitted on an MFR, an agreement, and a letter.",
+        cite: "AR 25-50, para 2-4c(1)",
+        when: (memo) => memo?.type !== "record" && !isAgreement(memo) && !isLetter(memo),
+    },
+    {
+        path: "suspenseDate", scope: "memorandum", optional: true,
+        label: "Suspense date", prompt: "SUSPENSE DATE",
+        hint: "Only when a reply is required by a certain date - para 2-4a(4). Letters do not take one (para 1-27b).",
+        cite: "AR 25-50, para 2-4a(4)",
+        when: (memo) => memo?.type !== "record" && !isAgreement(memo) && !isLetter(memo),
     },
     {
         // A letter's date is civilian style and always shown - para 3-6a(1).

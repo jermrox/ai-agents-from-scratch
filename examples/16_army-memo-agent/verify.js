@@ -3060,6 +3060,160 @@ const FIELD_TEMPLATE = {
 }
 
 // ---------------------------------------------------------------------------
+// The page shows only the fields the selected type actually has
+// ---------------------------------------------------------------------------
+
+/*
+ * unit-profile.js's FIELDS array already knows which fields apply to which
+ * memorandum type - it is what /fields and the "still to be supplied" list
+ * are built from. The page wraps every field it knows about there in a
+ * `data-field="<path>"` container and asks /fields itself, rather than
+ * carrying a second, driftable copy of "does this apply" in its own markup.
+ * These checks read the served page, not the source, because the containers
+ * are produced by a template helper.
+ */
+{
+    const {specFromForm, createMemoServer} = await import("./memo-server.js");
+    const {FIELDS} = await import("./unit-profile.js");
+
+    const server = await new Promise((resolve) => {
+        const s = createMemoServer();
+        s.listen(0, () => resolve(s));
+    });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const html = await (await fetch(`${base}/`)).text();
+
+    /*
+     * Every path FIELDS knows about is a container on the page - so hiding
+     * one is a CSS toggle, never a missing input - except "subject" itself.
+     * FIELDS excludes it for letters because para 3-6a(2) makes a letter's
+     * subject line optional "if used", not because the page should refuse
+     * to take one: the validator accepts a letter with or without a subject
+     * (checkLetterHeading() returns early only when it is absent), so hiding
+     * the input outright would remove a capability the renderer already
+     * supports rather than reflect one it does not.
+     */
+    const distinctPaths = new Set(FIELDS.map((f) => f.path));
+    distinctPaths.delete("subject");
+    for (const path of distinctPaths) {
+        checkTrue(`the page has a field container for "${path}"`,
+            html.includes(`data-field="${path}"`), "front end");
+    }
+    checkTrue("subject stays on the page unconditionally - a letter may use one",
+        /<label for="subject">/.test(html) && !html.includes('data-field="subject"'),
+        "AR 25-50, para 3-6a(2)");
+
+    // The signer columns are an array of two objects, not a single path -
+    // FIELDS cannot model them, so they are never wrapped in a data-field
+    // container that a path lookup could wrongly hide. Visibility for these
+    // six is carried by the whole "Signers" fieldset instead.
+    for (const id of ["signer1Name", "signer1Grade", "signer1Title",
+                       "signer2Name", "signer2Grade", "signer2Title"]) {
+        checkTrue(`"${id}" is on the page`, html.includes(`id="${id}"`), "AR 25-50, para 2-6c(5)");
+        // Wrapped in a data-field container keyed to its own id, this would
+        // be hidden forever - unit-profile.js has no path by that name to
+        // ever populate a /fields answer with.
+        checkTrue(`"${id}" carries no data-field container of its own`,
+            !html.includes(`data-field="${id}"`), "front end");
+    }
+    checkTrue('the signer fieldset starts hidden - most memorandums are not agreements',
+        /id="agreementfields" class="hidden"/.test(html), "AR 25-50, para 2-6c");
+
+    // The client script itself picks these up through /fields - proving the
+    // wiring end to end without a browser: the same lookup the page's own
+    // script performs, run here against the same endpoint.
+    const fieldsFor = async (type) =>
+        (await (await fetch(`${base}/fields`, {
+            method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({type}),
+        })).json());
+
+    const mou = await fieldsFor("mou");
+    const mouPaths = new Set([...mou.unit, ...mou.memorandum].map((f) => f.path));
+    checkTrue("an MOU's /fields answer includes parties", mouPaths.has("parties"), "AR 25-50, para 2-6c(2)");
+    checkTrue("and does not include addressees - an agreement has none",
+        !mouPaths.has("addressees"), "AR 25-50, para 2-6c(1)");
+    checkTrue("and carries no unit-scoped field at all - no letterhead, no lone signature block",
+        mou.unit.length === 0, "AR 25-50, para 2-6c");
+
+    const exclusiveFor = await fieldsFor("exclusiveFor");
+    const exPaths = new Set([...exclusiveFor.unit, ...exclusiveFor.memorandum].map((f) => f.path));
+    checkTrue("\"Exclusive For\" is asked for the addressee's title", exPaths.has("addresseeTitle"),
+        "AR 25-50, para 2-4a(5)");
+    checkTrue("and for a mailing address", exPaths.has("addresseeAddress"), "AR 25-50, para 1-12b(1)");
+
+    const standard = await fieldsFor("standard");
+    const stdPaths = new Set([...standard.unit, ...standard.memorandum].map((f) => f.path));
+    checkTrue("a standard memorandum is not asked for the personal-address fields",
+        !stdPaths.has("addresseeTitle") && !stdPaths.has("addresseeAddress") && !stdPaths.has("parties"),
+        "AR 25-50, para 2-4a(5)");
+
+    /*
+     * authorityLine and suspenseDate: a standard memorandum can carry either
+     * - someone signing for the commander (para 2-4c(1)), a reply owed by a
+     * date (para 2-4a(4)) - but an MFR has neither (fig 2-17), an agreement
+     * has neither (para 2-6c), and a letter has neither (chapter 3 has no
+     * authority line and para 1-27b gives letters no suspense date).
+     */
+    checkTrue("a standard memorandum is asked for an authority line",
+        stdPaths.has("authorityLine"), "AR 25-50, para 2-4c(1)");
+    checkTrue("and for a suspense date", stdPaths.has("suspenseDate"), "AR 25-50, para 2-4a(4)");
+    const record = await fieldsFor("record");
+    const recordPaths = new Set([...record.unit, ...record.memorandum].map((f) => f.path));
+    checkTrue("an MFR is asked for neither - fig 2-17 has no authority line",
+        !recordPaths.has("authorityLine") && !recordPaths.has("suspenseDate"), "AR 25-50, fig 2-17");
+    checkTrue("nor is an MOU", !mouPaths.has("authorityLine") && !mouPaths.has("suspenseDate"),
+        "AR 25-50, para 2-6c");
+
+    // A different type is one lookup away from a wrong-looking form; the
+    // label and hint the page shows have to be the ones for the type in
+    // hand, not whichever entry happened to load first for a shared path.
+    const letter = await fieldsFor("letter");
+    const letterPaths = new Set([...letter.unit, ...letter.memorandum].map((f) => f.path));
+    checkTrue("nor is a letter", !letterPaths.has("authorityLine") && !letterPaths.has("suspenseDate"),
+        "AR 25-50, para 1-27b");
+    const letterGrade = letter.unit.find((f) => f.path === "signature.gradeAndBranch");
+    check("a letter's grade field is worded for a letter, not a memorandum",
+        letterGrade?.prompt, "GRADE, U.S. ARMY", "AR 25-50, paras 3-4 and 3-6c(2)(c)");
+    const memoGrade = standard.unit.find((f) => f.path === "signature.gradeAndBranch");
+    check("and a memorandum's is worded the other way",
+        memoGrade?.prompt, "GRADE, BRANCH", "AR 25-50, paras 6-4f and 6-5c");
+
+    /*
+     * specFromForm() reads the MOU/MOA signer inputs the page now has -
+     * signer1Name/Grade/Title and signer2Name/Grade/Title - field by field,
+     * each falling back to the template's own placeholder the same way
+     * every other field on the page does, rather than the whole pair being
+     * silently replaced by the template regardless of what was typed.
+     */
+    const agreement = specFromForm({
+        type: "mou", request: "", subject: "Range Sharing",
+        parties: "Fort Test\nExample County",
+        signer1Name: "MARCUS T. HALE", signer1Grade: "COL, GS", signer1Title: "Garrison Commander",
+        signer2Name: "JANET R. OWENS", signer2Title: "Sheriff, Example County",
+    });
+    check("a supplied party list is used", agreement.parties, ["Fort Test", "Example County"],
+        "AR 25-50, para 2-6c(2)");
+    check("a supplied junior signer's name is used", agreement.signers[0].name, "MARCUS T. HALE",
+        "AR 25-50, para 2-6c(5)");
+    check("a supplied senior signer's title is used", agreement.signers[1].titleAndAgency,
+        "Sheriff, Example County", "AR 25-50, para 2-6c(5)");
+    checkTrue("a senior signer left blank for a civilian carries no grade placeholder text",
+        agreement.signers[1].gradeAndBranch === "" || agreement.signers[1].gradeAndBranch == null
+            || (await import("./templates.js")).hasPlaceholders(agreement.signers[1].gradeAndBranch),
+        "AR 25-50, para 6-5c");
+
+    const agreementBlank = specFromForm({type: "mou", request: "", subject: "Range Sharing"});
+    const {hasPlaceholders} = await import("./templates.js");
+    checkTrue("an unsupplied party list falls back to the template's own placeholder",
+        agreementBlank.parties.length > 0 && agreementBlank.parties.every(hasPlaceholders),
+        "AR 25-50, para 2-6c(2)");
+    checkTrue("an unsupplied signer falls back to the template's own placeholder",
+        hasPlaceholders(agreementBlank.signers[0].name), "AR 25-50, para 2-6c(5)");
+
+    server.close();
+}
+
+// ---------------------------------------------------------------------------
 // The memorandum for record, both forms
 // ---------------------------------------------------------------------------
 
