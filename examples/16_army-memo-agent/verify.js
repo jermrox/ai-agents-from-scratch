@@ -2409,9 +2409,42 @@ const FIELD_TEMPLATE = {
             .warnings.some((f) => f.rule === "wrong-vehicle"),
         "AR 25-50, para 3-2");
 
-    checkTrue("the figure 2-1 memorandum trips none of the three",
+    /*
+     * Para 1-8b: "Do not use the memorandum format when corresponding with
+     * the Families of military personnel or private businesses." Narrower
+     * and stricter than para 3-2's letter audience - it is an error, not a
+     * warning, because no reformatting fixes it; the document itself is wrong.
+     */
+    const {memorandumProhibitedAudiences, MEMORANDUM_PROHIBITED_AUDIENCES} = await import("./ar25-50.js");
+    checkTrue("para 1-8b: the Family of a Servicemember is a prohibited memorandum audience",
+        memorandumProhibitedAudiences(["Mrs. Jane Smith, Family of SPC John Smith"])
+            .some((h) => h.who === "the Family of a Servicemember"),
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+    checkTrue("and so is a private business",
+        memorandumProhibitedAudiences(["ABC Electronics Inc., 100 Main Street, Anytown, VA 22201"])
+            .some((h) => h.who === "a private business"),
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+    checkTrue("but an ordinary company-sized unit address is not misread as a business",
+        memorandumProhibitedAudiences(["Commander, Company C, 2d Battalion, 5th Cavalry Regiment"]).length === 0,
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+    checkTrue("addressing a memorandum to a Servicemember's Family is reported as an error",
+        validateMemo({...FIG_2_1, addressees: ["Mrs. Jane Smith, Family of SPC John Smith"]})
+            .errors.some((f) => f.rule === "memorandum-prohibited-audience"),
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+    checkTrue("and addressing one to a private business is reported the same way",
+        validateMemo({...FIG_2_1, addressees: ["ABC Electronics Inc., 100 Main Street, Anytown, VA 22201"]})
+            .errors.some((f) => f.rule === "memorandum-prohibited-audience"),
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+    checkTrue("and a letter addressed to either raises no memorandum-prohibited-audience finding",
+        validateMemo({...FIG_2_1, type: "letter",
+                      addressees: ["Mrs. Jane Smith, Family of SPC John Smith"]})
+            .findings.every((f) => f.rule !== "memorandum-prohibited-audience"),
+        MEMORANDUM_PROHIBITED_AUDIENCES.cite);
+
+    checkTrue("the figure 2-1 memorandum trips none of the four",
         validateMemo(FIG_2_1).findings.every(
-            (f) => !["superseded-format", "mass-mailing", "wrong-vehicle"].includes(f.rule)),
+            (f) => !["superseded-format", "mass-mailing", "wrong-vehicle",
+                     "memorandum-prohibited-audience"].includes(f.rule)),
         "AR 25-50, fig 2-1");
 
     /*

@@ -2257,6 +2257,45 @@ export function formatLetterDate(date = new Date()) {
     return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+/**
+ * "Do not use the memorandum format when corresponding with the Families of
+ *  military personnel or private businesses." - para 1-8b
+ *
+ * A narrower rule than `LETTER_AUDIENCES`: para 3-2 does not name either of
+ * these two as letter audiences either, so this is not "use a letter
+ * instead" - it is "not a memorandum", full stop. The letter is the vehicle
+ * AR 25-50 offers for both in practice (para 3-2's "official personal
+ * correspondence... letters of welcome, appreciation, commendation, and
+ * condolence" covers a Family; "the public" covers a business), which is why
+ * the finding still points at chapter 3.
+ */
+export const MEMORANDUM_PROHIBITED_AUDIENCES = {
+    cite: "AR 25-50, para 1-8b",
+    tests: [
+        {who: "the Family of a Servicemember",
+         pattern: /\bfamily\s+of\b/i},
+        // Deliberately narrow. "Company" and "Co" are also how a memorandum
+        // names its own addressee - "Commander, Company C, 2d Battalion" -
+        // and a pattern that fires on either would misreport every ordinary
+        // unit address in the codebase's own examples. Only suffixes with no
+        // military reading are matched.
+        {who: "a private business",
+         pattern: /\b(Inc|LLC|L\.L\.C|Corp(oration)?)\.?(?=[\s,]|$)/},
+    ],
+};
+
+/** Addressees this memorandum names that para 1-8b bars a memorandum from reaching. */
+export function memorandumProhibitedAudiences(addressees = []) {
+    const hits = new Map();
+    for (const raw of addressees) {
+        const text = String(typeof raw === "string" ? raw : (raw?.text ?? raw?.name ?? ""));
+        for (const t of MEMORANDUM_PROHIBITED_AUDIENCES.tests) {
+            if (t.pattern.test(text) && !hits.has(t.who)) hits.set(t.who, text);
+        }
+    }
+    return [...hits].map(([who, addressee]) => ({who, addressee}));
+}
+
 export const LETTER_AUDIENCES = {
     cite: "AR 25-50, para 3-2",
     tests: [

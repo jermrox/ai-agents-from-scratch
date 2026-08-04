@@ -54,6 +54,8 @@ import {
     SUPERSEDING_AUTHORITY,
     MASS_MAILING,
     letterAudiences,
+    memorandumProhibitedAudiences,
+    MEMORANDUM_PROHIBITED_AUDIENCES,
     LETTER_AUDIENCES,
     APPENDIX_F,
     TABBING,
@@ -780,11 +782,28 @@ function checkMassMailing(memo, out) {
  * fixes - so this reports the vehicle rather than the format.
  */
 function checkCorrespondenceVehicle(memo, out) {
+    if (isLetter(memo)) return;
+
     for (const {who, addressee} of letterAudiences(memo.addressees)) {
         out.push(warn("content", "wrong-vehicle",
             `"${addressee}" is ${who}, an audience the letter is used for, not the memorandum. ` +
             `A letter differs in every part - see AR 25-50, chapter 3. This module builds memorandums only.`,
             LETTER_AUDIENCES.cite));
+    }
+
+    /*
+     * "Do not use the memorandum format when corresponding with the Families
+     *  of military personnel or private businesses." - para 1-8b. Narrower
+     *  than para 3-2's letter audience: neither of these is named as a letter
+     *  audience either, so the finding is "not a memorandum," not "use a
+     *  letter" - though the letter is the vehicle AR 25-50 offers for both in
+     *  practice.
+     */
+    for (const {who, addressee} of memorandumProhibitedAudiences(memo.addressees)) {
+        out.push(error("content", "memorandum-prohibited-audience",
+            `"${addressee}" is ${who}. A memorandum does not go to this addressee at all - `
+            + "use a letter instead.",
+            MEMORANDUM_PROHIBITED_AUDIENCES.cite));
     }
 }
 

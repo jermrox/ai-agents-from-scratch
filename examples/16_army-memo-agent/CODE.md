@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-676 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
+682 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, and the validator's catch rate.
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 676/676 checks passed.
+# AR 25-50 layout verification: 682/682 checks passed.
 ```
 
 ---
@@ -589,6 +589,14 @@ The first is a real bug. `checkProtocol()` in the validator checked addressees a
 
 The second is genuinely new material. Figure B-1 carries eight footnotes and figure B-2 carries one, and seven of those nine give an explicit order for naming some but not all of one category - either the fixed order the footnote states (the three Secretaries of the Military Departments, six Under Secretaries of Defense, four Chiefs of the Military Services) or alphabetical order among the members it names (thirteen Assistant Secretaries of Defense, nineteen Directors of Defense Agencies, eight Directors of DoD Field Activities, five Assistant Secretaries of the Army). `PROTOCOL_OSD_DETAIL` and `PROTOCOL_HQDA_DETAIL` hold all nine, `checkProtocolDetailOrder()` checks a supplied list against any one of them, and the validator runs all nine automatically as `protocol-detail-order`. The eighth OSD footnote - *"refer to the most recent DoD Order of Precedence memorandum"* - names no list AR 25-50 gives, so nothing is invented for it; the fact recorded is that none exists here.
 
+## 13f) Para 1-8b — the memorandum's excluded audiences
+
+Para 1-8b draws its own boundary, one sentence long: *"Do not use the memorandum format when corresponding with the Families of military personnel or private businesses."* This is not `LETTER_AUDIENCES` again — para 3-2 does not name either of these two as a letter audience, so the finding is not "wrong vehicle, use a letter," it is "no memorandum reaches this addressee at all." AR 25-50 offers the letter as the practical way to reach both (para 3-2's "letters of welcome, appreciation, commendation, and condolence" covers a Family; "the public" covers a business), which is why the message still points there, but the rule itself is narrower and stricter than chapter 3's — an **error**, not a warning, because no reformatting fixes it.
+
+`MEMORANDUM_PROHIBITED_AUDIENCES` in `ar25-50.js` holds two patterns, and the second one took a false positive to get right. The obvious first attempt matched `Company`/`Co` as business suffixes — and immediately misreported the codebase's own standard test addressee, `"Commander, Company C, 2d Battalion, 5th Cavalry Regiment"`, as a private business, because "Company C" is an ordinary Army sub-unit designation, not a corporate name. The fix drops `Company`/`Co` entirely and matches only suffixes with no military reading (`Inc`, `LLC`, `Corp`/`Corporation`). `verify.js` keeps the regression as a named check — the exact addressee that broke it, asserted clean — not just a passing test for the fixed pattern.
+
+`checkCorrespondenceVehicle` runs `memorandumProhibitedAudiences()` alongside the existing letter-audience check, guarded the same way (`isLetter(memo)` skips both — the rule is about what a *memorandum* may not do). Both the pattern-design fix and the validator wiring were confirmed by deliberate fault reintroduction: restoring the old business regex made the "Company C" check fail as expected, and removing the validator's loop made both fire-conditions fail as expected, before either was put back.
+
 ---
 
 ## 14a) The unit's fields, and the memorandum's
@@ -796,7 +804,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 676 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 682 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 
