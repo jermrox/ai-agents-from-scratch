@@ -888,6 +888,18 @@ And the example now leads: selecting a type - by the dropdown or by the request 
 
 ---
 
+## 16h) The live version: the same code, running in the browser
+
+The user could not interact with anything demonstrated so far - the server binds to a sandbox's loopback. The answer is not screenshots; it is the product in their hands. `webapp/` builds a single self-contained page that runs the repo's own modules in the browser: `specFromForm()`, `validateMemo()`, `renderHtml()`, `renderDocx()` - the same functions every check in verify.js stands behind - bundled with esbuild, the seal embedded as base64, the Word file built client-side (a Buffer polyfill injected before JSZip's load-time platform check; `renderDocx()` already took the seal as bytes, so no filesystem is ever touched). Nothing typed leaves the page.
+
+The pure form->spec half moved to `memo-form.js` to make this possible - no HTTP, no filesystem, no DOM - with `memo-server.js` importing and re-exporting it so every caller keeps one import site. One implementation of "what the form means", wherever the form is.
+
+The page carries the full behavior set: example on type selection, live field replacement, per-type visibility from the FIELDS table, fit-to-width preview, unit memory with Forget, subject counter, type-subject download naming - plus three live-version refinements: **Copy tailoring prompt** (the exact instruction /draft sends its model, word for word, copied to the clipboard so the tailoring pass runs through whatever AI the user has, results pasted back into the Body), **New memorandum** (clears this memorandum's fields, keeps the unit's - the same lifetime split the storage rule enforces), and a plain statement of where the data goes (nowhere).
+
+Build: `npm i --no-save esbuild buffer && node examples/16_army-memo-agent/webapp/build.mjs` -> `webapp/artifact.html`. The assembly uses plain concatenation, never `String.replace` - a minified bundle contains `$'`-style replacement patterns that replace() expands, which turned a 2.4 MB page into a broken 19 MB one before the builder learned this. Verified by running the identical live browser suite against the repo-built page: example-on-select with letterhead and today's date, tailoring prompt contents, new-memorandum lifetime split, .docx download, mobile single-column fit - zero page errors.
+
+---
+
 ---
 
 ## Writing your own memo
