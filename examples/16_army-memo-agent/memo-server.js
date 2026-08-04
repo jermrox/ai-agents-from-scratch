@@ -352,7 +352,7 @@ const page = () => `<!doctype html>
 
   <fieldset>
     <legend>Your words</legend>
-    <p>Blank line between paragraphs. Indent a paragraph, or start it with “- ”, to make it a subparagraph. Never type the numbers — para 2-4b(4)(b) makes them the renderer's job.</p>
+    <p>Type what you need in your own words — <b>Draft the words with the model</b> tailors them into correct, sound, properly formed paragraphs, keeping every fact. Blank line between paragraphs. Indent a paragraph, or start it with “- ”, to make it a subparagraph. Never type the numbers — para 2-4b(4)(b) makes them the renderer's job.</p>
     <label for="subject">Subject <em>ten words or less, para 2-4a(6)</em></label>
     <input id="subject" name="subject" placeholder="Range 14 Closure for Scheduled Maintenance">
     <p class="counter" id="subjectcount"></p>
@@ -678,7 +678,10 @@ async function download(path, filename) {
 
 $("draft").addEventListener("click", async () => {
   const btn = $("draft");
-  if (!$("request").value.trim()) { $("draftnote").textContent = "Say what it needs to do first."; return; }
+  if (!$("request").value.trim() && !$("body").value.trim()) {
+    $("draftnote").textContent = "Say what it needs to do, or type rough words in the Body to tailor.";
+    return;
+  }
   btn.disabled = true;
   btn.textContent = "Drafting\u2026";
   $("draftnote").textContent = "Loading the model on first use; this takes a moment.";
@@ -861,16 +864,24 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
             const form = await readJson(req);
 
             /*
-             * The model writes the words, and only the words. It gets the
-             * request and the findings from the previous pass, and returns
-             * subject + paragraphs; the matters of record and every
+             * The model tailors the words, and only the words. The user's own
+             * typed body is the raw material: what they typed, rough as it
+             * is, goes to the model to be made correct, sound, and properly
+             * formed - every fact kept, the wording and tone fixed. The
+             * request line adds the intent when there is one; either alone
+             * is enough to draft from. Findings from the previous pass ride
+             * along on repair passes; the matters of record and every
              * measurement stay where they were. One job holds the model for
-             * the whole draft/validate/repair loop, so a repair pass sees the
-             * draft it is fixing.
+             * the whole draft/validate/repair loop, so a repair pass sees
+             * the draft it is fixing.
              */
             if (req.url === "/draft") {
-                const request = String(form.request ?? "").trim();
-                if (!request) return json(res, 400, {error: "Say what the memorandum needs to do."});
+                const asked = String(form.request ?? "").trim();
+                const rawSubject = String(form.subject ?? "").trim();
+                const rawBody = String(form.body ?? "").trim();
+                if (!asked && !rawBody) {
+                    return json(res, 400, {error: "Say what the memorandum needs to do, or type rough words in the Body to tailor."});
+                }
 
                 let drafter = injected;
                 if (!drafter) {
@@ -881,7 +892,18 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     }
                 }
 
-                const type = detectMemoType(form.type && MEMO_TYPES[form.type] ? form.type : request);
+                const request = [
+                    asked || "Prepare this memorandum from the rough words below.",
+                    rawSubject ? `Working subject: ${rawSubject}` : "",
+                    rawBody ? "Tailor these rough words into the memorandum's paragraphs - keep every "
+                        + `fact, correct the wording and tone, and put them in proper form:\n${rawBody}` : "",
+                ].filter(Boolean).join("\n\n");
+
+                // An explicitly chosen type is final; only an unchosen one is
+                // read from the request. (This used to re-run the chosen type
+                // string through detection, where "record" alone does not
+                // trip the MFR pattern - the choice came back "standard".)
+                const type = form.type && MEMO_TYPES[form.type] ? form.type : detectMemoType(asked || rawBody);
                 const context = {...specFromForm({...form, body: "", subject: ""}), type};
                 let passes = 0;
 

@@ -284,13 +284,13 @@ check("fig 2-1: MEMORANDUM FOR is the 3d line below the office symbol",
     "AR 25-50, para 2-4a(5)");
 ```
 
-924 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
+929 checks covering the heading offsets, the indent ladder, the tab grid, the flush-left wrap, single- and multiple-address forms, the SEE DISTRIBUTION threshold, suspense dates, continuation-page headings, the four enclosure-listing forms of chapter 4, sentence-spacing normalization, paragraph-depth clamping, State codes and ZIP+4, protocol order, the `.docx`'s own OOXML, the validator's catch rate, and the front end's own per-type field visibility and functional wiring (§16e, §16f).
 
 Appendix D is reproduced block for block: all 22 signature-block figures are test cases whose expected value is what the published figure prints, read off the figure images rather than paraphrased. That is what turned up the rules the code had wrong - a letter drops the branch for *everyone*, not just general officers; USAR replaces "USA" rather than stacking on it; an acting incumbent takes the acting title instead of "Commanding".
 
 ```bash
 node examples/16_army-memo-agent/verify.js
-# AR 25-50 layout verification: 924/924 checks passed.
+# AR 25-50 layout verification: 929/929 checks passed.
 ```
 
 ---
@@ -884,6 +884,8 @@ Every check that had pinned plain paper was flipped to pin the new behavior inst
 
 And the example now leads: selecting a type - by the dropdown or by the request being read - renders that type's templated example immediately, and every committed field edit (headers, signature block, enclosures) re-renders the preview with the typed value in place of the template's, debounced, no Generate press needed. Enclosures were confirmed never forced - no Encl line exists until a title is typed, and one typed title is placed beside the signature block - now pinned by checks. The full flow was verified live in the browser: select MFR -> example with seal, letterhead, and today's date appears on selection alone; each field typed replaced its templated counterpart on blur; the enclosure title appeared only after being supplied. 919 -> 924 checks.
 
+**The typed body is the raw material, and the model tailors it.** /draft used to send the model only the one-line request and silently discard whatever the user had typed into the Body - the opposite of the working model, which is: the user types what they need in their own words, and the system tailors it into correct, sound, properly formed paragraphs. The route now builds the drafting request from all three pieces - the request line (intent), the working subject, and the typed body under an explicit tailoring instruction ("keep every fact, correct the wording and tone, and put them in proper form") - and a body alone, with no request line at all, is enough to draft from. Verified with a recording drafter injected over real HTTP: the rough typed words arrive at the model whole, instruction and working subject alongside. Fixing this exposed a real pre-existing bug beside it: an explicitly chosen type was re-run through `detectMemoType()`, and the bare string "record" does not trip the MFR pattern - choosing Memorandum for Record and pressing Draft came back "standard". The choice is now final; only an unchosen type is read from the request. 924 -> 929 checks.
+
 ---
 
 ---
@@ -994,7 +996,7 @@ The model is physically unable to emit anything outside the schema, so the parse
 
 `stubDrafter()` wraps any `(request, feedback) => content` function in the same interface. That is the seam: it is how the loop is tested without a model on disk, and it is where a different backend — a hosted API, a larger local model — would plug in. `createMemoServer({drafter})` takes one, which is why `/draft` is exercised end to end over real HTTP in the checks.
 
-**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 924 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
+**Without a model, everything else still works.** `/health` reports whether one is present, the page disables the drafting button and says where it looked, and `/draft` answers 503 with the path and what to do about it. The formatter, the validator, the templates, the `.docx` and all 929 checks need no model at all — the parts that must be exactly right are the parts that do not need one.
 
 Configuration is environment-first, so a deployment changes nothing in the source: `MEMO_MODEL_PATH`, `MEMO_CONTEXT_SIZE`, `MEMO_DRAFT_TIMEOUT_MS`, `PORT`, `HOST`. The server binds loopback unless told otherwise — it serves an editable Word deliverable and loads a language model on demand, so reaching it from off-box should be a decision somebody made.
 

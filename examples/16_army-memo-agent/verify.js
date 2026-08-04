@@ -3840,6 +3840,51 @@ const FIELD_TEMPLATE = {
         await new Promise((r) => server.close(r));
     }
 
+    /*
+     * The user types what they need in the Body; the model tailors it.
+     * Their typed words are the raw material - they must reach the drafter
+     * whole, alongside the request, so the model corrects wording, tone,
+     * and form instead of drafting blind from a one-line request. And a
+     * body alone, with no request line at all, is enough to draft from.
+     */
+    {
+        let seenRequest = "";
+        const recorder = stubDrafter(async (request) => {
+            seenRequest = request;
+            return OFFLINE_CONTENT;
+        });
+        const server = createMemoServer({drafter: recorder});
+        await new Promise((r) => server.listen(0, r));
+        const base = `http://127.0.0.1:${server.address().port}`;
+        const post = (path, body) => fetch(`${base}${path}`, {
+            method: "POST", headers: {"content-type": "application/json"},
+            body: JSON.stringify(body)});
+
+        const roughWords = "range 14 shut 3-7 aug, lifters getting replaced lanes 1-12, DPW doing the road too";
+        await post("/draft", {request: "tell the battalions range 14 closes", body: roughWords,
+                              subject: "range closure"});
+        checkTrue("the typed body reaches the drafter, whole, to be tailored",
+            seenRequest.includes(roughWords), "front end");
+        checkTrue("with the tailoring instruction - keep every fact, fix wording and form",
+            /keep every\s+fact/i.test(seenRequest) && /Tailor/.test(seenRequest), "front end");
+        checkTrue("and the working subject rides along",
+            seenRequest.includes("range closure"), "front end");
+
+        const bodyOnly = await (await post("/draft", {body: roughWords})).json();
+        checkTrue("a body alone, with no request line, is enough to draft from",
+            bodyOnly.subject?.length > 0, "front end");
+
+        // An explicitly chosen type is final. (This used to be re-run
+        // through detection, where the string "record" alone does not trip
+        // the MFR pattern - the choice came back "standard".)
+        const chosen = await (await post("/draft", {type: "record",
+            request: "write up yesterday's staff sync"})).json();
+        check("an explicitly chosen type survives the draft route",
+            chosen.type, "record", "AR 25-50, para 2-2");
+
+        await new Promise((r) => server.close(r));
+    }
+
     // The default bind is loopback: this serves a Word file and loads a model
     // on demand, so reaching it from off-box should be a decision.
     {
