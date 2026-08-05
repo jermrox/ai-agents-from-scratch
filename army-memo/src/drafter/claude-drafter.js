@@ -40,11 +40,27 @@ function withTimeout(promise, ms) {
     ]).finally(() => clearTimeout(timer));
 }
 
-function textFromMessage(message) {
+/** Tool the model must call so its content arrives as schema-shaped JSON. */
+const MEMO_TOOL_NAME = "emit_memo_content";
+const MEMO_TOOL = {
+    name: MEMO_TOOL_NAME,
+    description: "Return the drafted memorandum content (subject, addressees, leveled paragraphs).",
+    input_schema: {
+        ...MEMO_CONTENT_SCHEMA,
+        additionalProperties: false,
+    },
+};
+
+function contentFromMessage(message) {
+    const toolUse = (message?.content ?? []).find(
+        (b) => b.type === "tool_use" && b.name === MEMO_TOOL_NAME);
+    if (toolUse?.input && typeof toolUse.input === "object") return toolUse.input;
+
     if (message?.parsed_output) return message.parsed_output;
+
     const block = (message?.content ?? []).find((b) => b.type === "text");
     if (!block?.text) {
-        throw new Error("Claude returned no text content for the memorandum draft");
+        throw new Error("Claude returned no memorandum content for the draft");
     }
     return JSON.parse(block.text);
 }
@@ -91,28 +107,19 @@ export async function loadDrafter({
 
                 history.push({role: "user", content: prompt});
 
-                const message = await client.messages.parse({
+                const message = await client.messages.create({
                     model: modelPath,
                     max_tokens: maxTokens,
                     system: SYSTEM_PROMPT,
                     messages: history,
-                    output_config: {
-                        format: {
-                            type: "json_schema",
-                            schema: {
-                                ...MEMO_CONTENT_SCHEMA,
-                                additionalProperties: false,
-                            },
-                        },
-                    },
+                    tools: [MEMO_TOOL],
+                    tool_choice: {type: "tool", name: MEMO_TOOL_NAME},
                 });
 
-                const content = textFromMessage(message);
-                const assistantText = (message.content ?? [])
-                    .filter((b) => b.type === "text")
-                    .map((b) => b.text)
-                    .join("") || JSON.stringify(content);
-                history.push({role: "assistant", content: assistantText});
+                const content = contentFromMessage(message);
+                // Keep the transcript text-only so the repair loop can resend it
+                // without also replaying tool_use / tool_result blocks.
+                history.push({role: "assistant", content: JSON.stringify(content)});
                 return content;
             };
             return withTimeout(fn(draft), timeoutMs);

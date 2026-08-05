@@ -29,14 +29,16 @@ directory. Node 18+ is required (the VM has Node 22).
 
 ### Non-obvious caveats
 
-- **No API key needed for dev/test.** The intended path here is the offline/local drafting approach;
-  the Anthropic key is not required. Everything except the live `/draft` step (tests, CLI `--offline`,
-  layout, validation, `.docx`, and all other HTTP endpoints) runs without any key.
-- **Live Claude `/draft` is currently broken at the code level (not an env issue).** Even with a valid
-  `ANTHROPIC_API_KEY`, `POST /draft` returns HTTP 500 `client.messages.parse is not a function`:
-  `src/drafter/claude-drafter.js` calls `client.messages.parse(...)`, which does not exist in the
-  pinned `@anthropic-ai/sdk@0.71.2` (only `messages.create`/`messages.stream` exist). Use the offline /
-  stub drafter path for development until the drafter code is updated.
+- **No API key needed for tests/offline dev.** Tests, CLI `--offline`, layout, validation, `.docx`,
+  and every HTTP endpoint except `/draft` run without any key.
+- **Live Claude drafting needs `ANTHROPIC_API_KEY`.** Set it (and optionally `ANTHROPIC_MODEL`,
+  default `claude-sonnet-4-5`) to enable `POST /draft` and non-`--offline` CLI drafting. Without it,
+  `/draft` returns HTTP 503 with a clear message (expected).
+- **The drafter uses forced tool use for schema-shaped JSON.** `src/drafter/claude-drafter.js` calls
+  `client.messages.create(...)` with a single `emit_memo_content` tool (its `input_schema` is
+  `MEMO_CONTENT_SCHEMA`) and `tool_choice` forcing that tool; the content is read from the `tool_use`
+  block. This is the supported path in the pinned `@anthropic-ai/sdk@0.71.2` (the SDK has no
+  `messages.parse`). If you bump the SDK, keep this tool-use contract.
 - **Optional validators skip gracefully.** `npm test` prints "lxml is not installed" and "LibreOffice
   not installed" and skips OOXML-schema and rendered-page checks; the 916 core checks still run. These
   extras are not required and are intentionally left uninstalled.
