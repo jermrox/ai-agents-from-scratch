@@ -29,8 +29,14 @@ directory. Node 18+ is required (the VM has Node 22).
 
 ### Non-obvious caveats
 
-- **No API key needed for dev/test.** Set `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`,
-  default `claude-sonnet-4-5`) in `army-memo/.env` only to exercise live Claude drafting.
+- **No API key needed for dev/test.** The intended path here is the offline/local drafting approach;
+  the Anthropic key is not required. Everything except the live `/draft` step (tests, CLI `--offline`,
+  layout, validation, `.docx`, and all other HTTP endpoints) runs without any key.
+- **Live Claude `/draft` is currently broken at the code level (not an env issue).** Even with a valid
+  `ANTHROPIC_API_KEY`, `POST /draft` returns HTTP 500 `client.messages.parse is not a function`:
+  `src/drafter/claude-drafter.js` calls `client.messages.parse(...)`, which does not exist in the
+  pinned `@anthropic-ai/sdk@0.71.2` (only `messages.create`/`messages.stream` exist). Use the offline /
+  stub drafter path for development until the drafter code is updated.
 - **Optional validators skip gracefully.** `npm test` prints "lxml is not installed" and "LibreOffice
   not installed" and skips OOXML-schema and rendered-page checks; the 916 core checks still run. These
   extras are not required and are intentionally left uninstalled.
