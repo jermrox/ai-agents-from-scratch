@@ -170,6 +170,10 @@ export function detectMemoType(request = "") {
         [RECORD_PATTERN, "record"],
         [/\bdecision memo\w*\b|\bfor decision\b|\bseeking (a )?decision\b|\bapproval memo\w*\b/, "decision"],
         [/\bthru\b|\bthrough the chain of command\b|\bendorse\w*\b/, "thru"],
+        // "commend" alone, bounded, so "recommend"/"recommendation" (no word
+        // boundary before the shared "commend" substring) never matches.
+        [/\bcommend(?:s|ed|ation|ations)?\b/, "commendation"],
+        [/\bappreciation\b/, "appreciation"],
     ];
     for (const [pattern, type] of rules) {
         if (pattern.test(text)) return type;

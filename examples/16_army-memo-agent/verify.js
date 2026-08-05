@@ -1711,6 +1711,15 @@ const FIELD_TEMPLATE = {
     check("intent: anything else is a standard memorandum",
         detectMemoType("tell the battalions the range is closed"), "standard",
         "AR 25-50, para 2-4");
+    check("intent: commending a soldier selects the commendation memorandum",
+        detectMemoType("I want to commend a soldier for their outstanding performance"), "commendation",
+        "AR 25-50, paras 2-2 and 2-4a(5)");
+    check("intent: a recommendation request is not read as a commendation",
+        detectMemoType("write a memo with my recommendation on the new policy") === "commendation", false,
+        "AR 25-50, paras 2-2 and 2-4a(5)");
+    check("intent: an appreciation request selects the appreciation memorandum",
+        detectMemoType("draft a memorandum of appreciation for the volunteers"), "appreciation",
+        "AR 25-50, paras 2-2 and 2-4a(5)");
 
     /*
      * fig 2-17's own use case - "document informal meetings or telephone
