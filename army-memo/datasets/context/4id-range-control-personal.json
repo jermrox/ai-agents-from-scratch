@@ -1,0 +1,22 @@
+{
+  "letterhead": {
+    "organization": "Headquarters, 4th Infantry Division",
+    "streetAddress": "1633 Mekong Street",
+    "cityStateZip": "Fort Carson, CO  80913-4321"
+  },
+  "officeSymbol": "ATZB-RC",
+  "date": "17 July 2026",
+  "addresseeTitle": "Operations Noncommissioned Officer",
+  "addresseeAddress": "Headquarters and Headquarters Company, 1st Battalion, 5th Infantry Regiment, Fort Carson, CO  80913",
+  "authorityLine": null,
+  "signature": {
+    "signer": {
+      "name": "Marcus T. Hale",
+      "grade": "LTC",
+      "branch": "IN",
+      "title": "Director, Plans and Operations"
+    }
+  },
+  "enclosures": [],
+  "copiesFurnished": ["Commander, 1st Battalion, 5th Infantry Regiment"]
+}

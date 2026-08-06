@@ -17,8 +17,10 @@ import {renderDocx} from "./memo-docx.js";
 import {MEMO_TYPES, formatMemoDate} from "./ar25-50.js";
 import {describeTemplates} from "./templates.js";
 import {detectMemoType, runMemoAgent} from "./memo-intent.js";
-import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH} from "./memo-drafter.js";
+import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH, stubDrafter} from "./memo-drafter.js";
 import {outstandingFields, unitFields, memorandumFields} from "./unit-profile.js";
+import {listFixtures, loadFixtureSync} from "./datasets.js";
+import {assembleMemo} from "./memo-intent.js";
 
 // ---------------------------------------------------------------------------
 // Assembling a memo from what the page sends
@@ -657,6 +659,29 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
             if (req.method === "GET" && req.url === "/types") {
                 return json(res, 200, TYPES);
             }
+            if (req.method === "GET" && req.url === "/fixtures") {
+                return json(res, 200, listFixtures());
+            }
+            if (req.method === "GET" && req.url?.startsWith("/fixtures/")) {
+                const id = decodeURIComponent(req.url.slice("/fixtures/".length).split("?")[0]);
+                try {
+                    const fixture = loadFixtureSync(id);
+                    const memo = assembleMemo(fixture.content, fixture.context);
+                    const result = validateMemo(memo);
+                    return json(res, 200, {
+                        id: fixture.id,
+                        type: fixture.type,
+                        request: fixture.request,
+                        content: fixture.content,
+                        context: fixture.context,
+                        compliant: result.compliant,
+                        findings: result.findings.map(({severity, rule, message, cite}) =>
+                            ({severity, rule, message, cite})),
+                    });
+                } catch (err) {
+                    return json(res, 404, {error: err.message});
+                }
+            }
             if (req.method === "GET" && req.url === "/seal.png") {
                 const png = await fs.readFile(seal ?? DEFAULT_SEAL_PATH);
                 res.writeHead(200, {"content-type": "image/png",
@@ -683,6 +708,31 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 const asked = String(form.request ?? "").trim();
                 const rawSubject = String(form.subject ?? "").trim();
                 const rawBody = String(form.body ?? "").trim();
+                const fixtureId = String(form.fixture ?? "").trim();
+
+                // Offline harness: return a golden fixture without calling Claude.
+                if (fixtureId && form.offline !== false) {
+                    try {
+                        const fixture = loadFixtureSync(fixtureId);
+                        const type = form.type && MEMO_TYPES[form.type] ? form.type : fixture.type;
+                        const context = {...specFromForm({...form, body: "", subject: ""}), ...fixture.context, type};
+                        const {memo: drafted, result} = await stubDrafter(async () => fixture.content)
+                            .withSession((draft) => runMemoAgent({request: fixture.request, context, draft}));
+                        return json(res, 200, {
+                            type,
+                            fixture: fixture.id,
+                            subject: drafted.subject,
+                            body: bodyFromParagraphs(drafted.paragraphs),
+                            addressees: (drafted.addressees ?? []).join("\n"),
+                            passes: 0,
+                            findings: result.contentFindings.map(({severity, rule, message, cite}) =>
+                                ({severity, rule, message, cite})),
+                        });
+                    } catch (err) {
+                        return json(res, 404, {error: err.message});
+                    }
+                }
+
                 if (!asked && !rawBody) {
                     return json(res, 400, {error: "Say what the memorandum needs to do, or type rough words in the Body to tailor."});
                 }
@@ -695,7 +745,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                         return json(res, 503, {
                             error: err.message,
                             model: modelPath ?? DEFAULT_MODEL_PATH,
-                            hint: "Set ANTHROPIC_API_KEY or inject a stub drafter",
+                            hint: "Set ANTHROPIC_API_KEY, pass fixture+offline, or inject a stub drafter",
                         });
                     }
                 }
@@ -886,7 +936,7 @@ export async function serve({port = 4250, host = "127.0.0.1", seal, modelPath} =
     const {port: actual} = server.address();
     const model = modelPath ?? DEFAULT_MODEL_PATH;
     console.log(`AR 25-50 memorandum API: http://${host}:${actual}`);
-    console.log("Routes: /health /types /draft /render /validate /generate /docx");
+    console.log("Routes: /health /types /fixtures /draft /render /validate /generate /docx");
     console.log("Matters of record default to placeholders you fill in afterwards.");
     console.log(await modelAvailable()
         ? `Claude drafting model: ${model}`

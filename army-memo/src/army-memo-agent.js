@@ -8,15 +8,16 @@
  *
  * Run:
  *   node bin/memo.js --offline
- *   node bin/memo.js --docx memo.docx "Notify subordinate battalions that Range 14 closes..."
+ *   node bin/memo.js --fixture mfr-staff-sync --docx memo.docx
+ *   node bin/memo.js --docx memo.docx "Notify subordinate battalions..."
  *
  * Flags:
- *   --offline        skip Claude, run canned content through the pipeline
- *   --html <path>    write print-ready HTML
- *   --text <path>    write the plain-text rendering
- *   --docx <path>    write the Word deliverable
- *   --serve          open the HTTP API (and legacy local page) on :4250
- *   --verify         run the AR 25-50 figure regression suite
+ *   --offline           skip Claude; use default fixture content
+ *   --fixture <id>      offline path using a datasets/ fixture
+ *   --list-fixtures     list golden fixtures
+ *   --html / --text / --docx
+ *   --serve             HTTP API on :4250
+ *   --verify            AR 25-50 figure regression suite
  */
 
 import "dotenv/config";
@@ -29,78 +30,21 @@ import {createTemplate, describeTemplates} from "./templates.js";
 import {buildParagraphTree, assembleMemo, detectMemoType, runMemoAgent} from "./memo-intent.js";
 import {
     getDrafter, disposeDrafter, stubDrafter,
-    MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, DEFAULT_MODEL_PATH,
+    MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT,
 } from "./memo-drafter.js";
+import {
+    OFFLINE_CONTENT, OFFLINE_CONTEXT,
+    loadFixtureSync, listFixtures, loadDefaultFixtureSync,
+} from "./datasets.js";
 
 export {buildParagraphTree, assembleMemo, detectMemoType, runMemoAgent};
-
-// ---------------------------------------------------------------------------
-// The draft / validate / repair loop
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// Live path: node-llama-cpp with a JSON-schema grammar
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// Offline path: a canned draft, so the pipeline runs with no model present
-// ---------------------------------------------------------------------------
-
-const OFFLINE_CONTENT = {
-    subject: "Range 14 Closure for Scheduled Maintenance",
-    addressees: [
-        "Commander, 1st Battalion, 5th Infantry Regiment, 1234 Warrior Way, Fort Carson, CO  80913-4321",
-        "Commander, 2d Battalion, 5th Infantry Regiment, 1236 Warrior Way, Fort Carson, CO  80913-4321",
-    ],
-    // Two spaces after ending punctuation, per para 1-39b(9). The renderer
-    // normalizes this anyway; writing it correctly here keeps the demo report
-    // free of advisories that are not about the memorandum.
-    paragraphs: [
-        {level: 0, text: "Range 14 closes for scheduled surface danger zone maintenance from 3 August 2026 through 7 August 2026.  Reschedule all live-fire iterations before 25 July 2026."},
-        {level: 0, text: "Range Control will complete the following work during the closure:"},
-        {level: 1, text: "Replace the target lifters on lanes 1 through 12."},
-        {level: 1, text: "Regrade the access road and repair the berm on the north impact area."},
-        {level: 0, text: "Units holding reservations on the affected dates will submit a revised range request through the Range Facility Management Support System no later than 1500 on 25 July 2026.  Range Control will confirm each new reservation within two duty days."},
-        {level: 0, text: "My point of contact for this action is Mr. David Okonkwo, ATZB-RC, at 719-555-0142 or david.a.okonkwo.civ@army.mil."},
-    ],
-};
-
-const OFFLINE_CONTEXT = {
-    letterhead: {
-        organization: "Headquarters, 4th Infantry Division",
-        streetAddress: "1633 Mekong Street",
-        cityStateZip: "Fort Carson, CO  80913-4321",
-    },
-    officeSymbol: "ATZB-RC",
-    date: "17 July 2026",
-    suspenseDate: "25 July 2026",
-    authorityLine: "FOR THE COMMANDER:",
-    // Stating the facts about the signer and letting chapter 6 build the grade
-    // line, rather than typing "LTC, IN" and hoping. The rules that depend on
-    // those facts - general staff, reserve component, retired, acting - are
-    // not ones a drafter should have to remember.
-    signature: {
-        signer: {
-            name: "Marcus T. Hale",
-            grade: "LTC",
-            branch: "IN",
-            title: "Director, Plans and Operations",
-        },
-    },
-    enclosures: ["Range 14 Maintenance Schedule"],
-    copiesFurnished: ["Garrison Safety Office"],
-};
-
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
+export {OFFLINE_CONTENT, OFFLINE_CONTEXT, MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT};
 
 function parseArgs(argv) {
     const args = {
         offline: false, html: null, text: null, docx: null, request: null,
         template: null, spec: null, emitSpec: null, seal: null, list: false,
+        listFixtures: false, fixture: null,
         serve: false, verify: false, port: undefined, host: undefined, model: null,
         unit: null, saveUnit: null,
     };
@@ -108,6 +52,8 @@ function parseArgs(argv) {
         const a = argv[i];
         if (a === "--offline") args.offline = true;
         else if (a === "--list-types") args.list = true;
+        else if (a === "--list-fixtures") args.listFixtures = true;
+        else if (a === "--fixture") args.fixture = argv[++i];
         else if (a === "--html") args.html = argv[++i];
         else if (a === "--text") args.text = argv[++i];
         else if (a === "--docx") args.docx = argv[++i];
@@ -151,8 +97,14 @@ export async function main(argv = process.argv.slice(2)) {
         return;
     }
 
-    // --template and --spec skip the model entirely: one produces an editable
-    // skeleton, the other renders a spec you have already filled in.
+    if (args.listFixtures) {
+        for (const f of listFixtures()) {
+            const mark = f.default ? "*" : " ";
+            console.log(`  ${mark} ${f.id.padEnd(20)} ${f.type.padEnd(14)} ${f.request}`);
+        }
+        return;
+    }
+
     if (args.template || args.spec) {
         const memo = args.spec
             ? JSON.parse(await fs.readFile(args.spec, "utf8"))
@@ -161,36 +113,35 @@ export async function main(argv = process.argv.slice(2)) {
         return;
     }
 
-    const offline = args.offline || !args.request;
+    const fixture = args.fixture
+        ? loadFixtureSync(args.fixture)
+        : (args.offline || !args.request ? loadDefaultFixtureSync() : null);
+    const offline = Boolean(args.offline || args.fixture || !args.request);
 
-    const request = args.request ??
+    const request = args.request ?? fixture?.request ??
         "Notify subordinate battalions that Range 14 closes for maintenance 3-7 August 2026.";
 
     let drafter;
     if (offline) {
-        console.log("Running offline: canned content, real formatter and validator.\n");
-        drafter = stubDrafter(async () => OFFLINE_CONTENT);
+        const content = fixture?.content ?? OFFLINE_CONTENT;
+        console.log(`Running offline fixture "${fixture?.id ?? "range-closure"}": real formatter and validator.\n`);
+        drafter = stubDrafter(async () => content);
     } else {
         try {
             drafter = await getDrafter(args.model ? {modelPath: args.model} : undefined);
         } catch (err) {
             console.error(`Could not start the Claude drafter: ${err.message}\n`);
             console.error("Set ANTHROPIC_API_KEY (and optionally ANTHROPIC_MODEL).");
-            console.error("Or use --offline: the formatter, validator, and .docx run without Claude.");
+            console.error("Or use --offline / --fixture: the formatter, validator, and .docx run without Claude.");
             process.exitCode = 1;
             return;
         }
     }
 
-    // The memorandum type follows the request, and is reported back so a wrong
-    // guess is visible rather than silent.
-    const type = detectMemoType(request);
-    const context = {...OFFLINE_CONTEXT, type};
-    if (type === "record") context.letterhead = null;   // plain paper - fig 2-17
-    if (type === "record") context.authorityLine = null;
+    const type = fixture?.type ?? detectMemoType(request);
+    const baseContext = fixture?.context ?? {...OFFLINE_CONTEXT, type};
+    const context = {...baseContext, type};
 
-    // One job holds the model for the whole draft/validate/repair loop, so the
-    // repair passes see the draft they are fixing.
     const {memo} = await drafter.withSession((draft) => runMemoAgent({
         request,
         context,
@@ -205,17 +156,7 @@ export async function main(argv = process.argv.slice(2)) {
     await emit(memo, args);
 }
 
-/**
- * Render, report, and write whatever outputs were asked for. Shared by the
- * drafting path and the template path so both go through the same validation.
- */
 async function emit(memo, args) {
-    /*
-     * A unit's own details - its organization block, office symbol and signature
-     * block - are the same on every memorandum it writes, so they are supplied
-     * once and kept. The memorandum's details are not, and are never read from a
-     * profile. See unit-profile.js.
-     */
     const {applyProfile, profileFrom, validateProfile, outstandingFields} =
         await import("./unit-profile.js");
 
@@ -259,12 +200,6 @@ async function emit(memo, args) {
         console.log(`Wrote ${args.saveUnit} - reuse it with --unit ${args.saveUnit}`);
     }
 
-    /*
-     * What is still to be supplied, asked as questions rather than reported as
-     * faults: a memorandum with every slot empty is a template, and the slots
-     * are the point. Each one names the field, says where it sits, and cites the
-     * paragraph that puts it there.
-     */
     const unitOutstanding = outstandingFields(memo, "unit");
     const memoOutstanding = outstandingFields(memo, "memorandum").filter((f) => !f.optional);
     if (unitOutstanding.length || memoOutstanding.length) {
@@ -290,5 +225,3 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
     await main();
 }
-
-export {MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, OFFLINE_CONTENT, OFFLINE_CONTEXT};

@@ -15,15 +15,25 @@ export const MEMO_CONTENT_SCHEMA = {
         addressees: {
             type: "array",
             items: {type: "string"},
-            description: "Offices expected to complete the action.",
+            description: "Offices or persons expected to complete the action. Empty for MFR.",
         },
         paragraphs: {
             type: "array",
+            minItems: 1,
             items: {
                 type: "object",
                 properties: {
-                    level: {type: "number", description: "0 main, 1 = a., 2 = (1), 3 = (a)"},
-                    text: {type: "string", description: "Sentence text only, no numbering."},
+                    level: {
+                        type: "integer",
+                        minimum: 0,
+                        maximum: 3,
+                        description: "0 main, 1 = a., 2 = (1), 3 = (a)",
+                    },
+                    text: {
+                        type: "string",
+                        minLength: 1,
+                        description: "Sentence text only, no numbering labels.",
+                    },
                 },
                 required: ["level", "text"],
                 additionalProperties: false,
@@ -44,6 +54,7 @@ Write in the Army style required by AR 25-50:
 - Never begin a sentence with "It is," "There is," or "There are."
 - Capitalize Soldier, Family, and Civilian in their Army senses.
 - Military time only, four digits, and never the word "hours" after it.
+- Put two spaces after a period or question mark that ends a sentence.
 - The LAST paragraph is always the point of contact: grade, first and last name,
   office symbol, telephone number, and email address.
 - Subject line: ten words or less, no acronyms, no closing period.
@@ -51,4 +62,6 @@ Write in the Army style required by AR 25-50:
 Do not number your paragraphs. Do not write "MEMORANDUM FOR", "SUBJECT:", dates,
 signature blocks, or any layout. Set the level field instead: 0 for a main
 paragraph, 1 for an "a." subparagraph, 2 for "(1)", 3 for "(a)". If you use
-level 1 under a paragraph, use it at least twice.`;
+level 1 under a paragraph, use it at least twice.
+
+For a memorandum for record, leave addressees as an empty array.`;
