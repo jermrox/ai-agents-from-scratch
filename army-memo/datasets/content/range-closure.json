@@ -1,0 +1,33 @@
+{
+  "subject": "Range 14 Closure for Scheduled Maintenance",
+  "addressees": [
+    "Commander, 1st Battalion, 5th Infantry Regiment, 1234 Warrior Way, Fort Carson, CO  80913-4321",
+    "Commander, 2d Battalion, 5th Infantry Regiment, 1236 Warrior Way, Fort Carson, CO  80913-4321"
+  ],
+  "paragraphs": [
+    {
+      "level": 0,
+      "text": "Range 14 closes for scheduled surface danger zone maintenance from 3 August 2026 through 7 August 2026.  Reschedule all live-fire iterations before 25 July 2026."
+    },
+    {
+      "level": 0,
+      "text": "Range Control will complete the following work during the closure:"
+    },
+    {
+      "level": 1,
+      "text": "Replace the target lifters on lanes 1 through 12."
+    },
+    {
+      "level": 1,
+      "text": "Regrade the access road and repair the berm on the north impact area."
+    },
+    {
+      "level": 0,
+      "text": "Units holding reservations on the affected dates will submit a revised range request through the Range Facility Management Support System no later than 1500 on 25 July 2026.  Range Control will confirm each new reservation within two duty days."
+    },
+    {
+      "level": 0,
+      "text": "My point of contact for this action is Mr. David Okonkwo, ATZB-RC, at 719-555-0142 or david.a.okonkwo.civ@army.mil."
+    }
+  ]
+}

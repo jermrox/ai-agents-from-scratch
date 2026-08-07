@@ -11,6 +11,7 @@
 
 import {recordFieldPlaceholders} from "./templates.js";
 import {validateMemo, repairInstructions} from "./memo-validator.js";
+import {normalizeContent} from "./content.js";
 
 // ---------------------------------------------------------------------------
 // The paragraph tree
@@ -194,7 +195,7 @@ export function detectMemoType(request = "") {
  * parameter is what makes the loop testable without a model.
  */
 export async function runMemoAgent({request, context, draft, maxPasses = 3, onPass}) {
-    let content = await draft(request, null);
+    let content = normalizeContent(await draft(request, null));
     let best = {memo: assembleMemo(content, context)};
     best.result = validateMemo(best.memo);
 
@@ -204,7 +205,7 @@ export async function runMemoAgent({request, context, draft, maxPasses = 3, onPa
         const instructions = repairInstructions(best.result);
         if (instructions.length === 0) break;
 
-        content = await draft(request, instructions);
+        content = normalizeContent(await draft(request, instructions));
         const memo = assembleMemo(content, context);
         const result = validateMemo(memo);
 

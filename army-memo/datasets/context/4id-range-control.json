@@ -1,0 +1,21 @@
+{
+  "letterhead": {
+    "organization": "Headquarters, 4th Infantry Division",
+    "streetAddress": "1633 Mekong Street",
+    "cityStateZip": "Fort Carson, CO  80913-4321"
+  },
+  "officeSymbol": "ATZB-RC",
+  "date": "17 July 2026",
+  "suspenseDate": "25 July 2026",
+  "authorityLine": "FOR THE COMMANDER:",
+  "signature": {
+    "signer": {
+      "name": "Marcus T. Hale",
+      "grade": "LTC",
+      "branch": "IN",
+      "title": "Director, Plans and Operations"
+    }
+  },
+  "enclosures": ["Range 14 Maintenance Schedule"],
+  "copiesFurnished": ["Garrison Safety Office"]
+}

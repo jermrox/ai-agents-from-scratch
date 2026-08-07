@@ -17,9 +17,9 @@ directory. Node 18+ is required (the VM has Node 22).
 
 ### Running / testing (see each `package.json` scripts + `army-memo/README.md`)
 
-- `army-memo` test/lint: there is no linter; `npm test` (alias for `npm run verify`) runs
-  `node src/verify.js`, an AR 25-50 layout regression suite (916 deterministic checks). It needs no
-  key and no network.
+- `army-memo` test/lint: there is no linter; `npm test` runs `node src/verify.js` (an AR 25-50 layout
+  regression suite, 916 deterministic checks) and then `node src/test-datasets.js` (golden dataset
+  fixtures under `datasets/`). Both need no key and no network.
 - `army-memo` CLI offline hello-world: `npm run memo -- --offline --docx /tmp/memo.docx` produces a
   real Word file with "AR 25-50 compliance: PASS".
 - `army-memo` HTTP API: `npm run serve` binds `http://127.0.0.1:4250` (override with `PORT`/`HOST`).
@@ -34,11 +34,12 @@ directory. Node 18+ is required (the VM has Node 22).
 - **Live Claude drafting needs `ANTHROPIC_API_KEY`.** Set it (and optionally `ANTHROPIC_MODEL`,
   default `claude-sonnet-4-5`) to enable `POST /draft` and non-`--offline` CLI drafting. Without it,
   `/draft` returns HTTP 503 with a clear message (expected).
-- **The drafter uses forced tool use for schema-shaped JSON.** `src/drafter/claude-drafter.js` calls
-  `client.messages.create(...)` with a single `emit_memo_content` tool (its `input_schema` is
-  `MEMO_CONTENT_SCHEMA`) and `tool_choice` forcing that tool; the content is read from the `tool_use`
-  block. This is the supported path in the pinned `@anthropic-ai/sdk@0.71.2` (the SDK has no
-  `messages.parse`). If you bump the SDK, keep this tool-use contract.
+- **The drafter uses structured outputs for schema-shaped JSON.** `src/drafter/claude-drafter.js`
+  calls `client.messages.parse(...)` with `output_config.format` built from
+  `jsonSchemaOutputFormat(MEMO_CONTENT_SCHEMA)` (imported from `@anthropic-ai/sdk/helpers/json-schema`),
+  so the model cannot emit keys outside the schema. This requires the newer `@anthropic-ai/sdk`
+  (`^0.115.0`); the old `0.71.x` had no `messages.parse`. Drafting also retries transient API errors
+  (`MEMO_DRAFT_RETRIES`, default 2) and post-processes with `normalizeContent` from `src/content.js`.
 - **Optional validators skip gracefully.** `npm test` prints "lxml is not installed" and "LibreOffice
   not installed" and skips OOXML-schema and rendered-page checks; the 916 core checks still run. These
   extras are not required and are intentionally left uninstalled.

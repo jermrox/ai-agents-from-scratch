@@ -1,15 +1,16 @@
 /**
  * Claude Messages API drafter for memorandum content only.
  *
- * Same seam as the old local GGUF path: withSession(fn) serializes jobs, each
- * job starts from a cleared conversation, and draft(request, feedback) returns
- * schema-shaped JSON. Layout, spacing, and signature blocks stay out of reach.
+ * Uses @anthropic-ai/sdk messages.parse + jsonSchemaOutputFormat so the model
+ * cannot emit keys outside MEMO_CONTENT_SCHEMA. Layout stays in code.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, {APIError} from "@anthropic-ai/sdk";
+import {jsonSchemaOutputFormat} from "@anthropic-ai/sdk/helpers/json-schema";
 
 import {MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT} from "./schema.js";
 import {stubDrafter} from "./stub-drafter.js";
+import {normalizeContent} from "../content.js";
 
 export {MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, stubDrafter};
 
@@ -20,13 +21,11 @@ export const DEFAULT_MODEL_PATH = process.env.ANTHROPIC_MODEL
 
 export const DEFAULT_TIMEOUT_MS = Number(process.env.MEMO_DRAFT_TIMEOUT_MS ?? 120_000);
 export const DEFAULT_MAX_TOKENS = Number(process.env.MEMO_MAX_TOKENS ?? 4096);
+export const DEFAULT_MAX_RETRIES = Number(process.env.MEMO_DRAFT_RETRIES ?? 2);
 
-/**
- * Whether drafting can run (API key present). The optional argument is ignored
- * and kept only so older call sites that passed a model path still type-check.
- */
-export async function modelAvailable(_ignored) {
-    return Boolean(process.env.ANTHROPIC_API_KEY && String(process.env.ANTHROPIC_API_KEY).trim());
+/** Whether drafting can run given an API key (defaults to env). */
+export async function modelAvailable(apiKey = process.env.ANTHROPIC_API_KEY) {
+    return Boolean(apiKey && String(apiKey).trim());
 }
 
 function withTimeout(promise, ms) {
@@ -40,30 +39,43 @@ function withTimeout(promise, ms) {
     ]).finally(() => clearTimeout(timer));
 }
 
-/** Tool the model must call so its content arrives as schema-shaped JSON. */
-const MEMO_TOOL_NAME = "emit_memo_content";
-const MEMO_TOOL = {
-    name: MEMO_TOOL_NAME,
-    description: "Return the drafted memorandum content (subject, addressees, leveled paragraphs).",
-    input_schema: {
-        ...MEMO_CONTENT_SCHEMA,
-        additionalProperties: false,
-    },
-};
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-function contentFromMessage(message) {
-    const toolUse = (message?.content ?? []).find(
-        (b) => b.type === "tool_use" && b.name === MEMO_TOOL_NAME);
-    if (toolUse?.input && typeof toolUse.input === "object") return toolUse.input;
+function isRetryable(err) {
+    if (!err) return false;
+    if (err.status === 408 || err.status === 409 || err.status === 429 || err.status >= 500) return true;
+    if (err instanceof APIError && (err.status === 429 || err.status >= 500)) return true;
+    const msg = String(err.message ?? "");
+    return /timed out|ECONNRESET|ETIMEDOUT|overloaded|rate limit/i.test(msg);
+}
 
-    if (message?.parsed_output) return message.parsed_output;
+async function withRetries(fn, {maxRetries, label}) {
+    let last;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn(attempt);
+        } catch (err) {
+            last = err;
+            if (attempt >= maxRetries || !isRetryable(err)) throw err;
+            const backoff = Math.min(8_000, 400 * 2 ** attempt);
+            await sleep(backoff);
+        }
+    }
+    throw last ?? new Error(`${label} failed`);
+}
 
+function textFromMessage(message) {
+    if (message?.parsed_output != null) return message.parsed_output;
     const block = (message?.content ?? []).find((b) => b.type === "text");
     if (!block?.text) {
-        throw new Error("Claude returned no memorandum content for the draft");
+        throw new Error("Claude returned no text content for the memorandum draft");
     }
     return JSON.parse(block.text);
 }
+
+const OUTPUT_FORMAT = jsonSchemaOutputFormat(MEMO_CONTENT_SCHEMA);
 
 /**
  * Load a Claude drafter. Prefer getDrafter(), which caches the client.
@@ -73,12 +85,14 @@ function contentFromMessage(message) {
  * @param {string} [options.apiKey]
  * @param {number} [options.timeoutMs]
  * @param {number} [options.maxTokens]
+ * @param {number} [options.maxRetries]
  */
 export async function loadDrafter({
     modelPath = DEFAULT_MODEL_PATH,
     apiKey = process.env.ANTHROPIC_API_KEY,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxTokens = DEFAULT_MAX_TOKENS,
+    maxRetries = DEFAULT_MAX_RETRIES,
 } = {}) {
     if (!(await modelAvailable(apiKey))) {
         throw new Error(
@@ -87,7 +101,7 @@ export async function loadDrafter({
             `Everything except the drafting step runs without a key.`);
     }
 
-    const client = new Anthropic({apiKey});
+    const client = new Anthropic({apiKey, maxRetries: 0});
     let queue = Promise.resolve();
     let inFlight = 0;
 
@@ -107,19 +121,23 @@ export async function loadDrafter({
 
                 history.push({role: "user", content: prompt});
 
-                const message = await client.messages.create({
-                    model: modelPath,
-                    max_tokens: maxTokens,
-                    system: SYSTEM_PROMPT,
-                    messages: history,
-                    tools: [MEMO_TOOL],
-                    tool_choice: {type: "tool", name: MEMO_TOOL_NAME},
-                });
+                const message = await withRetries(
+                    () => client.messages.parse({
+                        model: modelPath,
+                        max_tokens: maxTokens,
+                        system: SYSTEM_PROMPT,
+                        messages: history,
+                        output_config: {format: OUTPUT_FORMAT},
+                    }),
+                    {maxRetries, label: "Claude draft"},
+                );
 
-                const content = contentFromMessage(message);
-                // Keep the transcript text-only so the repair loop can resend it
-                // without also replaying tool_use / tool_result blocks.
-                history.push({role: "assistant", content: JSON.stringify(content)});
+                const content = normalizeContent(textFromMessage(message));
+                const assistantText = (message.content ?? [])
+                    .filter((b) => b.type === "text")
+                    .map((b) => b.text)
+                    .join("") || JSON.stringify(content);
+                history.push({role: "assistant", content: assistantText});
                 return content;
             };
             return withTimeout(fn(draft), timeoutMs);
@@ -132,7 +150,7 @@ export async function loadDrafter({
     return {
         withSession,
         get pending() { return inFlight; },
-        info: {modelPath, contextSize: null, timeoutMs, maxTokens},
+        info: {modelPath, contextSize: null, timeoutMs, maxTokens, maxRetries, provider: "anthropic"},
         async dispose() {
             await queue.catch(() => {});
         },

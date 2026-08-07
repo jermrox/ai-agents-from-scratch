@@ -9,6 +9,7 @@ export {
     DEFAULT_MODEL_PATH,
     DEFAULT_TIMEOUT_MS,
     DEFAULT_MAX_TOKENS,
+    DEFAULT_MAX_RETRIES,
     modelAvailable,
     loadDrafter,
     getDrafter,
