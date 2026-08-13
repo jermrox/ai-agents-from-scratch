@@ -1,6 +1,6 @@
 {
   "name": "army-memo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AR 25-50 Army memorandum backend: Claude drafts content; code owns layout, validation, and .docx",
   "type": "module",
   "main": "src/index.js",
