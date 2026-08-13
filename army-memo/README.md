@@ -31,6 +31,11 @@ npm run test:datasets
 | `mfr-staff-sync` | record |
 | `thru-endorsement` | thru |
 | `appreciation` | appreciation |
+| `commendation` | commendation |
+| `exclusive-for` | exclusiveFor |
+| `letter-civilian` | letter |
+| `mou-training` | mou |
+| `moa-support` | moa |
 
 ## CLI
 
@@ -73,10 +78,13 @@ Default bind: `http://127.0.0.1:4250`
 | `GET` | `/fixtures` | Golden dataset catalog |
 | `GET` | `/fixtures/:id` | Fixture content/context + validation |
 | `POST` | `/draft` | Request text → content + findings (`ANTHROPIC_API_KEY`, stub, or `{fixture}` offline) |
+| `POST` | `/detect` | Request text → detected memo type |
 | `POST` | `/render` | Memo form/spec → `.docx` (JSON preview with `Accept: application/json`) |
 | `POST` | `/validate` | Spec → cited findings |
 | `POST` | `/generate` | Form → HTML/text preview + findings |
 | `POST` | `/docx` | Form → Word file |
+| `POST` | `/spec` | Form → JSON memo spec |
+| `POST` | `/fields` | Field requirements for a memo type |
 
 ### Examples
 
@@ -97,7 +105,9 @@ curl -s -X POST http://127.0.0.1:4250/draft \
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Required for live `/draft` and non-`--offline` CLI |
 | `ANTHROPIC_MODEL` | Claude model id (default `claude-sonnet-4-5`) |
-| `MEMO_MODEL_PATH` | Alias for `ANTHROPIC_MODEL` |
+| `MEMO_MODEL_PATH` | Legacy alias for `ANTHROPIC_MODEL` |
+| `MEMO_DRAFT_TIMEOUT_MS` | Draft timeout (default `120000`) |
+| `MEMO_MAX_TOKENS` | Max draft tokens (default `4096`) |
 | `MEMO_DRAFT_RETRIES` | Retries on rate-limit/5xx (default `2`) |
 | `PORT` / `HOST` | HTTP bind (default `4250` / `127.0.0.1`) |
 

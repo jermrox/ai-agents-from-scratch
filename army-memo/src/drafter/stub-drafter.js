@@ -14,7 +14,7 @@ export function stubDrafter(draft) {
             return run;
         },
         pending: 0,
-        info: {modelPath: null, contextSize: null, timeoutMs: null},
+        info: {model: null, modelPath: null, timeoutMs: null, provider: "stub"},
         async dispose() {},
     };
 }

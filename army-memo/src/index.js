@@ -2,12 +2,13 @@
  * Public package surface for army-memo.
  *
  * Consumers can import drafting, layout, validation, datasets, and the HTTP
- * server without reaching into individual tutorial-style files.
+ * server from one entry.
  */
 
 export {
     MEMO_CONTENT_SCHEMA,
     SYSTEM_PROMPT,
+    DEFAULT_MODEL,
     DEFAULT_MODEL_PATH,
     DEFAULT_TIMEOUT_MS,
     DEFAULT_MAX_TOKENS,

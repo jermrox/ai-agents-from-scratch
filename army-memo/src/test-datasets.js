@@ -8,8 +8,9 @@ import {assembleMemo, detectMemoType, runMemoAgent} from "./memo-intent.js";
 import {validateMemo} from "./memo-validator.js";
 import {normalizeContent, contentIssues} from "./content.js";
 import {auditDatasets, listFixtures, loadFixtureSync, OFFLINE_CONTENT, OFFLINE_CONTEXT} from "./datasets.js";
-import {stubDrafter} from "./memo-drafter.js";
+import {stubDrafter, disposeDrafter, getDrafter} from "./memo-drafter.js";
 import {MEMO_CONTENT_SCHEMA} from "./drafter/schema.js";
+import {TEMPLATES} from "./templates.js";
 
 let passed = 0;
 const failures = [];
@@ -45,27 +46,51 @@ function checkTrue(name, value) {
     check("subject drops trailing period", messy.subject, "Range Closure for Maintenance");
     check("empty addressees drop out", messy.addressees, ["Bn 1"]);
     check("level clamps to 3", messy.paragraphs[0].level, 3);
-    check("hand numbering is stripped", messy.paragraphs[0].text.startsWith("Purpose"), true);
-    checkTrue("normalized content has no soft issues beyond subject length",
-        contentIssues(messy).filter((i) => !i.includes("ten words")).length === 0
-        || contentIssues(messy).every((i) => typeof i === "string"));
+    checkTrue("hand numbering is stripped", messy.paragraphs[0].text.startsWith("Purpose"));
+    checkTrue("POC soft-check is quiet on a good last paragraph",
+        !contentIssues(messy).some((i) => i.includes("point of contact")));
+}
+
+{
+    const detections = [
+        ["exclusive for memorandum to COL Brooks", "exclusiveFor"],
+        ["write a letter to Ms. Nguyen about the closure", "letter"],
+        ["draft a memorandum of understanding for shared aids", "mou"],
+        ["prepare a memorandum of agreement for reimbursable support", "moa"],
+        ["document yesterday's staff sync", "record"],
+        ["commend SFC Lee for outstanding support", "commendation"],
+    ];
+    for (const [request, type] of detections) {
+        check(`detectMemoType: ${type}`, detectMemoType(request), type);
+    }
 }
 
 {
     const audit = await auditDatasets();
     checkTrue("every fixture audits clean", audit.every((r) => r.ok));
-    check("fixture catalog size", listFixtures().length, 5);
+
+    const fixtureTypes = new Set(listFixtures().map((f) => f.type));
+    const templateTypes = Object.keys(TEMPLATES);
+    for (const type of templateTypes) {
+        checkTrue(`fixture coverage includes ${type}`, fixtureTypes.has(type));
+    }
+    check("fixture count matches template count", listFixtures().length, templateTypes.length);
 
     for (const {id} of listFixtures()) {
         const fixture = loadFixtureSync(id);
-        checkTrue(`${id} request detects compatible type or is explicit`,
-            fixture.type === detectMemoType(fixture.request)
-            || ["appreciation", "decision", "thru", "record", "standard"].includes(fixture.type));
+        check(`${id} request detects its type`, detectMemoType(fixture.request), fixture.type);
 
         const memo = assembleMemo(fixture.content, fixture.context);
         const result = validateMemo(memo);
-        checkTrue(`${id} has no format errors`, result.errors.length === 0);
+        checkTrue(`${id} has no format/content errors`, result.errors.length === 0);
         checkTrue(`${id} renders at least one page`, result.pages >= 1);
+        if (fixture.type === "mou" || fixture.type === "moa") {
+            checkTrue(`${id} carries parties`, Array.isArray(memo.parties) && memo.parties.length >= 2);
+            checkTrue(`${id} carries signers`, Array.isArray(memo.signers) && memo.signers.length >= 2);
+        }
+        if (fixture.type === "letter") {
+            checkTrue(`${id} carries a salutation`, Boolean(memo.salutation));
+        }
     }
 }
 
@@ -78,6 +103,21 @@ function checkTrue(name, value) {
     }));
     checkTrue("default offline fixture is compliant", result.compliant);
     checkTrue("assembled offline memo has a subject", Boolean(memo.subject));
+}
+
+{
+    // Without a key, getDrafter must not cache a failed load forever, and a
+    // later call with a different model id must not reuse a prior promise.
+    const hadKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    await disposeDrafter();
+    const first = await getDrafter({modelPath: "model-a"}).catch((e) => e.message);
+    const second = await getDrafter({modelPath: "model-b"}).catch((e) => e.message);
+    checkTrue("failed getDrafter mentions the requested model id", /model-b/.test(second));
+    checkTrue("failed getDrafter still explains the missing key", /ANTHROPIC_API_KEY/.test(first));
+    await disposeDrafter();
+    if (hadKey !== undefined) process.env.ANTHROPIC_API_KEY = hadKey;
+    else delete process.env.ANTHROPIC_API_KEY;
 }
 
 if (failures.length) {

@@ -1,0 +1,25 @@
+{
+  "letterhead": null,
+  "officeSymbol": null,
+  "date": "17 July 2026",
+  "parties": [
+    "Headquarters, 4th Infantry Division",
+    "Garrison Directorate of Public Works"
+  ],
+  "signers": [
+    {
+      "name": "Marcus T. Hale",
+      "gradeAndBranch": "LTC, IN",
+      "titleAndAgency": "Director, Plans and Operations, 4th Infantry Division"
+    },
+    {
+      "name": "Elena R. Soto",
+      "gradeAndBranch": "GS-14",
+      "titleAndAgency": "Director, Public Works, U.S. Army Garrison Fort Carson"
+    }
+  ],
+  "digitalSignature": false,
+  "authorityLine": null,
+  "enclosures": [],
+  "copiesFurnished": []
+}

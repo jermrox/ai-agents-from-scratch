@@ -14,10 +14,13 @@ import {normalizeContent} from "../content.js";
 
 export {MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT, stubDrafter};
 
-/** Model id. ANTHROPIC_MODEL preferred; MEMO_MODEL_PATH kept as an alias. */
-export const DEFAULT_MODEL_PATH = process.env.ANTHROPIC_MODEL
+/** Claude model id. ANTHROPIC_MODEL preferred; MEMO_MODEL_PATH is a legacy alias. */
+export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL
     ?? process.env.MEMO_MODEL_PATH
     ?? "claude-sonnet-4-5";
+
+/** @deprecated Prefer DEFAULT_MODEL. Kept for callers/tests that still say "path". */
+export const DEFAULT_MODEL_PATH = DEFAULT_MODEL;
 
 export const DEFAULT_TIMEOUT_MS = Number(process.env.MEMO_DRAFT_TIMEOUT_MS ?? 120_000);
 export const DEFAULT_MAX_TOKENS = Number(process.env.MEMO_MAX_TOKENS ?? 4096);
@@ -75,20 +78,32 @@ function textFromMessage(message) {
     return JSON.parse(block.text);
 }
 
+function cacheKey({modelPath, apiKey, timeoutMs, maxTokens, maxRetries}) {
+    return JSON.stringify({
+        modelPath: modelPath ?? DEFAULT_MODEL,
+        apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY ?? "",
+        timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+        maxRetries: maxRetries ?? DEFAULT_MAX_RETRIES,
+    });
+}
+
 const OUTPUT_FORMAT = jsonSchemaOutputFormat(MEMO_CONTENT_SCHEMA);
 
 /**
- * Load a Claude drafter. Prefer getDrafter(), which caches the client.
+ * Load a Claude drafter. Prefer getDrafter(), which caches by options.
  *
  * @param {object} [options]
- * @param {string} [options.modelPath]  Claude model id (name kept for the old seam)
+ * @param {string} [options.modelPath]  Claude model id (legacy name; same as model)
+ * @param {string} [options.model]      Claude model id
  * @param {string} [options.apiKey]
  * @param {number} [options.timeoutMs]
  * @param {number} [options.maxTokens]
  * @param {number} [options.maxRetries]
  */
 export async function loadDrafter({
-    modelPath = DEFAULT_MODEL_PATH,
+    model,
+    modelPath = model ?? DEFAULT_MODEL,
     apiKey = process.env.ANTHROPIC_API_KEY,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxTokens = DEFAULT_MAX_TOKENS,
@@ -150,7 +165,14 @@ export async function loadDrafter({
     return {
         withSession,
         get pending() { return inFlight; },
-        info: {modelPath, contextSize: null, timeoutMs, maxTokens, maxRetries, provider: "anthropic"},
+        info: {
+            model: modelPath,
+            modelPath,
+            timeoutMs,
+            maxTokens,
+            maxRetries,
+            provider: "anthropic",
+        },
         async dispose() {
             await queue.catch(() => {});
         },
@@ -158,10 +180,30 @@ export async function loadDrafter({
 }
 
 let shared = null;
+let sharedKey = null;
 
-export function getDrafter(options) {
-    shared ??= loadDrafter(options).catch((err) => {
+/**
+ * Process-wide drafter, keyed by options. A later call with a different model
+ * id or API key replaces the cached instance instead of silently ignoring it.
+ */
+export function getDrafter(options = {}) {
+    const key = cacheKey(options);
+    if (shared && sharedKey === key) return shared;
+
+    if (shared) {
+        // Drop the old promise; dispose asynchronously so callers are not blocked.
+        const previous = shared;
         shared = null;
+        sharedKey = null;
+        previous.then((d) => d.dispose()).catch(() => {});
+    }
+
+    sharedKey = key;
+    shared = loadDrafter(options).catch((err) => {
+        if (sharedKey === key) {
+            shared = null;
+            sharedKey = null;
+        }
         throw err;
     });
     return shared;
@@ -171,5 +213,6 @@ export async function disposeDrafter() {
     if (!shared) return;
     const drafter = await shared.catch(() => null);
     shared = null;
+    sharedKey = null;
     await drafter?.dispose();
 }

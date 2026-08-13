@@ -32,6 +32,36 @@
       "request": "Prepare a memorandum of appreciation for SFC Jordan Lee for coordinating the Range 14 maintenance support plan.",
       "content": "content/appreciation.json",
       "context": "context/4id-range-control-personal.json"
+    },
+    "commendation": {
+      "type": "commendation",
+      "request": "Prepare a memorandum of commendation for SFC Jordan Lee for outstanding Range 14 support coordination.",
+      "content": "content/commendation.json",
+      "context": "context/4id-range-control-personal.json"
+    },
+    "exclusive-for": {
+      "type": "exclusiveFor",
+      "request": "Prepare an exclusive for memorandum to Colonel Avery Brooks about the Range 14 closure window.",
+      "content": "content/exclusive-for.json",
+      "context": "context/4id-range-control-exclusive.json"
+    },
+    "letter-civilian": {
+      "type": "letter",
+      "request": "Write a letter to Ms. Patricia Nguyen confirming the Range 14 closure dates.",
+      "content": "content/letter-civilian.json",
+      "context": "context/4id-range-control-letter.json"
+    },
+    "mou-training": {
+      "type": "mou",
+      "request": "Draft a memorandum of understanding for shared use of Range Control training aids during the closure.",
+      "content": "content/mou-training.json",
+      "context": "context/4id-range-control-agreement.json"
+    },
+    "moa-support": {
+      "type": "moa",
+      "request": "Draft a memorandum of agreement for reimbursable Range 14 maintenance support services.",
+      "content": "content/moa-support.json",
+      "context": "context/4id-range-control-agreement.json"
     }
   }
 }

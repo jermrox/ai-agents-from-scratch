@@ -88,8 +88,9 @@ export function assembleMemo(content, context = {}) {
     return {
         type,
         letterhead: context.letterhead !== undefined ? context.letterhead : record.letterhead,
-        officeSymbol: context.officeSymbol ?? record.officeSymbol,
-        date: context.date ?? record.date,
+        // null is a real answer (agreements / letters omit the office symbol).
+        officeSymbol: context.officeSymbol !== undefined ? context.officeSymbol : record.officeSymbol,
+        date: context.date !== undefined ? context.date : record.date,
         suspenseDate: context.suspenseDate ?? null,
         addressStyle: context.addressStyle ?? "mixed",
         addressees: isRecord ? [] : (content.addressees?.length ? content.addressees : (context.addressees ?? [])),
@@ -122,6 +123,11 @@ export function assembleMemo(content, context = {}) {
         // against the form the regulation actually prescribes for it - not
         // carried into layout, only into validation.
         addresseeCategory: context.addresseeCategory,
+
+        // MOU/MOA (para 2-6): parties and dual signature blocks are matters of
+        // record supplied by the caller, never by the drafting model.
+        parties: context.parties,
+        signers: context.signers,
     };
 }
 
@@ -150,7 +156,7 @@ const RECORD_VERBS = "record(?:s|ed|ing)?|document(?:s|ed|ing)?|memorializ(?:e|e
     "log(?:s|ged|ging)?|captur(?:e|es|ed|ing)|" +
     "wr(?:ite|ites|ote|itten|iting) (?:it |this |that |them )?up";
 const RECORD_EVENTS = "calls?|phone calls?|conversations?|meetings?|discussions?|briefings?|" +
-    "site visits?|walkthroughs?|decision reached|agreement reached|basis for";
+    "site visits?|walkthroughs?|staff syncs?|syncs?|decision reached|agreement reached|basis for";
 const RECORD_PATTERN = new RegExp(
     `\\bmemorandum for record\\b|\\bmemo for record\\b|\\bmfr\\b|` +
     `(?=.*\\b(?:${RECORD_VERBS})\\b)(?=.*\\b(?:${RECORD_EVENTS})\\b)`);
@@ -171,10 +177,14 @@ export function detectMemoType(request = "") {
         [RECORD_PATTERN, "record"],
         [/\bdecision memo\w*\b|\bfor decision\b|\bseeking (a )?decision\b|\bapproval memo\w*\b/, "decision"],
         [/\bthru\b|\bthrough the chain of command\b|\bendorse\w*\b/, "thru"],
+        [/\bexclusive for\b/, "exclusiveFor"],
         // "commend" alone, bounded, so "recommend"/"recommendation" (no word
         // boundary before the shared "commend" substring) never matches.
         [/\bcommend(?:s|ed|ation|ations)?\b/, "commendation"],
         [/\bappreciation\b/, "appreciation"],
+        // Letters are the chapter 3 vehicle: civilian-style address + salutation.
+        // Keep this late so "memorandum of ..." phrases win first.
+        [/\b(formal |official )?letter\b(?!\s*head)|\bwrite (?:a |an )letter\b|\bsalutation\b/, "letter"],
     ];
     for (const [pattern, type] of rules) {
         if (pattern.test(text)) return type;

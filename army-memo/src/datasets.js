@@ -97,7 +97,8 @@ export async function auditDatasets() {
     for (const id of Object.keys(index.fixtures)) {
         const fixture = await loadFixture(id);
         const issues = [];
-        if (!fixture.content?.subject) issues.push("missing subject");
+        // Letters may omit a subject (para 3-6a(2) "if used").
+        if (fixture.type !== "letter" && !fixture.content?.subject) issues.push("missing subject");
         if (!Array.isArray(fixture.content?.paragraphs) || !fixture.content.paragraphs.length) {
             issues.push("missing paragraphs");
         }

@@ -36,6 +36,7 @@ import {
     OFFLINE_CONTENT, OFFLINE_CONTEXT,
     loadFixtureSync, listFixtures, loadDefaultFixtureSync,
 } from "./datasets.js";
+import {isDirectRun} from "./runtime.js";
 
 export {buildParagraphTree, assembleMemo, detectMemoType, runMemoAgent};
 export {OFFLINE_CONTENT, OFFLINE_CONTEXT, MEMO_CONTENT_SCHEMA, SYSTEM_PROMPT};
@@ -219,9 +220,6 @@ async function emit(memo, args) {
     }
 }
 
-const isDirectRun = process.argv[1]
-    && import.meta.url === new URL(process.argv[1], "file:").href;
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
     await main();
 }

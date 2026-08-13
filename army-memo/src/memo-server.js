@@ -21,6 +21,7 @@ import {getDrafter, disposeDrafter, modelAvailable, DEFAULT_MODEL_PATH, stubDraf
 import {outstandingFields, unitFields, memorandumFields} from "./unit-profile.js";
 import {listFixtures, loadFixtureSync} from "./datasets.js";
 import {assembleMemo} from "./memo-intent.js";
+import {isDirectRun, serveOptionsFromArgv} from "./runtime.js";
 
 // ---------------------------------------------------------------------------
 // Assembling a memo from what the page sends
@@ -632,7 +633,7 @@ function withServedSeal(memo, host) {
  * @param {object}  [options.drafter]    A drafter to use instead of loading one.
  *   Anything with `withSession(fn)` works - see stubDrafter() in
  *   memo-drafter.js. This is the seam a different backend plugs into, and it
- *   is what lets the drafting route be tested without a model on disk.
+ *   is what lets the drafting route be tested without an API key.
  */
 export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
     return http.createServer(async (req, res) => {
@@ -646,14 +647,18 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 res.writeHead(204); return res.end();
             }
             if (req.method === "GET" && req.url === "/health") {
+                const modelId = modelPath ?? DEFAULT_MODEL_PATH;
                 return json(res, 200, {
                     ok: true,
                     model: {
-                        path: modelPath ?? DEFAULT_MODEL_PATH,
+                        id: modelId,
+                        // `path` kept for older clients/tests; it is the model id.
+                        path: modelId,
                         available: Boolean(injected) || await modelAvailable(),
                         provider: "anthropic",
                     },
                     types: TYPES.length,
+                    fixtures: listFixtures().length,
                 });
             }
             if (req.method === "GET" && req.url === "/types") {
@@ -908,8 +913,8 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
  * Listen, and shut down cleanly.
  *
  * The host defaults to loopback on purpose. This serves an editable Word
- * deliverable and loads a language model on demand; binding it to every
- * interface should be something somebody chose, not something they got.
+ * deliverable and can call Claude on demand; binding it to every interface
+ * should be something somebody chose, not something they got.
  */
 export async function serve({port = 4250, host = "127.0.0.1", seal, modelPath} = {}) {
     const server = createMemoServer({seal, modelPath});
@@ -936,7 +941,7 @@ export async function serve({port = 4250, host = "127.0.0.1", seal, modelPath} =
     const {port: actual} = server.address();
     const model = modelPath ?? DEFAULT_MODEL_PATH;
     console.log(`AR 25-50 memorandum API: http://${host}:${actual}`);
-    console.log("Routes: /health /types /fixtures /draft /render /validate /generate /docx");
+    console.log("Routes: /health /types /fixtures /draft /render /validate /generate /docx /detect /spec /fields");
     console.log("Matters of record default to placeholders you fill in afterwards.");
     console.log(await modelAvailable()
         ? `Claude drafting model: ${model}`
@@ -944,15 +949,6 @@ export async function serve({port = 4250, host = "127.0.0.1", seal, modelPath} =
     return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-    const flag = (name) => {
-        const i = process.argv.indexOf(name);
-        return i >= 0 ? process.argv[i + 1] : undefined;
-    };
-    await serve({
-        port: flag("--port") ? Number(flag("--port")) : Number(process.env.PORT) || undefined,
-        host: flag("--host") ?? process.env.HOST,
-        seal: flag("--seal"),
-        modelPath: flag("--model"),
-    });
+if (isDirectRun(import.meta.url)) {
+    await serve(serveOptionsFromArgv());
 }

@@ -2,7 +2,6 @@ node_modules/
 .env
 *.docx
 *.html
-!webapp/**/*.html
 .tmp/
 out/
 dist/

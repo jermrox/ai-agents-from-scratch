@@ -1,0 +1,23 @@
+{
+  "letterhead": {
+    "organization": "Headquarters, 4th Infantry Division",
+    "streetAddress": "1633 Mekong Street",
+    "cityStateZip": "Fort Carson, CO  80913-4321"
+  },
+  "officeSymbol": null,
+  "date": "July 17, 2026",
+  "salutation": "Dear Ms. Nguyen:",
+  "complimentaryClose": "Sincerely,",
+  "authorityLine": null,
+  "digitalSignature": false,
+  "signature": {
+    "signer": {
+      "name": "Marcus T. Hale",
+      "grade": "LTC",
+      "branch": "IN",
+      "title": "Director, Plans and Operations"
+    }
+  },
+  "enclosures": [],
+  "copiesFurnished": []
+}
