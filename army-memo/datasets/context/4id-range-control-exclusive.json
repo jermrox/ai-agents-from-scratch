@@ -1,0 +1,22 @@
+{
+  "letterhead": {
+    "organization": "Headquarters, 4th Infantry Division",
+    "streetAddress": "1633 Mekong Street",
+    "cityStateZip": "Fort Carson, CO  80913-4321"
+  },
+  "officeSymbol": "ATZB-RC",
+  "date": "17 July 2026",
+  "addresseeTitle": "Commander, 1st Stryker Brigade Combat Team",
+  "addresseeAddress": "1st Stryker Brigade Combat Team, 4th Infantry Division, Fort Carson, CO  80913",
+  "authorityLine": null,
+  "signature": {
+    "signer": {
+      "name": "Marcus T. Hale",
+      "grade": "LTC",
+      "branch": "IN",
+      "title": "Director, Plans and Operations"
+    }
+  },
+  "enclosures": [],
+  "copiesFurnished": []
+}

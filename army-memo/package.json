@@ -1,0 +1,41 @@
+{
+  "name": "army-memo",
+  "version": "0.1.2",
+  "description": "AR 25-50 Army memorandum backend: Claude drafts content; code owns layout, validation, and .docx",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./datasets": "./src/datasets.js",
+    "./drafter": "./src/memo-drafter.js"
+  },
+  "bin": {
+    "army-memo": "bin/memo.js"
+  },
+  "scripts": {
+    "memo": "node bin/memo.js",
+    "serve": "node src/api/server.js",
+    "verify": "node src/verify.js",
+    "test": "node src/verify.js && node src/test-datasets.js",
+    "test:datasets": "node src/test-datasets.js",
+    "test:verify": "node src/verify.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "army",
+    "ar-25-50",
+    "memorandum",
+    "docx",
+    "anthropic",
+    "claude"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "docx": "^9.7.1",
+    "dotenv": "^17.2.3",
+    "jszip": "^3.10.1"
+  }
+}

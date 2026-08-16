@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.docx
+*.html
+.tmp/
+out/
+dist/
+logs/
+*.log
+.DS_Store
