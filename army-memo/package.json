@@ -1,14 +1,23 @@
 {
   "name": "army-memo",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "AR 25-50 Army memorandum backend: Claude drafts content; code owns layout, validation, and .docx",
   "type": "module",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
     "./datasets": "./src/datasets.js",
-    "./drafter": "./src/memo-drafter.js"
+    "./drafter": "./src/memo-drafter.js",
+    "./api": "./src/api/server.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "datasets/",
+    "assets/",
+    "README.md",
+    ".env.example"
+  ],
   "bin": {
     "army-memo": "bin/memo.js"
   },

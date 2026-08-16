@@ -64,6 +64,8 @@ export function assembleMemo(content, context = {}) {
     // Anything the caller does not know becomes a placeholder rather than a
     // plausible-looking default. `letterhead` is compared against undefined
     // because null is a real answer - an MFR is on plain paper (fig 2-17).
+    content = content ?? {};
+    context = context ?? {};
     const record = recordFieldPlaceholders();
     const type = context.type ?? "standard";
 
@@ -203,6 +205,10 @@ export function detectMemoType(request = "") {
  * `draft` is any async (request, feedback) => content function. The offline demo
  * passes a stub; the live path passes the constrained LLM call. Keeping it a
  * parameter is what makes the loop testable without a model.
+ *
+ * `onPass` fires once per *repair* pass, just before re-drafting - a first
+ * draft that already validates reports none, which is what a caller counting
+ * passes means by "how many times did the model have to try again".
  */
 export async function runMemoAgent({request, context, draft, maxPasses = 3, onPass}) {
     let content = normalizeContent(await draft(request, null));
@@ -210,10 +216,10 @@ export async function runMemoAgent({request, context, draft, maxPasses = 3, onPa
     best.result = validateMemo(best.memo);
 
     for (let pass = 1; pass < maxPasses; pass++) {
-        onPass?.({pass, result: best.result, memo: best.memo});
-
         const instructions = repairInstructions(best.result);
         if (instructions.length === 0) break;
+
+        onPass?.({pass, result: best.result, memo: best.memo});
 
         content = normalizeContent(await draft(request, instructions));
         const memo = assembleMemo(content, context);

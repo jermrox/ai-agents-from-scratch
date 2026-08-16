@@ -592,16 +592,60 @@ updateSubjectCount();
 // Server
 // ---------------------------------------------------------------------------
 
+/** Largest JSON body accepted, in bytes. */
+export const MAX_BODY_BYTES = 1e6;
+
+/** An HTTP status carried on an error, so the handler can answer with it. */
+class HttpError extends Error {
+    constructor(status, message) {
+        super(message);
+        this.status = status;
+    }
+}
+
+/** Beyond this much over the limit, stop draining and drop the connection. */
+const HARD_ABORT_BYTES = MAX_BODY_BYTES * 10;
+
 const readJson = (req) => new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", (c) => {
-        body += c;
-        if (body.length > 1e6) { reject(new Error("Request too large")); req.destroy(); }
+    let received = 0;
+    let tooLarge = false;
+    let settled = false;
+
+    const fail = (status, message) => {
+        if (settled) return;
+        settled = true;
+        reject(new HttpError(status, message));
+    };
+
+    req.on("data", (chunk) => {
+        if (settled) return;
+        received += chunk.length;
+        if (received > MAX_BODY_BYTES) {
+            // Keep reading (and discarding) so the client finishes its upload:
+            // answering mid-stream resets the socket, and the caller sees a
+            // transport error instead of the 413 that explains the refusal.
+            tooLarge = true;
+            body = "";
+            if (received > HARD_ABORT_BYTES) {
+                fail(413, `Request body exceeds ${MAX_BODY_BYTES} bytes`);
+                req.destroy();
+            }
+            return;
+        }
+        body += chunk;
     });
     req.on("end", () => {
-        try { resolve(body ? JSON.parse(body) : {}); } catch (e) { reject(e); }
+        if (tooLarge) return fail(413, `Request body exceeds ${MAX_BODY_BYTES} bytes`);
+        if (settled) return;
+        settled = true;
+        try {
+            resolve(body ? JSON.parse(body) : {});
+        } catch {
+            reject(new HttpError(400, "Request body is not valid JSON"));
+        }
     });
-    req.on("error", reject);
+    req.on("error", (err) => fail(400, err.message));
 });
 
 const send = (res, status, type, body) => {
@@ -621,15 +665,25 @@ const json = (res, status, value) => send(res, status, "application/json", JSON.
  * Pointing it at the server's own absolute URL fixes it and lets the browser
  * cache the image instead of re-sending 1.2 MB with every keystroke's preview.
  */
-function withServedSeal(memo, host) {
+function withServedSeal(memo, req) {
+    const host = req?.headers?.host;
     if (!memo.letterhead || !host) return memo;
-    return {...memo, letterhead: {...memo.letterhead, seal: `http://${host}/seal.png`}};
+    // Behind a TLS terminator the page is https; a http:// seal would be
+    // blocked as mixed content, and para 1-16b(2) forbids a substitute.
+    const forwarded = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
+    const scheme = forwarded || (req.socket?.encrypted ? "https" : "http");
+    return {...memo, letterhead: {...memo.letterhead, seal: `${scheme}://${host}/seal.png`}};
 }
+
+/** Routes that answer only POST, so a GET can say so instead of 404. */
+const POST_ROUTES = new Set([
+    "/draft", "/detect", "/generate", "/fields", "/spec", "/docx", "/render", "/validate",
+]);
 
 /**
  * @param {object}  [options]
  * @param {string}  [options.seal]       Override the shipped seal image.
- * @param {string}  [options.modelPath]  Where the drafting model lives.
+ * @param {string}  [options.modelPath]  Claude model id (legacy option name).
  * @param {object}  [options.drafter]    A drafter to use instead of loading one.
  *   Anything with `withSession(fn)` works - see stubDrafter() in
  *   memo-drafter.js. This is the seam a different backend plugs into, and it
@@ -637,16 +691,25 @@ function withServedSeal(memo, host) {
  */
 export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
     return http.createServer(async (req, res) => {
+        // Route on the pathname: "/health?x=1" and "/health" are one route.
+        let pathname = "/";
         try {
-            if (req.method === "GET" && (req.url === "/" || req.url.startsWith("/?"))) {
+            pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+        } catch {
+            return json(res, 400, {error: "Malformed request URL"});
+        }
+        if (pathname.length > 1 && pathname.endsWith("/")) pathname = pathname.replace(/\/+$/, "");
+
+        try {
+            if (req.method === "GET" && pathname === "/") {
                 return send(res, 200, "text/html; charset=utf-8", page());
             }
             // Browsers ask for this unprompted; answering keeps a 404 out of
             // every console that opens the page.
-            if (req.method === "GET" && req.url === "/favicon.ico") {
+            if (req.method === "GET" && pathname === "/favicon.ico") {
                 res.writeHead(204); return res.end();
             }
-            if (req.method === "GET" && req.url === "/health") {
+            if (req.method === "GET" && pathname === "/health") {
                 const modelId = modelPath ?? DEFAULT_MODEL_PATH;
                 return json(res, 200, {
                     ok: true,
@@ -661,14 +724,14 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     fixtures: listFixtures().length,
                 });
             }
-            if (req.method === "GET" && req.url === "/types") {
+            if (req.method === "GET" && pathname === "/types") {
                 return json(res, 200, TYPES);
             }
-            if (req.method === "GET" && req.url === "/fixtures") {
+            if (req.method === "GET" && pathname === "/fixtures") {
                 return json(res, 200, listFixtures());
             }
-            if (req.method === "GET" && req.url?.startsWith("/fixtures/")) {
-                const id = decodeURIComponent(req.url.slice("/fixtures/".length).split("?")[0]);
+            if (req.method === "GET" && pathname.startsWith("/fixtures/")) {
+                const id = decodeURIComponent(pathname.slice("/fixtures/".length));
                 try {
                     const fixture = loadFixtureSync(id);
                     const memo = assembleMemo(fixture.content, fixture.context);
@@ -684,16 +747,23 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                             ({severity, rule, message, cite})),
                     });
                 } catch (err) {
-                    return json(res, 404, {error: err.message});
+                    return json(res, 404, {error: err.message, id});
                 }
             }
-            if (req.method === "GET" && req.url === "/seal.png") {
+            if (req.method === "GET" && pathname === "/seal.png") {
                 const png = await fs.readFile(seal ?? DEFAULT_SEAL_PATH);
                 res.writeHead(200, {"content-type": "image/png",
                                     "cache-control": "public, max-age=86400"});
                 return res.end(png);
             }
-            if (req.method !== "POST") return json(res, 404, {error: "Not found"});
+            if (req.method !== "POST") {
+                if (POST_ROUTES.has(pathname)) {
+                    res.writeHead(405, {"content-type": "application/json", allow: "POST"});
+                    return res.end(JSON.stringify({error: `${pathname} accepts POST`}));
+                }
+                return json(res, 404, {error: "Not found"});
+            }
+            if (!POST_ROUTES.has(pathname)) return json(res, 404, {error: "Not found"});
 
             const form = await readJson(req);
 
@@ -709,7 +779,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
              * the whole draft/validate/repair loop, so a repair pass sees
              * the draft it is fixing.
              */
-            if (req.url === "/draft") {
+            if (pathname === "/draft") {
                 const asked = String(form.request ?? "").trim();
                 const rawSubject = String(form.subject ?? "").trim();
                 const rawBody = String(form.body ?? "").trim();
@@ -755,6 +825,20 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     }
                 }
 
+                // Upstream trouble is upstream's status, not a bug in this
+                // server: a rate limit or a timeout must not read as a 500.
+                const draftFailure = (err) => {
+                    const status = err?.status === 429 ? 429
+                        : /timed out/i.test(err?.message ?? "") ? 504
+                        : err?.status >= 500 ? 502
+                        : err?.status >= 400 ? 502
+                        : 500;
+                    return json(res, status, {
+                        error: err?.message ?? "Drafting failed",
+                        model: modelPath ?? DEFAULT_MODEL_PATH,
+                    });
+                };
+
                 const request = [
                     asked || "Prepare this memorandum from the rough words below.",
                     rawSubject ? `Working subject: ${rawSubject}` : "",
@@ -770,10 +854,16 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 const context = {...specFromForm({...form, body: "", subject: ""}), type};
                 let passes = 0;
 
-                const {memo: drafted, result} = await drafter.withSession((draft) => runMemoAgent({
-                    request, context, draft,
-                    onPass: () => { passes += 1; },
-                }));
+                let drafted;
+                let result;
+                try {
+                    ({memo: drafted, result} = await drafter.withSession((draft) => runMemoAgent({
+                        request, context, draft,
+                        onPass: () => { passes += 1; },
+                    })));
+                } catch (err) {
+                    return draftFailure(err);
+                }
 
                 // Handed back as form values, not as a finished document: the
                 // page is still yours to edit before anything is rendered.
@@ -788,7 +878,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                 });
             }
 
-            if (req.url === "/detect") {
+            if (pathname === "/detect") {
                 const type = detectMemoType(form.request ?? "");
                 const meta = MEMO_TYPES[type] ?? MEMO_TYPES.standard;
                 return json(res, 200, {type, title: meta.title, cite: meta.cite});
@@ -797,7 +887,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
             const memo = specFromForm(form);
             const meta = MEMO_TYPES[memo.type] ?? MEMO_TYPES.standard;
 
-            if (req.url === "/generate") {
+            if (pathname === "/generate") {
                 const result = validateMemo(memo);
                 /*
                  * What is still to be supplied, split by whose it is. The
@@ -838,11 +928,11 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                         memorandum: outstandingFields(memo, "memorandum")
                             .filter((f) => !f.optional).map(field),
                     },
-                    html: renderHtmlDocument(withServedSeal(memo, req.headers.host)),
+                    html: renderHtmlDocument(withServedSeal(memo, req)),
                     text: renderText(memo),
                 });
             }
-            if (req.url === "/fields") {
+            if (pathname === "/fields") {
                 // The whole question list for a type, whether or not it is
                 // answered - so a caller can build its own form.
                 return json(res, 200, {
@@ -861,14 +951,14 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     },
                 });
             }
-            if (req.url === "/spec") {
+            if (pathname === "/spec") {
                 return send(res, 200, "application/json",
                     JSON.stringify(memo, null, 2) + "\n");
             }
-            if (req.url === "/docx" || req.url === "/render") {
+            if (pathname === "/docx" || pathname === "/render") {
                 const result = validateMemo(memo);
                 const buffer = await renderDocx(memo, seal ? {seal} : {});
-                if (req.url === "/render") {
+                if (pathname === "/render") {
                     const wantsJson = String(req.headers.accept ?? "").includes("application/json")
                         || form.preview === true || form.preview === "true";
                     if (wantsJson) {
@@ -880,7 +970,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                             findings: result.findings.map(({severity, rule, message, cite}) =>
                                 ({severity, rule, message, cite})),
                             text: renderText(memo),
-                            html: renderHtmlDocument(withServedSeal(memo, req.headers.host)),
+                            html: renderHtmlDocument(withServedSeal(memo, req)),
                             docxBase64: buffer.toString("base64"),
                         });
                     }
@@ -889,7 +979,7 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     buffer);
             }
-            if (req.url === "/validate") {
+            if (pathname === "/validate") {
                 const result = validateMemo(memo);
                 return json(res, 200, {
                     type: memo.type,
@@ -904,7 +994,8 @@ export function createMemoServer({seal, modelPath, drafter: injected} = {}) {
             }
             return json(res, 404, {error: "Not found"});
         } catch (err) {
-            return json(res, 500, {error: err.message});
+            // A bad body is the caller's problem (400/413); anything else is ours.
+            return json(res, err?.status ?? 500, {error: err.message});
         }
     });
 }

@@ -1514,12 +1514,21 @@ export function formatReport(result) {
 }
 
 /**
- * The subset of findings worth sending back to a language model. Format
- * findings are excluded on purpose: the renderer owns layout, so re-prompting
+ * Findings a drafting model has standing to fix, and no others.
+ *
+ * Format findings are excluded because the renderer owns layout: re-prompting
  * cannot fix them and would only invite the model to hand-format the output.
+ * Matters of record are excluded for the same reason from the other side - the
+ * office symbol, the letterhead, and the signature block belong to the unit and
+ * to whoever signs, so a model asked to supply them can only invent them. They
+ * are reported to the user as slots still to be supplied instead.
  */
+const RECORD_RULES = new Set(["not-yet-supplied", "letterhead-organization", "zip-missing"]);
+
 export function repairInstructions(result) {
-    return result.contentFindings.map((f) => `- ${f.message} (${f.cite})`);
+    return result.contentFindings
+        .filter((f) => !RECORD_RULES.has(f.rule))
+        .map((f) => `- ${f.message} (${f.cite})`);
 }
 
 export {renderText};

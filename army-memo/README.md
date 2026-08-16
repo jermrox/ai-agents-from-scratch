@@ -57,6 +57,24 @@ npm run serve
 npm test
 ```
 
+### Flags
+
+| Flag | Purpose |
+| --- | --- |
+| `--offline` | Skip Claude; use the default fixture |
+| `--fixture <id>` | Offline run from a named fixture |
+| `--list-fixtures` / `--list-types` | Catalogs |
+| `--template <type>` | Editable skeleton for a type |
+| `--spec <file.json>` | Render a spec you filled in |
+| `--emit-spec <file.json>` | Write the spec out for editing |
+| `--docx` / `--html` / `--text <path>` | Outputs |
+| `--unit` / `--save-unit <file.json>` | Reuse unit details across memorandums |
+| `--seal <path>` | Override the letterhead seal |
+| `--model <id>` | Claude model id (or `ANTHROPIC_MODEL`) |
+| `--serve` `--port` `--host` | Run the HTTP API |
+| `--verify` | AR 25-50 figure regression suite |
+| `-h`, `--help` | Usage |
+
 ## SDK surface
 
 ```js
@@ -91,13 +109,19 @@ Default bind: `http://127.0.0.1:4250`
 ```bash
 curl -s http://127.0.0.1:4250/health | jq .
 curl -s http://127.0.0.1:4250/fixtures | jq .
+
+# Offline: passing {"fixture": "<id>"} answers from datasets/ without calling Claude
 curl -s -X POST http://127.0.0.1:4250/draft \
   -H 'content-type: application/json' \
   -d '{"fixture":"range-closure"}' | jq .
+
+# Live: needs ANTHROPIC_API_KEY (503 without one)
 curl -s -X POST http://127.0.0.1:4250/draft \
   -H 'content-type: application/json' \
   -d '{"request":"Notify subordinate battalions that Range 14 closes 3-7 August 2026."}' | jq .
 ```
+
+Status codes: `400` malformed JSON, `405` wrong method on a POST route, `413` body over 1 MB, `503` drafting not configured, `429`/`502`/`504` passed through from Claude.
 
 ## Environment
 

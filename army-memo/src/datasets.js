@@ -6,7 +6,6 @@
  */
 
 import fs from "fs";
-import fsPromises from "fs/promises";
 import path from "path";
 import {fileURLToPath} from "url";
 
@@ -17,15 +16,24 @@ function readJsonSync(filePath) {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-async function readJson(filePath) {
-    return JSON.parse(await fsPromises.readFile(filePath, "utf8"));
+/**
+ * Resolve a catalog-relative path, refusing anything that would leave
+ * datasets/ - the catalog is data, and data should not be able to read
+ * arbitrary files if it is ever edited or generated.
+ */
+function resolveInRoot(relative) {
+    const resolved = path.resolve(DATASETS_ROOT, String(relative ?? ""));
+    if (resolved !== DATASETS_ROOT && !resolved.startsWith(DATASETS_ROOT + path.sep)) {
+        throw new Error(`Fixture path escapes datasets/: ${relative}`);
+    }
+    return resolved;
 }
 
 let indexCache = null;
 
 /** Catalog from datasets/index.json. */
 export function loadDatasetIndexSync() {
-    indexCache ??= readJsonSync(path.join(DATASETS_ROOT, "index.json"));
+    indexCache ??= readJsonSync(resolveInRoot("index.json"));
     return indexCache;
 }
 
@@ -62,8 +70,8 @@ export function loadFixtureSync(id) {
         const known = Object.keys(index.fixtures).join(", ");
         throw new Error(`Unknown fixture "${id}". Known: ${known}`);
     }
-    const content = readJsonSync(path.join(DATASETS_ROOT, meta.content));
-    const context = readJsonSync(path.join(DATASETS_ROOT, meta.context));
+    const content = readJsonSync(resolveInRoot(meta.content));
+    const context = readJsonSync(resolveInRoot(meta.context));
     return materialize(id, meta, content, context);
 }
 
