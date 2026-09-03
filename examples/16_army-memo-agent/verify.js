@@ -4358,9 +4358,28 @@ print(json.dumps({"w": W/72, "h": H/72, "runs": runs}))
             near(inkTop("DEPARTMENT OF THE ARMY"), FIG_2_1.letterheadTitle, 0.02), FIG_CITE);
         checkTrue("rendered: the last letterhead line is where figure 2-1 puts it",
             near(inkTop("CITY, STATE"), FIG_2_1.lastLetterheadLine, 0.02), FIG_CITE);
-        checkTrue("rendered: the office symbol is where figure 2-1 puts it",
-            near(inkTop("ATZB-RC"), FIG_2_1.officeSymbol, 0.03),
-            `${FIG_CITE}; para 2-4a(1)`);
+        /*
+         * The office symbol no longer lands exactly where figure 2-1 puts
+         * it - LETTERHEAD.officeSymbolClearanceBufferIn adds page-1-only
+         * clearance on top of the measurement, via the first-page header
+         * overflowing past pgMar/top (see letterheadHeader() in
+         * memo-docx.js and the comment on the buffer itself in ar25-50.js).
+         * Continuation pages do not carry this - see the continuation-page
+         * block earlier in this file, which still checks the *unbuffered*
+         * officeSymbolTopIn, and still passes.
+         *
+         * The position check below reads the buffer off the same constant
+         * the renderer reads, which would pass even if the buffer were
+         * silently zero - exactly the "the same bad line height was used to
+         * check it, and it agreed with itself" trap this file's own history
+         * warns about. Pin the constant itself against a literal first.
+         */
+        check("the page-1 clearance buffer is set to a real value",
+            LETTERHEAD.officeSymbolClearanceBufferIn, 0.22,
+            "this project's own choice, not a regulation figure");
+        checkTrue("rendered: the office symbol is the measured figure 2-1 position plus the page-1 buffer",
+            near(inkTop("ATZB-RC"), FIG_2_1.officeSymbol + LETTERHEAD.officeSymbolClearanceBufferIn, 0.03),
+            `${FIG_CITE}; para 2-4a(1); buffer is this project's own choice, not a regulation figure`);
         checkTrue("rendered: MEMORANDUM FOR is the 3d line below the office symbol",
             near((at("MEMORANDUM FOR").y - at("ATZB-RC").y) / LINE, 3, 0.15),
             "AR 25-50, para 2-4a(5)");

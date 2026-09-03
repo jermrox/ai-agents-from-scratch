@@ -266,6 +266,32 @@ function letterheadHeader(memo, sealImage) {
         ],
     }));
 
+    /*
+     * Page 1's clearance buffer (LETTERHEAD.officeSymbolClearanceBufferIn -
+     * see its comment in ar25-50.js for why) lands here, not on the section's
+     * top margin: a taller header pushes only the page that header belongs
+     * to, and this is the *first-page* header (titlePg), so it reaches page 1
+     * alone. pgMar/top - and so continuationBodyFrom's math for continuation
+     * pages - never changes.
+     *
+     * An empty trailing paragraph with `before` spacing, sized so this
+     * header's natural end lands exactly at the buffered target. Computed
+     * from the same four-line formula the fig 2-1 fidelity check uses, not
+     * hardcoded, so a future change to the letterhead's font sizes cannot
+     * silently drift this out of sync with what it is padding.
+     */
+    const naturalEndIn = LETTERHEAD.letterheadTopIn
+        + (LETTERHEAD.titleSizePt + 3 * LETTERHEAD.addressSizePt) * 1.15 / 72;
+    const targetIn = LETTERHEAD.officeSymbolTopIn + LETTERHEAD.officeSymbolClearanceBufferIn;
+    const padIn = targetIn - naturalEndIn;
+    // `line` under lineRule EXACT is the paragraph's own box height, taken
+    // literally rather than as a multiple of the run's font size - unlike
+    // `before` spacing, which would stack on top of this (empty) paragraph's
+    // own default line height and overshoot the target by that much.
+    if (padIn > 0) {
+        children.push(new Paragraph({spacing: {before: 0, after: 0, line: IN(padIn), lineRule: LineRuleType.EXACT}}));
+    }
+
     return new Header({children});
 }
 

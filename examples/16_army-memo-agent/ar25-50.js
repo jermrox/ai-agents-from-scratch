@@ -261,6 +261,30 @@ export const LETTERHEAD = {
     // These are that measurement, rounded to a hundredth.
     letterheadTopIn: 0.55,
     officeSymbolTopIn: 1.78,
+    /*
+     * A generated .docx is opened in far more engines than the one figure
+     * 2-1 was measured against, and at least one real-world preview has been
+     * reported putting the office symbol under the seal despite this file's
+     * own numbers - measured against the figure and cross-checked against
+     * the regulation's stated 1-inch left margin - showing 0.31 in of clear
+     * air between them.
+     *
+     * officeSymbolTopIn stays exactly what figure 2-1 measures, because it
+     * is shared: it is both page 1's top margin AND (through
+     * continuationBodyFrom below) the floor a continuation page's body
+     * cannot start before para 2-5c's own math. Padding it pushes both, and
+     * a first attempt at that did: continuation pages landed on the 4th
+     * line below the subject instead of the 3d (2-5c), and the worked
+     * example spilled onto a second page it does not need.
+     *
+     * This buffer is added to page 1 alone, as extra blank space inside its
+     * own first-page-only header (see letterheadHeader() in memo-docx.js) -
+     * the same "header taller than the margin pushes the body down" OOXML
+     * mechanism continuationBodyFrom already relies on for continuation
+     * pages, aimed at page 1 instead of continuation pages. pgMar/top and
+     * continuation-page math never see it.
+     */
+    officeSymbolClearanceBufferIn: 0.22,
     letterheadLines: 4,
     lineHeightPt: 13.8,          // Word single spacing for 12 pt Arial
     officeSymbolTopCite: "measured from AR 25-50, fig 2-1; para 2-4a(1) and fig 2-2",
