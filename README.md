@@ -262,6 +262,29 @@ Follow these examples in order to build understanding progressively:
 
 ---
 
+### 16. **Army memorandum agent** - Let code own the spec, not the model
+`16_army-memo-agent/` | [Code](examples/16_army-memo-agent/army-memo-agent.js) | [Code Explanation](examples/16_army-memo-agent/CODE.md) | [Concepts](examples/16_army-memo-agent/CONCEPT.md)
+
+**What you'll learn:**
+- Splitting a task so the LLM writes **content** and code owns the **specification**
+- Constraining generation with a JSON-schema grammar instead of asking nicely in the prompt
+- Building a deterministic layout engine from a written standard (AR 25-50), citation by citation
+- Producing a real **Word deliverable** that stays editable while its formatting is locked
+- Validating output into **content** findings (send back to the model) and **format** findings (a bug in your renderer)
+- Verifying the renderer against the standard's own worked examples
+
+**Key concepts**: Specification-bound generation, constrained decoding, deterministic rendering, OOXML output, editable templates, cited validation, repair loops, regression-testable output
+
+```bash
+node examples/16_army-memo-agent/army-memo-agent.js --list-types
+node examples/16_army-memo-agent/army-memo-agent.js --template decision --docx memo.docx
+node examples/16_army-memo-agent/verify.js      # 132 checks against AR 25-50's own figures
+```
+
+Runs without a model - only the drafting step needs one.
+
+---
+
 ## Documentation Structure
 
 Each example folder contains:
@@ -406,6 +429,19 @@ ai-agents/
 │   └── CONCEPT.md
 ├── 15_tool-routing-embeddings/
 │   ├── tool-routing-embeddings.js
+│   ├── CODE.md
+│   └── CONCEPT.md
+├── 16_army-memo-agent/
+│   ├── army-memo-agent.js              ← intent + draft / validate / repair loop
+│   ├── ar25-50.js                      ← the regulation, codified with citations
+│   ├── memo-formatter.js               ← deterministic layout: text + print HTML
+│   ├── memo-docx.js                    ← Word deliverable, formatting locked
+│   ├── signature-blocks.js             ← chapter 6 formalities, grades, authority lines
+│   ├── templates.js                    ← editable skeleton per memorandum type
+│   ├── memo-validator.js               ← cited compliance findings
+│   ├── text-metrics.js                 ← Arial advance widths, line breaking
+│   ├── verify.js                       ← 132 checks against AR 25-50's own figures
+│   ├── assets/README.md                ← one-time DoD seal setup
 │   ├── CODE.md
 │   └── CONCEPT.md
 ├── helper/
