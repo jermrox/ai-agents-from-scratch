@@ -130,9 +130,42 @@ Returns a structured verdict:
 - `suggestions`: how to fix them
 - `revised_subject` / `revised_body`: improved versions if needed
 
+### `recommendLeadGenTools` (campaign_stage, budget)
+
+Recommends AI-powered lead generation tools for executing the outreach campaign at scale, drawing from the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead-generation) toolchain.
+
+```javascript
+async function recommendLeadGenTools(campaignStage, budget) {
+    const response = await client.chat.completions.create({
+        model: MODEL,
+        temperature: 0.3,  // low temperature for consistent recommendations
+        messages: [ ... ],
+        response_format: { type: 'json_object' },
+    });
+    return response.choices[0].message.content;
+}
+```
+
+The function embeds a curated catalog of tools organized into four categories:
+
+- **Data Scraping & Enrichment:** Apollo, Clay, PhantomBuster, Vibe Prospecting
+- **Cold Outreach & Email AI:** Instantly, Lavender, Lemlist, Smartlead
+- **AI Copywriting & Personalization:** Warmer.ai, Copy.ai
+- **Social Listening:** GummySearch, Awario
+
+Parameters:
+- `campaign_stage`: one of `"prospecting"`, `"enrichment"`, `"outreach"`, or `"monitoring"`
+- `budget`: one of `"free"` (no-cost tools only), `"starter"` (under $100/mo), or `"growth"` ($100-500/mo)
+
+Returns a structured JSON recommendation with:
+- `recommended_stack` — array of tools with name, URL, category, monthly cost, rationale, and priority
+- `total_estimated_cost` — sum of monthly costs
+- `workflow_summary` — how the tools work together
+- `quick_start_steps` — actionable first steps to get started
+
 ---
 
-## 3) The Agent System Prompt (Lines 260-281)
+## 3) The Agent System Prompt
 
 The system prompt gives the agent a clear, ordered pipeline:
 
@@ -142,6 +175,7 @@ The system prompt gives the agent a clear, ordered pipeline:
 3. REVIEW    → call review_email_for_spam
 4. REVISE    → if NEEDS_REVISION, fix and re-review
 5. PRESENT   → output the final email
+6. RECOMMEND → call recommend_lead_gen_tools for campaign execution
 ```
 
 It also emphasizes:
@@ -149,6 +183,7 @@ It also emphasizes:
 - Offer is **free / complimentary**
 - Emails must be **personal and specific**
 - Think out loud before each action
+- After all emails are composed, recommend tools for scaling the campaign
 
 ---
 
@@ -246,6 +281,14 @@ The agent processes all three in a single conversation, which lets it potentiall
 │                 └─── FAIL ──► Revise     │
 │                       │      & re-review │
 │                       └──────────────────│
+│                                         │
+│  After all universities:                │
+│                                         │
+│  ┌───────────────────────────────────┐  │
+│  │ Step 4: recommend_lead_gen_tools()│  │
+│  │  → LLM sub-call selects tools     │  │
+│  │    from awesome-ai-lead-generation│  │
+│  └───────────────────────────────────┘  │
 └─────────────────────────────────────────┘
 ```
 
@@ -262,9 +305,10 @@ Outer agent (orchestrator, temp 0.4)
   └─► research_university (analyst, temp 0.3)
   └─► compose_email (copywriter, temp 0.7)
   └─► review_email_for_spam (reviewer, temp 0.2)
+  └─► recommend_lead_gen_tools (strategist, temp 0.3)
 ```
 
-Different temperatures match each role: low for factual research and judgment, higher for creative writing.
+Different temperatures match each role: low for factual research, judgment, and tool recommendations, higher for creative writing.
 
 ### 2. Self-Review Loop
 
@@ -335,3 +379,4 @@ Follow-up: Two weeks
 3. **Batch scaling** — Read university names from a CSV file and process them in configurable batch sizes.
 4. **A/B subject lines** — Have the compose tool generate multiple subject line variants and let the review tool pick the best one.
 5. **Human-in-the-loop** — Add a confirmation step where the agent pauses for human approval before marking an email as final.
+6. **Lead gen tool integration** — Connect the `recommend_lead_gen_tools` output to actual tool APIs (e.g., auto-configure an Instantly campaign, enrich contacts via Apollo, or set up GummySearch monitors). See the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead-generation) list for the full ecosystem.

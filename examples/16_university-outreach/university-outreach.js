@@ -83,6 +83,42 @@ const tools = [
             },
         },
     },
+    {
+        type: 'function',
+        function: {
+            name: 'recommend_lead_gen_tools',
+            description:
+                'Recommend AI-powered lead generation tools for executing university ' +
+                'outreach campaigns at scale. Selects the best combination of tools ' +
+                'based on the campaign stage and budget, drawing from the ' +
+                'awesome-ai-lead-generation toolchain ' +
+                '(https://github.com/toofast1/awesome-ai-lead-generation).',
+            parameters: {
+                type: 'object',
+                properties: {
+                    campaign_stage: {
+                        type: 'string',
+                        enum: ['prospecting', 'enrichment', 'outreach', 'monitoring'],
+                        description:
+                            'The current stage of the outreach campaign: ' +
+                            '"prospecting" for finding leads, ' +
+                            '"enrichment" for building detailed prospect profiles, ' +
+                            '"outreach" for sending personalized emails at scale, ' +
+                            '"monitoring" for tracking responses and brand mentions.',
+                    },
+                    budget: {
+                        type: 'string',
+                        enum: ['free', 'starter', 'growth'],
+                        description:
+                            'Budget tier: "free" for no-cost tools only, ' +
+                            '"starter" for under $100/mo total, ' +
+                            '"growth" for $100-500/mo total.',
+                    },
+                },
+                required: ['campaign_stage', 'budget'],
+            },
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -238,11 +274,170 @@ async function reviewEmailForSpam(subject, body) {
     return review;
 }
 
+/**
+ * Recommends AI lead generation tools from the awesome-ai-lead-generation
+ * toolchain (https://github.com/toofast1/awesome-ai-lead-generation) based
+ * on the campaign stage and budget. Uses a nested LLM call to select and
+ * rank the best combination of tools.
+ */
+async function recommendLeadGenTools(campaignStage, budget) {
+    console.log(`\n   [tool] recommend_lead_gen_tools("${campaignStage}", "${budget}")`);
+
+    const toolCatalog = JSON.stringify({
+        data_scraping_and_enrichment: [
+            {
+                name: 'Apollo',
+                url: 'https://apollo.io',
+                description: 'B2B contact database for finding program directors at small colleges',
+                pricing: 'Free tier available, paid from $49/mo',
+                best_for: ['prospecting', 'enrichment'],
+            },
+            {
+                name: 'Clay',
+                url: 'https://clay.com',
+                description: 'AI-enriched spreadsheets for building university prospect lists',
+                pricing: 'Free tier available, paid from $149/mo',
+                best_for: ['enrichment'],
+            },
+            {
+                name: 'PhantomBuster',
+                url: 'https://phantombuster.com',
+                description: 'LinkedIn automation for university faculty profiles',
+                pricing: 'Free trial, paid from $69/mo',
+                best_for: ['prospecting', 'enrichment'],
+            },
+            {
+                name: 'Vibe Prospecting',
+                url: 'https://vibeprospecting.ai',
+                description: 'Natural-language prospecting — describe your ideal lead and get matches',
+                pricing: 'Starter plans from $39/mo',
+                best_for: ['prospecting'],
+            },
+        ],
+        cold_outreach_and_email_ai: [
+            {
+                name: 'Instantly',
+                url: 'https://instantly.ai',
+                description: 'Unlimited email accounts with AI warm-up for cold outreach at scale',
+                pricing: 'From $30/mo',
+                best_for: ['outreach'],
+            },
+            {
+                name: 'Lavender',
+                url: 'https://lavender.ai',
+                description: 'AI email coaching and grading — scores emails before you send',
+                pricing: 'Free tier available, paid from $29/mo',
+                best_for: ['outreach'],
+            },
+            {
+                name: 'Lemlist',
+                url: 'https://lemlist.com',
+                description: 'Personalized outreach with custom images and video for higher reply rates',
+                pricing: 'From $59/mo',
+                best_for: ['outreach'],
+            },
+            {
+                name: 'Smartlead',
+                url: 'https://smartlead.ai',
+                description: 'Deliverability infrastructure — mailbox rotation, warm-up, and unified inbox',
+                pricing: 'From $39/mo',
+                best_for: ['outreach'],
+            },
+        ],
+        ai_copywriting_and_personalization: [
+            {
+                name: 'Warmer.ai',
+                url: 'https://warmer.ai',
+                description: 'Generates personalized email intro lines from prospect websites and LinkedIn',
+                pricing: 'From $59/mo',
+                best_for: ['outreach', 'enrichment'],
+            },
+            {
+                name: 'Copy.ai',
+                url: 'https://copy.ai',
+                description: 'AI marketing copy at scale — subject lines, email bodies, follow-ups',
+                pricing: 'Free tier available, paid from $49/mo',
+                best_for: ['outreach'],
+            },
+        ],
+        social_listening: [
+            {
+                name: 'GummySearch',
+                url: 'https://gummysearch.com',
+                description: 'Reddit monitoring for leadership and higher-ed discussions',
+                pricing: 'From $48/mo',
+                best_for: ['monitoring', 'prospecting'],
+            },
+            {
+                name: 'Awario',
+                url: 'https://awario.com',
+                description: 'Brand and keyword monitoring across social media, news, and web',
+                pricing: 'From $49/mo',
+                best_for: ['monitoring'],
+            },
+        ],
+    });
+
+    const response = await client.chat.completions.create({
+        model: MODEL,
+        temperature: 0.3,
+        messages: [
+            {
+                role: 'system',
+                content:
+                    `You are an AI lead generation strategist specializing in higher-education ` +
+                    `outreach. You have deep knowledge of the tools listed in the ` +
+                    `awesome-ai-lead-generation repository ` +
+                    `(https://github.com/toofast1/awesome-ai-lead-generation).\n\n` +
+                    `Given a campaign stage and budget tier, recommend the best combination of ` +
+                    `tools from the provided catalog. For each recommendation, explain WHY it ` +
+                    `fits the specific use case of university outreach for a leadership app.\n\n` +
+                    `Budget tiers:\n` +
+                    `- "free": Only tools with free tiers; total spend $0/mo\n` +
+                    `- "starter": Up to ~$100/mo total across all tools\n` +
+                    `- "growth": Up to ~$500/mo total across all tools\n\n` +
+                    `Return a JSON object with:\n` +
+                    `- "stage": the campaign stage\n` +
+                    `- "budget": the budget tier\n` +
+                    `- "recommended_stack": array of objects, each with:\n` +
+                    `    - "tool": tool name\n` +
+                    `    - "url": tool URL\n` +
+                    `    - "category": which category it belongs to\n` +
+                    `    - "monthly_cost": estimated monthly cost for this use case\n` +
+                    `    - "why": 1-2 sentences on why this tool fits university outreach\n` +
+                    `    - "priority": "essential" or "nice_to_have"\n` +
+                    `- "total_estimated_cost": sum of monthly costs\n` +
+                    `- "workflow_summary": 2-3 sentences describing how these tools work together\n` +
+                    `- "quick_start_steps": array of 3-5 actionable first steps`,
+            },
+            {
+                role: 'user',
+                content:
+                    `Campaign stage: ${campaignStage}\n` +
+                    `Budget tier: ${budget}\n\n` +
+                    `Tool catalog:\n${toolCatalog}\n\n` +
+                    `Recommend the best tools for a university outreach campaign promoting ` +
+                    `"I Grow", a leadership-development app, to small colleges and universities.`,
+            },
+        ],
+        response_format: { type: 'json_object' },
+    });
+
+    const recommendation = response.choices[0].message.content;
+    const parsed = JSON.parse(recommendation);
+    console.log(
+        `   [tool] Recommended ${parsed.recommended_stack.length} tools ` +
+        `(~$${parsed.total_estimated_cost}/mo) for ${campaignStage}/${budget}\n`
+    );
+    return recommendation;
+}
+
 // Map tool names to handler functions
 const toolHandlers = {
     research_university: async (args) => researchUniversity(args.university_name),
     compose_email: async (args) => composeEmail(args.research_brief, args.contact_role),
     review_email_for_spam: async (args) => reviewEmailForSpam(args.email_subject, args.email_body),
+    recommend_lead_gen_tools: async (args) => recommendLeadGenTools(args.campaign_stage, args.budget),
 };
 
 // ---------------------------------------------------------------------------
@@ -264,6 +459,11 @@ const SYSTEM_PROMPT =
     `using the suggestions and call review_email_for_spam again.\n` +
     `5. PRESENT   - Once the email passes review, output the final email with the ` +
     `subject, body, and follow-up timing clearly formatted.\n\n` +
+    `After composing and reviewing all emails, call recommend_lead_gen_tools to ` +
+    `suggest the best AI tools for executing the outreach campaign at scale. This ` +
+    `draws from the awesome-ai-lead-generation toolchain ` +
+    `(https://github.com/toofast1/awesome-ai-lead-generation) and helps the user ` +
+    `move from drafted emails to a fully operational outreach pipeline.\n\n` +
     `IMPORTANT CONTEXT:\n` +
     `- Focus on SMALL colleges and universities (under ~5,000 students).\n` +
     `- The outreach offers FREE / complimentary access — this is a partnership ` +
@@ -271,7 +471,8 @@ const SYSTEM_PROMPT =
     `- Emails must feel personal and specific to each school. Generic emails are ` +
     `unacceptable.\n` +
     `- Always think out loud before each action so the user can follow your reasoning.\n\n` +
-    `After you finish ALL universities, write a brief summary of what was produced.`;
+    `After you finish ALL universities, write a brief summary of what was produced ` +
+    `and include the lead generation tool recommendations for scaling the campaign.`;
 
 /**
  * Runs the agent loop for a batch of universities.
@@ -360,6 +561,40 @@ async function runOutreachAgent(universities) {
     if (iteration >= MAX_ITERATIONS) {
         console.log('\n  Warning: reached maximum iterations.');
     }
+
+    // -----------------------------------------------------------------------
+    // Final step: recommend lead generation tools for scaling the campaign
+    // -----------------------------------------------------------------------
+    console.log('\n' + '-'.repeat(70));
+    console.log('  Recommending lead generation tools for campaign execution...');
+    console.log('-'.repeat(70));
+
+    const toolRecommendation = await recommendLeadGenTools('outreach', 'starter');
+
+    messages.push({
+        role: 'user',
+        content:
+            `Here are the recommended AI lead generation tools for executing this ` +
+            `outreach campaign at scale:\n\n${toolRecommendation}\n\n` +
+            `Please summarize these tool recommendations along with the emails produced.`,
+    });
+
+    const summaryResponse = await client.chat.completions.create({
+        model: MODEL,
+        messages,
+        temperature: 0.4,
+    });
+
+    const summaryMessage = summaryResponse.choices[0].message;
+    messages.push(summaryMessage);
+
+    if (summaryMessage.content) {
+        console.log('\n' + summaryMessage.content);
+    }
+
+    console.log('\n' + '='.repeat(70));
+    console.log('  Campaign preparation complete.');
+    console.log('='.repeat(70));
 
     return messages;
 }

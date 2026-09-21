@@ -206,17 +206,73 @@ Outer Agent (orchestrator)
 │     model: gpt-4o-mini, temp: 0.7
 │     role:  warm, personal copywriter
 │
-└─► review_email_for_spam()
-      model: gpt-4o-mini, temp: 0.2
-      role:  strict deliverability auditor
+├─► review_email_for_spam()
+│     model: gpt-4o-mini, temp: 0.2
+│     role:  strict deliverability auditor
+│
+└─► recommend_lead_gen_tools()
+      model: gpt-4o-mini, temp: 0.3
+      role:  lead generation strategist
 ```
 
 Each inner call has:
 - A **specialized system prompt** tuned to its role
-- A **different temperature** matching the task (low for facts and judgment, higher for creative writing)
+- A **different temperature** matching the task (low for facts, judgment, and tool selection, higher for creative writing)
 - **Structured JSON output** so the next step can parse results reliably
 
 This is sometimes called the **"tool-as-agent"** pattern: each tool is itself a small, focused agent rather than a deterministic function.
+
+## AI Lead Generation Toolchain Integration
+
+After the agent drafts and reviews all emails, it takes one more step: recommending the right AI tools for executing the campaign at scale. This integrates references from the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead-generation) list, a curated directory of AI-powered sales and outreach tools.
+
+### Why include tool recommendations?
+
+Drafting great emails is only half the job. To actually run a university outreach campaign, you need infrastructure for:
+
+1. **Finding the right people** — Who is the Director of Student Leadership at each school? What is their email?
+2. **Enriching prospect data** — What else do we know about them? LinkedIn profile, recent publications, department budget?
+3. **Sending at scale** — How do you send 200 personalized emails without landing in spam?
+4. **Monitoring results** — Who opened? Who replied? What are people saying about leadership development on social media?
+
+### The tool catalog
+
+The `recommend_lead_gen_tools` function maintains a curated catalog of tools across four categories:
+
+| Category | Tools | Use Case |
+|---|---|---|
+| **Data Scraping & Enrichment** | Apollo, Clay, PhantomBuster, Vibe Prospecting | Find program directors, build prospect lists, enrich with LinkedIn data |
+| **Cold Outreach & Email AI** | Instantly, Lavender, Lemlist, Smartlead | Send personalized emails at scale with AI warm-up and deliverability |
+| **AI Copywriting & Personalization** | Warmer.ai, Copy.ai | Generate personalized intro lines and scale email copy |
+| **Social Listening** | GummySearch, Awario | Monitor Reddit and social media for leadership discussions |
+
+### Stage-based recommendations
+
+The tool selects different combinations based on where you are in the campaign:
+
+```
+PROSPECTING  → Apollo + PhantomBuster + Vibe Prospecting
+                Find faculty contacts at target schools
+
+ENRICHMENT   → Clay + Apollo + Warmer.ai
+                Build rich profiles, generate personalized hooks
+
+OUTREACH     → Instantly + Lavender + Lemlist
+                Send AI-personalized emails with warm-up infrastructure
+
+MONITORING   → GummySearch + Awario
+                Track replies, brand mentions, and leadership discussions
+```
+
+### Budget-aware selection
+
+Not every campaign needs $500/month in tooling. The recommendations adapt to three tiers:
+
+- **Free** ($0/mo) — Apollo free tier + Copy.ai free tier + Lavender free tier
+- **Starter** (under $100/mo) — Apollo + Instantly + Lavender (core outreach stack)
+- **Growth** ($100-500/mo) — Full stack with Clay enrichment, Lemlist personalization, and social monitoring
+
+This makes the agent useful for both bootstrapped founders testing outreach and teams ready to invest in a full pipeline.
 
 ## Real-World Extensions
 
@@ -250,6 +306,16 @@ For large batches:
 - Process in configurable batch sizes to manage API costs
 - Add rate limiting and retry logic
 - Track which schools have been processed
+
+### Connecting to the lead gen toolchain
+
+The `recommend_lead_gen_tools` output is currently advisory — it tells the user what to set up. The next step is direct integration:
+- Use Apollo's API to pull verified email addresses for the suggested contact roles
+- Auto-configure an Instantly campaign with the drafted emails
+- Set up GummySearch monitors for each target school's Reddit mentions
+- Pipe enrichment data from Clay back into the research step for even more personalized emails
+
+See the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead-generation) repository for the full ecosystem of tools and their APIs.
 
 ## Key Takeaways
 
