@@ -160,7 +160,7 @@ async function researchUniversity(universityName) {
                     `- "leadership_programs": array of objects {name, description}\n` +
                     `- "relevant_department": the department most likely to oversee leadership courses\n` +
                     `- "suggested_contact_role": a realistic role title to reach out to\n` +
-                    `- "talking_points": array of 2-3 reasons I Grow would resonate here\n\n` +
+                    `- "talking_points": array of 2-3 reasons I Grow's conversation rehearsal and substance scoring would resonate here\n\n` +
                     `University: ${universityName}`,
             },
         ],
@@ -192,14 +192,15 @@ async function composeEmail(researchBriefJson, contactRole) {
                     `- Open with something specific to THIS school (a program name, a mission ` +
                     `  phrase, a recent initiative). Never use generic openers.\n` +
                     `- Keep the tone warm, collegial, and concise (under 200 words for the body).\n` +
-                    `- Mention "I Grow" by name and briefly describe it as a leadership-development ` +
-                    `  app built for emerging leaders.\n` +
+                    `- Mention "I Grow" (i-grow.co) by name and briefly describe it as a conversation ` +
+                    `  flight simulator — students rehearse high-stakes conversations out loud ` +
+                    `  with AI that pushes back and scores their substance.\n` +
                     `- Include a small bulleted list (3-4 bullets) of what students/participants ` +
                     `  can engage with on I Grow:\n` +
-                    `    * Self-paced leadership skill modules\n` +
-                    `    * Personalized growth plans with milestone tracking\n` +
-                    `    * Peer accountability circles\n` +
-                    `    * Real-world leadership challenges and reflections\n` +
+                    `    * Voice-based mock interviews — AI pushes back and scores your answers\n` +
+                    `    * Salary and offer-negotiation rehearsal before the real conversation\n` +
+                    `    * Difficult-conversation practice (feedback, PIPs, conflict)\n` +
+                    `    * ANCHOR-scored feedback on substance, not filler words or pace\n` +
                     `- Offer COMPLIMENTARY access for a class or cohort — frame it as a ` +
                     `  partnership exploration, not a sales pitch.\n` +
                     `- Close with a low-pressure call to action (e.g., a 15-minute call or ` +
@@ -417,7 +418,7 @@ async function recommendLeadGenTools(campaignStage, budget) {
                     `Budget tier: ${budget}\n\n` +
                     `Tool catalog:\n${toolCatalog}\n\n` +
                     `Recommend the best tools for a university outreach campaign promoting ` +
-                    `"I Grow", a leadership-development app, to small colleges and universities.`,
+                    `"I Grow", a conversation-rehearsal app that scores substance, to small colleges and universities.`,
             },
         ],
         response_format: { type: 'json_object' },
@@ -445,8 +446,12 @@ const toolHandlers = {
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT =
-    `You are a university outreach agent for "I Grow", a leadership-development app ` +
-    `designed for emerging leaders, junior managers, and students in leadership courses.\n\n` +
+    `You are a university outreach agent for "I Grow" (i-grow.co), the flight simulator ` +
+    `for the conversations that decide your career. Users rehearse high-stakes conversations ` +
+    `— mock interviews, salary negotiations, difficult manager conversations — OUT LOUD ` +
+    `with an AI that pushes back and scores them on SUBSTANCE (what you said), not delivery ` +
+    `(pace, filler words, eye contact). It uses an owned scoring framework called ANCHOR. ` +
+    `Records are portable and owned by the individual.\n\n` +
     `YOUR MISSION:\n` +
     `For each university you are given, follow these steps IN ORDER:\n\n` +
     `1. RESEARCH  - Call research_university to learn about the school's leadership ` +
