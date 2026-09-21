@@ -325,3 +325,4 @@ See the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead
 4. **Temperature matters** — Match the temperature to the task: low for facts and judgment, higher for creative writing.
 5. **Structured data between steps** — JSON output from each tool ensures the pipeline is reliable and debuggable.
 6. **The agent loop handles complexity** — The ReAct pattern lets the model decide when to research, compose, review, and revise without hardcoding the exact sequence for every edge case.
+7. **Tool recommendations close the loop** — Drafting emails is only half the job; recommending the right lead generation tools bridges the gap from "emails written" to "campaign running", using curated references from the [awesome-ai-lead-generation](https://github.com/toofast1/awesome-ai-lead-generation) ecosystem.
